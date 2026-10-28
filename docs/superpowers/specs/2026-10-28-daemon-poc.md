@@ -148,25 +148,36 @@ ZT 核心 C API 是"Rust 持有资源 + 核心反向回调"结构。zt-core 用 
   数据面**——因此双节点都在本机时,互 ping 只能作为「双方 netconf OK 且地址配齐」
   的控制面证据,数据面证据以网内真实设备对照为准。
 
-### POC 3 — 同进程双 Node 并发与隔离:隔离项全过;「双在线互 ping」受环境阻塞
+### POC 3 — 同进程双 Node 并发与隔离:✓(2026-10-28 收口)
 
-poc3_multi(`--no-device`,无需 sudo)五项断言:
+poc3_multi 五项断言(最终态,含 2ddb458 框架修正):
 
 | # | 检查项 | 结果 |
 |---|---|---|
-| 1 | identity 独立(内容不同/各在己目录/首字段=节点 address) | **PASS** |
+| 1 | identity 独立(内容不同/各在己目录/首字段=节点 address/address 互异) | **PASS** |
 | 2 | dataStore 隔离(目录不同、对方 identity 字节零出现、公共文件内容不同) | **PASS** |
 | 3 | UDP 9994/9995 各自 bind,同进程重复 bind 均 `EADDRINUSE` | **PASS** |
-| 4 | node-b shutdown→重建复用 dataStore(address 不变),node-a 全程 online | **PASS** |
-| 5 | a↔b 互 ping(控制面在线证据) | **PENDING**(见下) |
+| 4 | node-b shutdown→重建复用 dataStore(address 不变),重启窗口内 node-a 持续 online | **PASS** |
+| 5 | a↔b 互 ping | 信息性,不判定(见下) |
 
-- 内存基线:双 Node(`--no-device`)进程峰值 RSS **18.5 MB**
-  (`getrusage(RUSAGE_CHILDREN).ru_maxrss`,等价 `/usr/bin/time -l`;sudo 全量跑时可复测)。
+- **双节点同时在线同时 OK**(手机热点网络实测):node-a `be8c294335`/9994/feth0
+  (`10.121.16.103`)与 node-b `92c680e88f`/9995/feth2(`10.121.16.1`)在同一进程内
+  并发运行,网络状态均为 OK rev=6。
+- 内存基线:sudo 全量跑(双 Node + 双 feth + 双读线程,`/usr/bin/time -l`)
+  进程峰值 RSS **21.0 MB**。
 - **结论:同进程多 Node 全局状态互扰未发现反例**(Task 5 核心风险检验通过,
   形态 A「单进程多 Node」可行)。
-- 阻塞项(环境,非代码):**根服务器 `124.222.91.224:9993` 仅对本地源端口 9994 的
-  UDP 流应答**。同一 identity 换端口结果翻转(node-b:9994→ONLINE,9995/9997/9998
-  及全新身份 9996/50000 全部静默、无 ONLINE 也无 ACCESS_DENIED);STUN 实测本机
-  9994/9995/50000 双向 UDP 均正常,排除本机/局域网按端口过滤。根服务器存活
-  (ICMP 11ms,官方节点视角 PLANET 时延 32ms)。待用户在根服务器侧排查
-  (安全组/iptables/zerotier 日志),或换网络复验「双在线 + 互 ping」。
+- 断言 5 说明:双节点都在本机,内核对本地地址直接交付、绕过 ZT 数据面
+  (POC 2 已证),单机上互 ping 不可能走 ZT 链路,方向结果取决于三个同 /24 接口
+  (feth0/feth2/官方 feth1986)的内核路由次序,与互扰无关——降级为记录性输出。
+  数据面证据以 POC 2 的网内真实设备对照(tcpdump + 帧计数)为准。
+
+### 环境问题记录(2026-10-28 定案)
+
+- **家宽出口(上海电信 122.193.x)对根服务器 `124.222.91.224:9993` 的新建 UDP
+  会话丢包,已建立的 NAT 会话放行**:新节点长时间 online=false 后偶发自愈;
+  换手机热点后新会话秒通。经远端 tcpdump 定案(12 个不同源端口探测包无一到达
+  服务器,同 IP 已建立会话双向正常);根服务器侧无过滤(iptables INPUT ACCEPT,
+  zerotier ONLINE),服务器未做任何改动。**排查基准:新节点长时间无应答先换网络
+  再查代码;daemon 重试策略需容忍「首连长时间静默后突然成功」。**
+- 同一台 Gozi25 根服务器同时是网络控制器(`5cf54f1815`,1.14.2)。
