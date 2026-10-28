@@ -183,9 +183,10 @@ impl DaemonSink {
         let addrs: Vec<IpAddr> = cfg.assigned.iter().map(|a| a.addr).collect();
         let cache = lock(&self.net_cache);
         let mut found: Option<ConflictHit> = None;
-        for ((pid, nid), snap) in cache.iter() {
-            // 只与其它 planet 的其它网络比
-            if *pid == self.planet_id || *nid == nwid {
+        for ((pid, _nid), snap) in cache.iter() {
+            // 只与其它 planet 比:同一网络经两个 planet 接入时网段/IP 冲突
+            // 最要紧,故不按 nwid 跳过,仅排除本 planet 自身的网络
+            if *pid == self.planet_id {
                 continue;
             }
             let nets: Vec<String> = subnets
@@ -360,9 +361,10 @@ fn start_failed(state: &AppState, pid: &str, message: &str) -> String {
 pub async fn stop_planet(state: &AppState, id: &str) -> bool {
     // 与 start_planet 同一门闩,防启停交叠
     let _gate = state.runtime_gate.lock().await;
-    // 先短锁取运行时,锁即释放:后续任何路径都不得带着 planets 锁碰 registry
+    // 先短锁取运行时 Arc(不从 map 摘除,红线顺序见 teardown_runtime),锁即释放:
+    // 后续任何路径都不得带着 planets 锁碰 registry
     // (net_join 等是 registry → planets 的取用序,反向嵌套会成环)
-    let rt = state.planets.lock().unwrap().remove(id);
+    let rt = state.planets.lock().unwrap().get(id).cloned();
     let Some(rt) = rt else {
         // 无运行时但 registry 仍标 running:残留状态,纠正即可
         let mut reg = state.registry.lock().unwrap();
@@ -380,6 +382,20 @@ pub async fn stop_planet(state: &AppState, id: &str) -> bool {
         }
         return false;
     };
+    // 1. 置 stopping → 2. 拆设备面/关核心 → 3. 摘出 map → 4. registry + 事件
+    // (红线顺序集中在 teardown_runtime;摘出 map 后 handler 若仍持 Arc,其
+    //  node 槽位必空,join/leave 走「实例已停止」错误路径,查询按已停处理)
+    teardown_runtime(state, rt).await;
+    true
+}
+
+/// 对单个运行时执行红线收尾(调用方须已持 `runtime_gate`):
+/// stopping → plane.teardown_all → node.shutdown → 摘出 map → registry → 事件。
+/// stop_planet 走的正是这段;planets_delete 在 gate 内发现「running=false 但
+/// map 仍有运行时」的异常残留时也用它收尾,避免 NodeHandle 走 Drop 兜底。
+/// 停止期间 handler 仍可能持同一 Arc:node 槽位已空,join/leave 返回
+/// 「实例已停止」,查询一律按已停处理,不会 panic。
+async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>) {
     // 1. 置 stopping:sink 见即不再动设备;node 槽位取空(此后查询视为已停)
     rt.stopping.store(true, Ordering::SeqCst);
     let node = {
@@ -391,14 +407,16 @@ pub async fn stop_planet(state: &AppState, id: &str) -> bool {
     if let Some(node) = node {
         let _ = tokio::task::spawn_blocking(move || node.shutdown()).await;
     }
-    // 3. 快照/冲突缓存清理 + registry + 事件
+    // 3. 核心已停,此刻才从 map 摘除(gate 在手,map 内不会换入新运行时)
+    state.planets.lock().unwrap().remove(&rt.planet_id);
+    // 4. 快照/冲突缓存清理 + registry + 事件
     state
         .net_cache
         .lock()
         .unwrap()
-        .retain(|(p, _), _| p != id);
+        .retain(|(p, _), _| *p != rt.planet_id);
     let mut reg = state.registry.lock().unwrap();
-    if let Some(e) = reg.planets.iter_mut().find(|e| e.id == id) {
+    if let Some(e) = reg.planets.iter_mut().find(|e| e.id == rt.planet_id) {
         e.running = false;
         e.last_node_id = None;
     }
@@ -406,8 +424,21 @@ pub async fn stop_planet(state: &AppState, id: &str) -> bool {
         eprintln!("[runtime] registry 写盘失败: {e}");
     }
     drop(reg);
-    state.events.push(id, "planetStopped", "planet stopped");
-    true
+    state.events.push(&rt.planet_id, "planetStopped", "planet stopped");
+}
+
+/// 已持 `runtime_gate` 的调用方(如 planets_delete)用:该 id 若仍有运行时
+/// 残留(running=false 但 map 未清),按红线收尾,避免 NodeHandle 走 Drop 兜底。
+/// 返回是否收尾了运行时。
+pub async fn teardown_leftover(state: &AppState, id: &str) -> bool {
+    let rt = state.planets.lock().unwrap().get(id).cloned();
+    match rt {
+        Some(rt) => {
+            teardown_runtime(state, rt).await;
+            true
+        }
+        None => false,
+    }
 }
 
 /// 各 planet 的实时状态快照(GET /status、/planets、/planets/{id} 共用)。

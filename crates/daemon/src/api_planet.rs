@@ -445,23 +445,35 @@ pub async fn planets_delete(
     State(st): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiErr> {
-    let mut reg = st.registry.lock().unwrap();
-    let i = find_entry_mut(&mut reg, &id)?;
-    if reg.planets[i].running {
-        return Err(err(
-            StatusCode::CONFLICT,
-            "planetRunning",
-            &format!(
-                "planet \"{}\" is running; stop it before deleting",
-                name_of(&reg.planets[i])
-            ),
-            None,
-        ));
-    }
-    let removed = reg.planets.remove(i);
+    // 先取启停门闩:start_planet 全程持门闩(先插 map 再置 running=true),
+    // 拿到门闩后 running 判定即不含并发 start 的半途态,杜绝「delete 读到
+    // running=false 却把刚插入的运行时整条 remove → NodeHandle 走 Drop 兜底」
+    let _gate = st.runtime_gate.lock().await;
+    // registry 锁收在内层块:块结束即放锁,await 期间不持有(registry 锁纪律)
+    let removed = {
+        let mut reg = st.registry.lock().unwrap();
+        let i = find_entry_mut(&mut reg, &id)?;
+        if reg.planets[i].running {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "planetRunning",
+                &format!(
+                    "planet \"{}\" is running; stop it before deleting",
+                    name_of(&reg.planets[i])
+                ),
+                None,
+            ));
+        }
+        let removed = reg.planets.remove(i);
+        reg.save(&st.config_dir)
+            .map_err(|e| internal(format!("cannot save registry: {e}")))?;
+        removed
+    };
     let pid = removed.id.clone();
-    reg.save(&st.config_dir)
-        .map_err(|e| internal(format!("cannot save registry: {e}")))?;
+
+    // 异常残留(running=false 但 map 仍有运行时)按红线收尾,不让 Drop 兜底;
+    // 正常路径此处无运行时,等于一次空移除
+    runtime::teardown_leftover(&st, &pid).await;
 
     // planet 文件必删;data 目录只在「canonicalize 后严格位于 config_dir 内」才整目录删除。
     // 两侧都 canonicalize(macOS 下 /var → /private/var),并把 data_dir == config_dir
