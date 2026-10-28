@@ -54,12 +54,13 @@ impl Client {
         Ok(Self { agent, base, token })
     }
 
-    fn request(
+    /// 底层请求:返回状态码与原始字节,文本/二进制端点共用同一错误语义
+    fn request_bytes(
         &self,
         method: &str,
         path: &str,
         body: Option<&Value>,
-    ) -> Result<(u16, String), CliError> {
+    ) -> Result<(u16, Vec<u8>), CliError> {
         let url = format!("{}{}", self.base, path);
         // ureq 3.5 无 Agent::request(method, url),改用 http::Request + agent.run()
         let mut builder = ureq::http::Request::builder()
@@ -77,10 +78,21 @@ impl Client {
         // 连接失败统一视为 daemon 不在线(退出码 3)
         let mut resp = self.agent.run(req).map_err(|_| CliError::Offline)?;
         let status = resp.status().as_u16();
-        let text = resp
+        let buf = resp
             .body_mut()
-            .read_to_string()
+            .read_to_vec()
             .map_err(|e| CliError::Io(e.to_string()))?;
+        Ok((status, buf))
+    }
+
+    fn request(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<(u16, String), CliError> {
+        let (status, buf) = self.request_bytes(method, path, body)?;
+        let text = String::from_utf8_lossy(&buf).into_owned();
         Ok((status, text))
     }
 
@@ -129,21 +141,13 @@ impl Client {
         let (c, t) = self.request("DELETE", path, None)?;
         self.parse(c, t)
     }
+    /// GET 二进制端点(如 planet export);非 2xx 走 ApiError,仅传输错误才算 Offline
     pub fn get_bytes(&self, path: &str) -> Result<Vec<u8>, CliError> {
-        let url = format!("{}{}", self.base, path);
-        let mut resp = self
-            .agent
-            .get(&url)
-            .header("X-ZT1-Auth", &self.token)
-            .call()
-            .map_err(|_| CliError::Offline)?;
-        if !resp.status().is_success() {
-            return Err(CliError::Offline);
+        let (c, buf) = self.request_bytes("GET", path, None)?;
+        if (200..300).contains(&c) {
+            Ok(buf)
+        } else {
+            Err(Self::api_error(c, String::from_utf8_lossy(&buf).into_owned()))
         }
-        let buf = resp
-            .body_mut()
-            .read_to_vec()
-            .map_err(|e| CliError::Io(e.to_string()))?;
-        Ok(buf)
     }
 }
