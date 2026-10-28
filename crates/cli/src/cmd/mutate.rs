@@ -1,63 +1,118 @@
-// 变更类命令与 moon 子命令,内容见 Task 6
 use crate::client::{CliError, Client};
+use crate::output::print_json;
+use clap::Subcommand;
+use planet_port_api::endpoints;
+use serde_json::{json, Value};
 
-#[derive(Debug, clap::Subcommand)]
-pub enum MoonCmd {
-    /// 成员定义见 Task 6,先以隐藏占位保证骨架可编译
-    #[command(hide = true)]
-    Placeholder,
+/// 变更类命令:成功打印 "<code> <verb> OK";-j 输出响应体
+fn ok(code: u16, verb: &str, json: bool, body: &Value) {
+    if json {
+        print_json(body);
+    } else {
+        println!("{code} {verb} OK");
+    }
 }
 
-pub fn join(
-    _client: &Client,
-    _nwid: &str,
-    _planet: &Option<String>,
-    _json: bool,
-) -> Result<(), CliError> {
-    todo!("Task 6")
+pub fn join(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
+    let _ = client.post_empty(&endpoints::network_join(nwid, planet.as_deref()))?;
+    ok(200, "join", json, &Value::Null);
+    Ok(())
 }
-pub fn leave(
-    _client: &Client,
-    _nwid: &str,
-    _planet: &Option<String>,
-    _json: bool,
-) -> Result<(), CliError> {
-    todo!("Task 6")
+
+pub fn leave(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
+    let _ = client.post_empty(&endpoints::network_leave(nwid, planet.as_deref()))?;
+    ok(200, "leave", json, &Value::Null);
+    Ok(())
 }
+
 pub fn set(
-    _client: &Client,
-    _nwid: &str,
-    _values: &[String],
-    _planet: &Option<String>,
-    _json: bool,
+    client: &Client,
+    nwid: &str,
+    values: &[String],
+    planet: &Option<String>,
+    json: bool,
 ) -> Result<(), CliError> {
-    todo!("Task 6")
+    let mut body = serde_json::Map::new();
+    for v in values {
+        let (k, val) = v
+            .split_once('=')
+            .ok_or_else(|| CliError::Usage(format!("expected key=value, got \"{v}\"")))?;
+        match k {
+            "routeViaZeroTier" => {
+                body.insert(k.into(), json!(val == "1"));
+            }
+            "dnsMode" => {
+                if !matches!(val, "none" | "network" | "custom") {
+                    return Err(CliError::Usage(format!(
+                        "dnsMode must be none|network|custom, got \"{val}\""
+                    )));
+                }
+                body.insert(k.into(), json!(val));
+            }
+            "customDns" => {
+                let list: Vec<String> = val.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+                body.insert(k.into(), json!(list));
+            }
+            _ => {
+                return Err(CliError::Usage(format!(
+                    "unknown key \"{k}\"; valid: routeViaZeroTier, dnsMode, customDns"
+                )));
+            }
+        }
+    }
+    let resp = client.post_json(&endpoints::network_set(nwid, planet.as_deref()), &Value::Object(body))?;
+    ok(200, "set", json, &resp);
+    Ok(())
 }
+
 pub fn orbit(
-    _client: &Client,
-    _moon_id: &str,
-    _seed: &str,
-    _planet: &Option<String>,
-    _json: bool,
+    client: &Client,
+    moon_id: &str,
+    seed: &str,
+    planet: &Option<String>,
+    json: bool,
 ) -> Result<(), CliError> {
-    todo!("Task 6")
+    let body = json!({ "seed": seed });
+    let _ = client.post_json(&endpoints::moon_orbit(moon_id, planet.as_deref()), &body)?;
+    ok(200, "orbit", json, &Value::Null);
+    Ok(())
 }
-pub fn deorbit(
-    _client: &Client,
-    _moon_id: &str,
-    _planet: &Option<String>,
-    _json: bool,
-) -> Result<(), CliError> {
-    todo!("Task 6")
+
+pub fn deorbit(client: &Client, moon_id: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
+    let _ = client.delete(&endpoints::moon_deorbit(moon_id, planet.as_deref()))?;
+    ok(200, "deorbit", json, &Value::Null);
+    Ok(())
 }
-pub fn dump(_client: &Client, _planet: &Option<String>, _json: bool) -> Result<(), CliError> {
-    todo!("Task 6")
+
+pub fn dump(client: &Client, planet: &Option<String>, json: bool) -> Result<(), CliError> {
+    // /dump 契约返回纯文本,须按文本读取;JSON 模式包装为字符串输出
+    let s = client.get_text(&endpoints::dump(planet.as_deref()))?;
+    if json {
+        print_json(&json!(s));
+    } else {
+        println!("{s}");
+    }
+    Ok(())
 }
+
+#[derive(Subcommand)]
+pub enum MoonCmd {
+    /// Import a .moon file
+    Import { source: String },
+}
+
 pub fn run_moon(
-    _client: &Client,
-    _cmd: &MoonCmd,
-    _planet: &Option<String>,
-    _json: bool,
+    client: &Client,
+    cmd: &MoonCmd,
+    planet: &Option<String>,
+    json: bool,
 ) -> Result<(), CliError> {
-    todo!("Task 6")
+    match cmd {
+        MoonCmd::Import { source } => {
+            let body = json!({ "source": source });
+            let resp = client.post_json(&endpoints::moons(planet.as_deref()), &body)?;
+            ok(201, "moon import", json, &resp);
+            Ok(())
+        }
+    }
 }

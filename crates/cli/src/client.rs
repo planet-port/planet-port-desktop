@@ -88,18 +88,30 @@ impl Client {
         if (200..300).contains(&code) {
             Ok(serde_json::from_str(&text).unwrap_or(Value::Null))
         } else {
-            let api = serde_json::from_str(&text).unwrap_or(ApiError {
-                error: format!("http{code}"),
-                message: text,
-                candidates: None,
-            });
-            Err(CliError::Api(code, api))
+            Err(Self::api_error(code, text))
         }
     }
 
     pub fn get_json(&self, path: &str) -> Result<Value, CliError> {
         let (c, t) = self.request("GET", path, None)?;
         self.parse(c, t)
+    }
+    /// GET 纯文本端点(如 /dump),2xx 返回正文,非 2xx 仍走 ApiError 解析
+    pub fn get_text(&self, path: &str) -> Result<String, CliError> {
+        let (c, t) = self.request("GET", path, None)?;
+        if (200..300).contains(&c) {
+            Ok(t)
+        } else {
+            Err(Self::api_error(c, t))
+        }
+    }
+    fn api_error(code: u16, text: String) -> CliError {
+        let api = serde_json::from_str(&text).unwrap_or(ApiError {
+            error: format!("http{code}"),
+            message: text,
+            candidates: None,
+        });
+        CliError::Api(code, api)
     }
     pub fn post_empty(&self, path: &str) -> Result<Value, CliError> {
         let (c, t) = self.request("POST", path, None)?;
