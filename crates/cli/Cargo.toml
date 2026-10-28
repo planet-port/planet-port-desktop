@@ -1,0 +1,13 @@
+[package]
+name = "planet-port"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+ureq = "3"
+comfy-table = "7"
+serde.workspace = true
+serde_json.workspace = true
+planet-port-api = { path = "../api" }
