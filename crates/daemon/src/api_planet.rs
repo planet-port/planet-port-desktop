@@ -177,8 +177,8 @@ pub async fn planets_import(
     State(st): State<AppState>,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiErr> {
-    // 一期不支持容器导入(README 注明);出现 container 字段即明确拒绝
-    if body.get("container").is_some() {
+    // 一期不支持容器导入(README 注明);container 为字符串即明确拒绝(与 mockd 判定一致)
+    if body.get("container").and_then(|v| v.as_str()).is_some() {
         return Err(err(
             StatusCode::NOT_IMPLEMENTED,
             "notImplemented",
@@ -193,7 +193,7 @@ pub async fn planets_import(
             err(
                 StatusCode::BAD_REQUEST,
                 "badRequest",
-                "body must contain \"source\"",
+                "body must contain \"source\" or \"container\"",
                 None,
             )
         })?;
@@ -207,6 +207,27 @@ pub async fn planets_import(
         ));
     }
 
+    // 先看大小再读入,避免为超限文件白白吃内存
+    let meta = fs::metadata(source).map_err(|e| {
+        err(
+            StatusCode::BAD_REQUEST,
+            "sourceUnreadable",
+            &format!("cannot read source file \"{source}\": {e}"),
+            None,
+        )
+    })?;
+    if meta.len() > world::MAX_WORLD_BYTES as u64 {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "fileTooLarge",
+            &format!(
+                "planet file is {} bytes, limit is {} bytes",
+                meta.len(),
+                world::MAX_WORLD_BYTES
+            ),
+            None,
+        ));
+    }
     let bytes = fs::read(source).map_err(|e| {
         err(
             StatusCode::BAD_REQUEST,
@@ -285,17 +306,23 @@ pub async fn planets_import(
         .map_err(|e| internal(format!("cannot create planets dir: {e}")))?;
     fs::write(&dest, &bytes).map_err(|e| internal(format!("cannot write {}: {e}", dest.display())))?;
 
-    // dataDir 覆写:统一转绝对路径;默认 <config>/data/<worldId>/
+    // dataDir 覆写:先建目录再 canonicalize,registry 只存归一化后的绝对路径
+    // (杜绝 `..`/相对路径混入,DELETE 侧的目录守卫才能做可靠的逐组件比较);
+    // 缺省 <config>/data/<worldId>/(config_dir 启动时已 canonicalize,本身即安全)
     let data_dir = match body.get("dataDir").and_then(|v| v.as_str()) {
         Some(d) if !d.is_empty() => {
             let pb = PathBuf::from(d);
-            if pb.is_absolute() {
+            let pb = if pb.is_absolute() {
                 pb
             } else {
                 std::env::current_dir()
                     .unwrap_or_else(|_| PathBuf::from("."))
                     .join(pb)
-            }
+            };
+            fs::create_dir_all(&pb)
+                .map_err(|e| internal(format!("cannot create data dir {}: {e}", pb.display())))?;
+            fs::canonicalize(&pb)
+                .map_err(|e| internal(format!("cannot resolve data dir {}: {e}", pb.display())))?
         }
         _ => st.config_dir.join("data").join(&id),
     };
@@ -413,11 +440,18 @@ pub async fn planets_delete(
     reg.save(&st.config_dir)
         .map_err(|e| internal(format!("cannot save registry: {e}")))?;
 
-    // planet 文件必删;data 目录仅在 config_dir 前缀内才整目录删除
-    // (用户覆写的自定义 dataDir 只摘记录、绝不动文件)
+    // planet 文件必删;data 目录只在「canonicalize 后严格位于 config_dir 内」才整目录删除。
+    // 两侧都 canonicalize(macOS 下 /var → /private/var),并把 data_dir == config_dir
+    // 视为非法配置:此时只摘记录、绝不动 config 目录本身(registry.json/token 都在里面)。
+    // canonicalize 已解析符号链接与 `..`,之后 Path::starts_with 的逐组件比较即安全。
     let _ = fs::remove_file(planet_bin_path(&st, &pid));
-    if removed.data_dir.starts_with(&st.config_dir) {
-        let _ = fs::remove_dir_all(&removed.data_dir);
+    if let (Ok(cfg), Ok(dd)) = (
+        fs::canonicalize(&st.config_dir),
+        fs::canonicalize(&removed.data_dir),
+    ) {
+        if dd.starts_with(&cfg) && dd != cfg {
+            let _ = fs::remove_dir_all(&dd);
+        }
     }
     st.planets.lock().unwrap().remove(&pid);
 

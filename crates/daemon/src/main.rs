@@ -118,6 +118,15 @@ async fn main() {
         eprintln!("无法创建配置目录 {}: {e}", dir.display());
         std::process::exit(1);
     }
+    // 归一化为绝对路径(macOS 下 /var → /private/var):后续 planet dataDir 守卫
+    // 依赖两侧 canonicalize 后的逐组件比较,启动时定死一次即可
+    let dir = match fs::canonicalize(&dir) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("无法解析配置目录 {}: {e}", dir.display());
+            std::process::exit(1);
+        }
+    };
     let token_path = dir.join("authtoken.secret");
     let port_path = dir.join("port");
 
