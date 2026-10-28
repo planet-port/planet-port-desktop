@@ -105,14 +105,16 @@ fn install() {
         std::process::exit(1);
     }
 
-    // 3. 装载(RunAtLoad=true 但 KeepAlive=false,装载本身不拉起进程)
+    // 3. 装载(RunAtLoad=true:bootstrap 装载即拉起一次,随开机自动启动;
+    //    KeepAlive=false:进程退出后 launchd 不自动重启)
     launchctl(&["bootstrap", "system/", PLIST_PATH]);
 
     println!("已安装 LaunchDaemon {LABEL}");
     println!("  二进制: {BIN_PATH}");
     println!("  配置:   {PLIST_PATH}");
     println!("  数据:   {APP_DIR}");
-    println!("下一步: sudo planet-port service start 启动 daemon");
+    println!("daemon 已随装载启动(RunAtLoad=true),无需再执行 start;");
+    println!("仅手动 stop 或退出后需要拉起时: sudo planet-port service start");
 }
 
 fn uninstall() {

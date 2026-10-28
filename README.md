@@ -70,9 +70,8 @@ planet 实例,按以下顺序解析:
 |---|---|
 | 0 | 成功 |
 | 1 | 运行错误(API 4xx/5xx、IO 错误) |
-| 2 | 用法错误(非法参数、未知 set key)与 planet 歧义(409 + 候选列表) |
+| 2 | 用法错误(非法参数、未知 set key)、planet 歧义(409 + 候选列表)、service 组需 root(install/uninstall/start/stop 未以 root 运行) |
 | 3 | daemon 不在线,提示 `planet-portd is not running (try: planet-port service start)` |
-| 2 |(service 组)install/uninstall/start/stop 未以 root 运行 |
 
 ## 命令参考
 

@@ -126,23 +126,26 @@ fn parse_args() -> Option<PathBuf> {
 /// 在途请求不会被打断,也不被收尾无限拖住(收尾本身有界)。
 async fn shutdown(state: AppState, port_path: PathBuf) {
     use tokio::signal::unix::{signal, SignalKind};
-    let mut term = match signal(SignalKind::terminate()) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("[shutdown] 注册 SIGTERM 监听失败: {e}");
-            return;
-        }
-    };
-    let mut int = match signal(SignalKind::interrupt()) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("[shutdown] 注册 SIGINT 监听失败: {e}");
-            return;
-        }
-    };
+    // 任一信号注册失败都不能让 shutdown future 立即 resolve(否则 daemon 会
+    // 静默退出):注册成功的信号继续监听,全部失败则永不返回,daemon 持续服务
+    let mut term = signal(SignalKind::terminate()).ok();
+    let mut int = signal(SignalKind::interrupt()).ok();
+    if term.is_none() {
+        eprintln!("[shutdown] 注册 SIGTERM 监听失败,SIGTERM 优雅退出不可用");
+    }
+    if int.is_none() {
+        eprintln!("[shutdown] 注册 SIGINT 监听失败,SIGINT 优雅退出不可用");
+    }
+    if term.is_none() && int.is_none() {
+        eprintln!("[shutdown] 信号监听全部不可用,daemon 将持续运行直至被强制结束");
+        std::future::pending::<()>().await;
+        unreachable!()
+    }
     tokio::select! {
-        _ = term.recv() => eprintln!("[shutdown] 收到 SIGTERM,开始优雅退出"),
-        _ = int.recv() => eprintln!("[shutdown] 收到 SIGINT,开始优雅退出"),
+        _ = term.as_mut().unwrap().recv(), if term.is_some() =>
+            eprintln!("[shutdown] 收到 SIGTERM,开始优雅退出"),
+        _ = int.as_mut().unwrap().recv(), if int.is_some() =>
+            eprintln!("[shutdown] 收到 SIGINT,开始优雅退出"),
     }
     // 待停清单先克隆(短锁):id 取 registry 中标记 running 的(含上次启动
     // 失败的残留,stop_planet 会纠正),再并入运行时 map 中可能多出的 id
