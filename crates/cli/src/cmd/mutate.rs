@@ -32,6 +32,11 @@ pub fn set(
     planet: &Option<String>,
     json: bool,
 ) -> Result<(), CliError> {
+    if values.is_empty() {
+        return Err(CliError::Usage(
+            "set requires at least one key=value (routeViaZeroTier, dnsMode, customDns)".into(),
+        ));
+    }
     let mut body = serde_json::Map::new();
     for v in values {
         let (k, val) = v
@@ -39,6 +44,11 @@ pub fn set(
             .ok_or_else(|| CliError::Usage(format!("expected key=value, got \"{v}\"")))?;
         match k {
             "routeViaZeroTier" => {
+                if !matches!(val, "0" | "1") {
+                    return Err(CliError::Usage(format!(
+                        "routeViaZeroTier must be 0|1, got \"{val}\""
+                    )));
+                }
                 body.insert(k.into(), json!(val == "1"));
             }
             "dnsMode" => {
