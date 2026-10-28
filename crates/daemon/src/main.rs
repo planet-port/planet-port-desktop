@@ -120,6 +120,62 @@ fn parse_args() -> Option<PathBuf> {
     config_dir
 }
 
+/// 优雅退出:SIGINT/SIGTERM → 逐 planet 走 stop_planet 红线收尾 → registry
+/// 兜底落盘 → 最后删 port 文件(存在即活性信号,CLI 据此快速判断)。
+/// 作为 `with_graceful_shutdown` 的 future 传入:收尾在服务停止前完成,
+/// 在途请求不会被打断,也不被收尾无限拖住(收尾本身有界)。
+async fn shutdown(state: AppState, port_path: PathBuf) {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut term = match signal(SignalKind::terminate()) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[shutdown] 注册 SIGTERM 监听失败: {e}");
+            return;
+        }
+    };
+    let mut int = match signal(SignalKind::interrupt()) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[shutdown] 注册 SIGINT 监听失败: {e}");
+            return;
+        }
+    };
+    tokio::select! {
+        _ = term.recv() => eprintln!("[shutdown] 收到 SIGTERM,开始优雅退出"),
+        _ = int.recv() => eprintln!("[shutdown] 收到 SIGINT,开始优雅退出"),
+    }
+    // 待停清单先克隆(短锁):id 取 registry 中标记 running 的(含上次启动
+    // 失败的残留,stop_planet 会纠正),再并入运行时 map 中可能多出的 id
+    let mut ids: Vec<String> = state
+        .registry
+        .lock()
+        .unwrap()
+        .planets
+        .iter()
+        .filter(|e| e.running)
+        .map(|e| e.id.clone())
+        .collect();
+    for id in state.planets.lock().unwrap().keys().cloned().collect::<Vec<_>>() {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    for id in &ids {
+        eprintln!("[shutdown] 停止 planet {id}");
+        runtime::stop_planet(&state, id).await;
+    }
+    // registry 在每次变更/停止时均已落盘,此处兜底再存一次
+    if let Err(e) = state.registry.lock().unwrap().save(&state.config_dir) {
+        eprintln!("[shutdown] registry 兜底写盘失败: {e}");
+    }
+    if let Err(e) = fs::remove_file(&port_path) {
+        if e.kind() != ErrorKind::NotFound {
+            eprintln!("[shutdown] 删除 port 文件失败: {e}");
+        }
+    }
+    eprintln!("[shutdown] 完成");
+}
+
 #[tokio::main]
 async fn main() {
     // 1. config dir:--config-dir 覆盖 env/系统目录/用户目录三级解析
@@ -218,10 +274,15 @@ async fn main() {
         .merge(api_misc::router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_mw))
         .route("/share/{token}", get(api_planet::share_download))
-        .with_state(state);
+        .with_state(state.clone());
     println!(
         "planet-portd listening on http://127.0.0.1:{port} (config_dir: {})",
         dir.display()
     );
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown(state, port_path))
+        .await
+        .unwrap();
+    // 信号收尾完成后显式 exit 0:确保服务型运行(launchd)看到干净的退出码
+    std::process::exit(0);
 }
