@@ -21,8 +21,6 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-// push/tail 在 Task 3/4 的事件上报与 GET /events 接线后启用
-#[allow(dead_code)]
 impl Ring {
     pub fn new() -> Self {
         Self {

@@ -199,6 +199,18 @@ pub struct NodeHandle {
     shut_down: bool,
 }
 
+// SAFETY:句柄仅由裸指针 + JoinHandle + bool 组成,可跨线程转移/共享,前提:
+// - process*(含全部回调出口消费)只在唯一驱动线程执行(本模块保证);
+// - join/leave/orbit/deorbit 经命令通道转发到驱动线程串行执行,查询类
+//   (networks/peers/status)在核心内部经 _networks_m/_backgroundTasksLock
+//   等互斥量保护(Core/node/Node.hpp),与驱动线程互斥,跨线程调用安全;
+// - dataStore/UDP 仅由驱动线程经回调触达;wake() 只对管道 fd 做 write(线程安全);
+// - shutdown 的 join 先于 ZT_Node_delete 的硬顺序不受调用线程影响。
+// 上层(daemon)据此可在 REST 工作线程持有句柄,并把 start/shutdown 放进
+// spawn_blocking。node/inner 指针不外借,调用方无其它形式触及。
+unsafe impl Send for NodeHandle {}
+unsafe impl Sync for NodeHandle {}
+
 /// CLOEXEC 管道两端(用 File 持有,drop 即关闭)。
 fn make_pipe() -> io::Result<(File, File)> {
     let mut fds = [0 as RawFd; 2];

@@ -1,10 +1,13 @@
 //! planet-portd:多 planet ZeroTier 桌面守护进程。
 //! config_dir 解析、token/port 文件、auth 中间件(常量时间 token 校验)、
-//! /version、/status;planet 生命周期端点见 api_planet.rs。
+//! /version、/status;planet 生命周期端点见 api_planet.rs,网络面见
+//! api_net.rs,实例运行时见 runtime.rs。
 
+mod api_net;
 mod api_planet;
 mod events;
 mod registry;
+mod runtime;
 mod state;
 mod world;
 
@@ -67,8 +70,14 @@ async fn version() -> Json<serde_json::Value> {
 }
 
 async fn status(State(st): State<AppState>) -> Json<serde_json::Value> {
+    // node 查询先于 registry 锁:持锁期间不做 node 调用(锁纪律)
+    let live = runtime::live_infos(&st);
     let reg = st.registry.lock().unwrap();
-    let items: Vec<PlanetStatus> = reg.planets.iter().map(api_planet::to_status).collect();
+    let items: Vec<PlanetStatus> = reg
+        .planets
+        .iter()
+        .map(|e| api_planet::to_status(e, live.get(&e.id)))
+        .collect();
     Json(serde_json::json!({ "planets": items }))
 }
 
@@ -175,15 +184,36 @@ async fn main() {
         registry: Arc::new(Mutex::new(registry::Registry::load(&dir))),
         events: Arc::new(events::Ring::new()),
         planets: Arc::new(Mutex::new(HashMap::new())),
+        runtime_gate: Arc::new(tokio::sync::Mutex::new(())),
+        net_cache: Arc::new(Mutex::new(HashMap::new())),
         shares: Arc::new(Mutex::new(HashMap::new())),
         token: Arc::new(token),
     };
+
+    // 5. 恢复:上次运行时标记 running=true 的逐个重启拉起;
+    //    失败(start_planet 内部已登记 planetStartFailed + running=false)则继续
+    let recover: Vec<registry::RegistryEntry> = state
+        .registry
+        .lock()
+        .unwrap()
+        .planets
+        .iter()
+        .filter(|e| e.running)
+        .cloned()
+        .collect();
+    for e in recover {
+        eprintln!("[boot] 恢复 planet {}(port {})", e.id, e.port);
+        if let Err(m) = runtime::start_planet(&state, &e).await {
+            eprintln!("[boot] planet {} 启动失败: {m}", e.id);
+        }
+    }
 
     // /share/<token> 在 auth 层之后挂载:分享链接本身即凭证,不走 X-ZT1-Auth
     let app = Router::new()
         .route("/version", get(version))
         .route("/status", get(status))
         .merge(api_planet::router())
+        .merge(api_net::router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_mw))
         .route("/share/{token}", get(api_planet::share_download))
         .with_state(state);

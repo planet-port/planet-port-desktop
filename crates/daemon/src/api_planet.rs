@@ -22,7 +22,8 @@ use planet_port_api::types::{PlanetDetail, PlanetKind, PlanetStatus, ShareLink};
 use serde_json::{json, Value};
 
 use crate::registry::{Registry, RegistryEntry};
-use crate::state::{err, AppState, ShareRecord};
+use crate::runtime;
+use crate::state::{err, AppState, LiveInfo, ShareRecord};
 use crate::world;
 
 fn now_unix() -> u64 {
@@ -50,12 +51,14 @@ fn not_found(id: &str) -> ApiErr {
 
 // ---- 投影 ----
 
-/// 列表项投影:无运行时信息,一律 online=false、core_version/latency/node_id 不下发
-/// (与 mockd to_status 的 offline 分支形态一致);source=builtin 视为官方 planet
-pub(crate) fn to_status(e: &RegistryEntry) -> PlanetStatus {
+/// 列表项投影:online/core_version/latency/node_id 取自运行时实时数据
+/// (无运行时一律 false/None,与 mockd 的 offline 分支形态一致);
+/// source=builtin 视为官方 planet
+pub(crate) fn to_status(e: &RegistryEntry, live: Option<&LiveInfo>) -> PlanetStatus {
+    let online = live.map(|l| l.online).unwrap_or(false);
     PlanetStatus {
         id: e.id.clone(),
-        name: e.name.clone().unwrap_or_else(|| e.id.clone()),
+        name: name_of(e),
         icon: e.icon.clone().unwrap_or_default(),
         color: e.color.clone().unwrap_or_default(),
         kind: if e.source == "builtin" {
@@ -64,20 +67,20 @@ pub(crate) fn to_status(e: &RegistryEntry) -> PlanetStatus {
             PlanetKind::Custom
         },
         status: if e.running { "running" } else { "stopped" }.into(),
-        online: false,
-        node_id: None,
-        core_version: None,
-        latency_ms: None,
-        network_count: e.net_local.len(),
+        online,
+        node_id: if online { Some(live.unwrap().node_id.clone()) } else { None },
+        core_version: if online { Some(live.unwrap().core_version.clone()) } else { None },
+        latency_ms: if online { live.unwrap().latency_ms } else { None },
+        network_count: live.map(|l| l.network_count).unwrap_or_else(|| e.net_local.len()),
         port: e.port,
     }
 }
 
 /// 详情投影:roots 来自导入时解析的 world 文件
-fn to_detail(e: &RegistryEntry) -> PlanetDetail {
+fn to_detail(e: &RegistryEntry, live: Option<&LiveInfo>) -> PlanetDetail {
     PlanetDetail {
         id: e.id.clone(),
-        name: e.name.clone().unwrap_or_else(|| e.id.clone()),
+        name: name_of(e),
         icon: e.icon.clone().unwrap_or_default(),
         color: e.color.clone().unwrap_or_default(),
         kind: if e.source == "builtin" {
@@ -91,14 +94,15 @@ fn to_detail(e: &RegistryEntry) -> PlanetDetail {
         revision_time_ms: e.revision_time_ms,
         last_node_id: e.last_node_id.clone(),
         source: e.source.clone(),
-        network_count: e.net_local.len(),
+        network_count: live.map(|l| l.network_count).unwrap_or_else(|| e.net_local.len()),
         port: e.port,
         status: if e.running { "running" } else { "stopped" }.into(),
-        online: false,
+        online: live.map(|l| l.online).unwrap_or(false),
     }
 }
 
-fn name_of(e: &RegistryEntry) -> String {
+/// 展示名(name 缺省回退 id)
+pub(crate) fn name_of(e: &RegistryEntry) -> String {
     e.name.clone().unwrap_or_else(|| e.id.clone())
 }
 
@@ -120,11 +124,28 @@ fn find_entry_mut(reg: &mut Registry, id: &str) -> Result<usize, ApiErr> {
         .ok_or_else(|| not_found(id))
 }
 
+/// 单 planet 的实时运行信息;node 查询在 registry 锁外做(锁纪律)。
+/// 未找到即 404(与 find_entry 同款),未运行 → Ok(None)。
+fn live_of(st: &AppState, id: &str) -> Result<Option<LiveInfo>, ApiErr> {
+    let cid = {
+        let reg = st.registry.lock().unwrap();
+        world::resolve_planet_id(&reg, id).ok_or_else(|| not_found(id))?
+    };
+    let live = crate::runtime::live_infos(st);
+    Ok(live.get(&cid).cloned())
+}
+
 // ---- GET /planets ----
 
 pub async fn planets_list(State(st): State<AppState>) -> Json<Value> {
+    // node 查询(online/peers/networks)先于 registry 锁:持锁期间不做 node 调用
+    let live = crate::runtime::live_infos(&st);
     let reg = st.registry.lock().unwrap();
-    let items: Vec<PlanetStatus> = reg.planets.iter().map(to_status).collect();
+    let items: Vec<PlanetStatus> = reg
+        .planets
+        .iter()
+        .map(|e| to_status(e, live.get(&e.id)))
+        .collect();
     Json(json!({ "planets": items }))
 }
 
@@ -348,7 +369,7 @@ pub async fn planets_import(
         net_local: Default::default(),
         moons: Vec::new(),
     };
-    let detail = to_detail(&entry);
+    let detail = to_detail(&entry, None);
     reg.planets.push(entry);
     reg.save(&st.config_dir)
         .map_err(|e| internal(format!("cannot save registry: {e}")))?;
@@ -374,9 +395,10 @@ pub async fn planets_show(
     State(st): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiErr> {
+    let live = live_of(&st, &id)?;
     let reg = st.registry.lock().unwrap();
     let e = find_entry(&reg, &id)?;
-    Ok(Json(json!({ "planet": to_detail(e) })))
+    Ok(Json(json!({ "planet": to_detail(e, live.as_ref()) })))
 }
 
 pub async fn planets_patch(
@@ -384,6 +406,7 @@ pub async fn planets_patch(
     Path(id): Path<String>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiErr> {
+    let live = live_of(&st, &id)?;
     let mut reg = st.registry.lock().unwrap();
     let i = find_entry_mut(&mut reg, &id)?;
     if let Some(n) = body.get("name").and_then(|v| v.as_str()) {
@@ -410,7 +433,7 @@ pub async fn planets_patch(
         reg.planets[i].color = Some(v.into());
     }
     let pid = reg.planets[i].id.clone();
-    let detail = to_detail(&reg.planets[i]);
+    let detail = to_detail(&reg.planets[i], live.as_ref());
     reg.save(&st.config_dir)
         .map_err(|e| internal(format!("cannot save registry: {e}")))?;
     st.events
@@ -463,45 +486,40 @@ pub async fn planets_delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ---- start / stop(Task 3 占位) ----
+// ---- start / stop ----
 
-/// TODO(task4):Task 4 接入 NodeRuntime 后,这里应真正拉起 zt-core 实例
-/// (加载 planets/<id>.bin、绑定 entry.port、初始化 data_dir 并回传运行中的
-/// PlanetDetail),而不是只翻转 registry.running 后返回 501。
 pub async fn planet_start(
     State(st): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiErr> {
-    let mut reg = st.registry.lock().unwrap();
-    let i = find_entry_mut(&mut reg, &id)?;
-    reg.planets[i].running = true;
-    let pid = reg.planets[i].id.clone();
-    reg.save(&st.config_dir)
-        .map_err(|e| internal(format!("cannot save registry: {e}")))?;
-    st.events.push(&pid, "planetStarted", "planet started");
-    // TODO(task4):运行时就绪后移除此占位响应,返回 {"planet": ...} 200
-    Err(err(
-        StatusCode::NOT_IMPLEMENTED,
-        "runtimeNotReady",
-        "planet runtime is not available in this build; state marked as started only",
-        None,
-    ))
+    // 定位 + 克隆 entry 后即放锁:start 内部不再取 registry 锁之外的等待,
+    // 但失败登记会写 registry/事件,不能在持锁时做
+    let entry = {
+        let reg = st.registry.lock().unwrap();
+        find_entry(&reg, &id)?.clone()
+    };
+    // 已在运行 → 幂等,直接返回当前详情
+    runtime::start_planet(&st, &entry)
+        .await
+        .map_err(|m| err(StatusCode::INTERNAL_SERVER_ERROR, "startFailed", &m, None))?;
+    let live = live_of(&st, &entry.id)?;
+    let reg = st.registry.lock().unwrap();
+    let e = find_entry(&reg, &id)?;
+    Ok(Json(json!({ "planet": to_detail(e, live.as_ref()) })))
 }
 
 pub async fn planet_stop(
     State(st): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiErr> {
-    let mut reg = st.registry.lock().unwrap();
-    let i = find_entry_mut(&mut reg, &id)?;
-    reg.planets[i].running = false;
-    reg.planets[i].last_node_id = None;
-    let pid = reg.planets[i].id.clone();
-    let detail = to_detail(&reg.planets[i]);
-    reg.save(&st.config_dir)
-        .map_err(|e| internal(format!("cannot save registry: {e}")))?;
-    st.events.push(&pid, "planetStopped", "planet stopped");
-    Ok(Json(json!({ "planet": detail })))
+    let pid = {
+        let reg = st.registry.lock().unwrap();
+        find_entry(&reg, &id)?.id.clone()
+    };
+    runtime::stop_planet(&st, &pid).await;
+    let reg = st.registry.lock().unwrap();
+    let e = find_entry(&reg, &id)?;
+    Ok(Json(json!({ "planet": to_detail(e, None) })))
 }
 
 // ---- export / share ----

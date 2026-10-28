@@ -1,0 +1,442 @@
+//! 实例运行时:PlanetRuntime 启停(start/stop)、DaemonSink(驱动线程侧
+//! 设备面 glue)、冲突检测与实时状态快照。
+//!
+//! # 线程与锁
+//!
+//! - DaemonSink 的全部方法在 zt-core 驱动线程被调:只做短临界区 Mutex
+//!   (plane/net_local/net_cache/conflicts/Ring)+ 设备操作,绝不调用
+//!   node.join/leave/orbit(阻塞应答 = 自等自死锁),绝不取 registry 锁;
+//! - start 在 `spawn_blocking` 执行(NodeHandle::start 含首次
+//!   processBackgroundTasks 与 identity 生成/装载,毫秒级阻塞);
+//! - stop 红线顺序:stopping=true → plane.teardown_all()(join 设备读线程)
+//!   → node.shutdown()(join 驱动线程 → ZT_Node_delete)→ 移出 map →
+//!   registry.running=false → 事件。shutdown 同样放 spawn_blocking。
+
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+
+use zt_core::{
+    DevicePlane, FrameInTxSlot, IpNet, NetConfig, NetConfigOp, NetStatus, NodeEvent, NodeHandle,
+    NodeParams, NodeSink,
+};
+
+use crate::events::Ring;
+use crate::registry::{NetLocal, RegistryEntry};
+use crate::state::{AppState, LiveInfo, NetCache, NetSnapshot, PlanetRuntime};
+
+/// nwid → NetLocal 的运行时镜像(sink 读,handler 写)
+pub type NetLocalCache = Arc<Mutex<HashMap<u64, NetLocal>>>;
+
+// ---- DaemonSink ----
+
+/// 每 planet 实例的 sink:驱动线程回调 → Ring 事件 + DevicePlane 设备操作。
+/// 字段全部为短临界区共享体;不持有 registry / planets 锁(见模块注释)。
+pub struct DaemonSink {
+    planet_id: String,
+    planet_name: String,
+    events: Arc<Ring>,
+    plane: Arc<Mutex<DevicePlane>>,
+    stopping: Arc<AtomicBool>,
+    /// 设备→核心帧通道槽位(start 完成后由 start_planet 填充)
+    frame_tx: FrameInTxSlot,
+    net_local: NetLocalCache,
+    /// 本网络冲突标记(与 PlanetRuntime.conflicts 同体共享)
+    conflicts: Arc<Mutex<HashMap<u64, String>>>,
+    /// 全部 planet 的网段快照(冲突扫描数据源)
+    net_cache: NetCache,
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+impl NodeSink for DaemonSink {
+    fn on_event(&mut self, ev: NodeEvent) {
+        // kind 一律 "status"(mockd 同款);Fatal 额外置 stopping(节点已不可用)
+        let (msg, fatal) = match ev {
+            NodeEvent::Up => ("节点已启动".to_string(), false),
+            NodeEvent::Online => ("节点上线".to_string(), false),
+            NodeEvent::Offline => ("节点离线".to_string(), false),
+            NodeEvent::Down => ("核心已停止".to_string(), false),
+            NodeEvent::IdentityCollision => ("身份冲突:与本 planet 已有节点地址相同".to_string(), true),
+            NodeEvent::Fatal(m) => (format!("致命错误: {m}"), true),
+        };
+        if fatal {
+            self.stopping.store(true, Ordering::SeqCst);
+        }
+        self.events.push(&self.planet_id, "status", &msg);
+    }
+
+    fn on_net_config(&mut self, nwid: u64, op: NetConfigOp, cfg: NetConfig) {
+        // stop 正在拆设备面:不再 apply/teardown,直接返回
+        if self.stopping.load(Ordering::SeqCst) {
+            return;
+        }
+        match op {
+            NetConfigOp::Down | NetConfigOp::Destroy => {
+                lock(&self.plane).teardown(nwid);
+                let cleared = lock(&self.net_cache).remove(&(self.planet_id.clone(), nwid)).is_some();
+                if cleared {
+                    self.clear_conflict(nwid);
+                }
+                let what = if op == NetConfigOp::Destroy { "销毁" } else { "停用" };
+                self.events.push(
+                    &self.planet_id,
+                    "netconf",
+                    &format!("网络 {nwid:016x} 已{what}"),
+                );
+            }
+            NetConfigOp::Up | NetConfigOp::ConfigUpdate => {
+                // routeViaZeroTier=false:仅存地址不装路由(清空 managed routes 再 apply)
+                let route_via = lock(&self.net_local)
+                    .get(&nwid)
+                    .map(|nl| nl.route_via_zero_tier)
+                    .unwrap_or(true);
+                let mut cfg = cfg;
+                if !route_via {
+                    cfg.routes.clear();
+                }
+                let r = lock(&self.plane).apply(&cfg, &self.frame_tx);
+                // 快照先行更新,再据此扫描冲突(快照即本网络的对外网段事实)
+                let had_conflict = self.update_snapshot(nwid, &cfg);
+                let hit = self.scan_conflicts(nwid, &cfg);
+                let status = status_name(&cfg.status);
+                let assigned: Vec<String> =
+                    cfg.assigned.iter().map(|a| format!("{}/{}", a.addr, a.prefix)).collect();
+                let msg = format!(
+                    "网络 {nwid:016x} status={status} rev={} assigned=[{}]",
+                    cfg.netconf_revision,
+                    assigned.join(", "),
+                );
+                self.events.push(&self.planet_id, "netconf", &msg);
+                // 只在状态翻转时报事件,避免每次 ConfigUpdate 刷屏
+                match (&hit, had_conflict) {
+                    (Some(h), false) => {
+                        self.events.push(&self.planet_id, "conflict", &h.message(nwid))
+                    }
+                    (None, true) => self.events.push(
+                        &self.planet_id,
+                        "conflict",
+                        &format!("网络 {nwid:016x} 网段冲突已消除"),
+                    ),
+                    _ => {}
+                }
+                if let Err(e) = r {
+                    self.events.push(
+                        &self.planet_id,
+                        "netconf",
+                        &format!("网络 {nwid:016x} 设备应用失败: {e}"),
+                    );
+                }
+            }
+        }
+    }
+
+    fn on_frame(&mut self, nwid: u64, src_mac: u64, dst_mac: u64, ether_type: u16, payload: &[u8]) {
+        // 方向:核心→设备(FrameIn 通道是反方向,互不混用)
+        if let Err(e) =
+            lock(&self.plane).send_frame(nwid, src_mac, dst_mac, ether_type, payload)
+        {
+            eprintln!("[sink {}] 帧写设备失败: {e}", self.planet_id);
+        }
+    }
+
+    fn local_ipv4s(&self) -> Vec<std::net::Ipv4Addr> {
+        lock(&self.plane).applied_v4s()
+    }
+}
+
+impl DaemonSink {
+    /// 更新本网络快照;返回「更新前是否带冲突标记」(供冲突消除事件判定)。
+    /// 仅 status=Ok 时登记(REQUESTING 等阶段 assigned/routes 无意义)。
+    fn update_snapshot(&self, nwid: u64, cfg: &NetConfig) -> bool {
+        let had = lock(&self.conflicts).contains_key(&nwid);
+        let mut cache = lock(&self.net_cache);
+        if cfg.status == NetStatus::Ok {
+            let mut subnets: Vec<IpNet> = cfg.assigned.clone();
+            subnets.extend(cfg.routes.iter().map(|r| r.target.clone()));
+            cache.insert(
+                (self.planet_id.clone(), nwid),
+                NetSnapshot {
+                    planet_name: self.planet_name.clone(),
+                    subnets,
+                    addrs: cfg.assigned.iter().map(|a| a.addr).collect(),
+                },
+            );
+        } else {
+            cache.remove(&(self.planet_id.clone(), nwid));
+        }
+        had
+    }
+
+    /// 冲突扫描:本网络网段与其它 planet 的快照网段重叠 → subnet;
+    /// 重叠且同 IP → address(address 级优先)。写入 conflicts 表并返回命中。
+    fn scan_conflicts(&self, nwid: u64, cfg: &NetConfig) -> Option<ConflictHit> {
+        let subnets: Vec<IpNet> = cfg
+            .assigned
+            .iter()
+            .cloned()
+            .chain(cfg.routes.iter().map(|r| r.target.clone()))
+            .collect();
+        let addrs: Vec<IpAddr> = cfg.assigned.iter().map(|a| a.addr).collect();
+        let cache = lock(&self.net_cache);
+        let mut found: Option<ConflictHit> = None;
+        for ((pid, nid), snap) in cache.iter() {
+            // 只与其它 planet 的其它网络比
+            if *pid == self.planet_id || *nid == nwid {
+                continue;
+            }
+            let nets: Vec<String> = subnets
+                .iter()
+                .filter(|s| snap.subnets.contains(*s))
+                .map(|s| format!("{}/{}", s.addr, s.prefix))
+                .collect();
+            if nets.is_empty() {
+                continue;
+            }
+            let level = if snap.addrs.iter().any(|a| addrs.contains(a)) {
+                "address"
+            } else {
+                "subnet"
+            };
+            let worse = found.as_ref().map(|f| f.level != "address").unwrap_or(true);
+            if worse {
+                found = Some(ConflictHit {
+                    level: level.to_string(),
+                    other_planet: snap.planet_name.clone(),
+                    other_planet_id: pid.clone(),
+                    subnets: nets,
+                });
+            }
+        }
+        drop(cache);
+        if let Some(h) = &found {
+            lock(&self.conflicts).insert(nwid, h.level.clone());
+        } else {
+            lock(&self.conflicts).remove(&nwid);
+        }
+        found
+    }
+
+    /// 冲突标记清除(Down/Destroy 或冲突消除)
+    fn clear_conflict(&self, nwid: u64) {
+        lock(&self.conflicts).remove(&nwid);
+    }
+}
+
+/// 一次冲突命中的详情(事件文案 + conflicts 表的级别标记)
+struct ConflictHit {
+    /// "subnet" | "address"
+    level: String,
+    other_planet: String,
+    other_planet_id: String,
+    /// 重叠网段,"a.b.c.d/p"
+    subnets: Vec<String>,
+}
+
+impl ConflictHit {
+    fn message(&self, nwid: u64) -> String {
+        format!(
+            "网络 {nwid:016x} 与 planet \"{}\"({})网段冲突({}):{}",
+            self.other_planet,
+            self.other_planet_id,
+            self.level,
+            self.subnets.join(", ")
+        )
+    }
+}
+
+/// NetStatus → mockd 同款大写蛇形字符串
+pub fn status_name(s: &NetStatus) -> &'static str {
+    match s {
+        NetStatus::RequestingConfiguration => "REQUESTING_CONFIGURATION",
+        NetStatus::Ok => "OK",
+        NetStatus::AccessDenied => "ACCESS_DENIED",
+        NetStatus::NotFound => "NOT_FOUND",
+        NetStatus::PortError => "PORT_ERROR",
+        NetStatus::ClientTooOld => "CLIENT_TOO_OLD",
+        NetStatus::AuthenticationRequired => "AUTHENTICATION_REQUIRED",
+    }
+}
+
+// ---- start / stop ----
+
+/// 拉起一个 planet 实例。失败时已完成登记(事件 planetStartFailed +
+/// registry.running=false),调用方拿 Err(message) 转 REST 错误即可。
+/// 已在运行则幂等成功。
+pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(), String> {
+    // 启停全程持门闩:防并发双 start 双实例(后者覆盖前者即泄漏线程/端口)
+    let _gate = state.runtime_gate.lock().await;
+    let pid = entry.id.clone();
+    if state.planets.lock().unwrap().contains_key(&pid) {
+        return Ok(());
+    }
+    let planet_file = state.config_dir.join("planets").join(format!("{pid}.bin"));
+    let plane = Arc::new(Mutex::new(DevicePlane::new()));
+    let frame_tx: FrameInTxSlot = Arc::new(OnceLock::new());
+    let stopping = Arc::new(AtomicBool::new(false));
+    let conflicts = Arc::new(Mutex::new(HashMap::new()));
+    // registry.net_local(nwid hex 字符串键)→ 运行时镜像(u64 键);非法键跳过
+    let net_local: NetLocalCache = Arc::new(Mutex::new(
+        entry
+            .net_local
+            .iter()
+            .filter_map(|(k, v)| u64::from_str_radix(k, 16).ok().map(|n| (n, v.clone())))
+            .collect(),
+    ));
+    let sink = DaemonSink {
+        planet_id: pid.clone(),
+        planet_name: crate::api_planet::name_of(entry),
+        events: Arc::clone(&state.events),
+        plane: Arc::clone(&plane),
+        stopping: Arc::clone(&stopping),
+        frame_tx: Arc::clone(&frame_tx),
+        net_local: Arc::clone(&net_local),
+        conflicts: Arc::clone(&conflicts),
+        net_cache: Arc::clone(&state.net_cache),
+    };
+    let params = NodeParams {
+        data_dir: entry.data_dir.clone(),
+        planet_file,
+        bind_port: entry.port,
+    };
+    // start 含首次 processBackgroundTasks(阻塞),放阻塞线程池
+    let node = tokio::task::spawn_blocking(move || {
+        NodeHandle::start(params, sink).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("启动任务失败: {e}"))?
+    .map_err(|e| start_failed(state, &pid, &e.to_string()))?;
+
+    frame_tx
+        .set(node.frame_in_tx())
+        .map_err(|_| "FrameInTx 槽位已占用".to_string())
+        .map_err(|m| start_failed(state, &pid, &m))?;
+
+    let node_id = format!("{:010x}", node.address());
+    state.planets.lock().unwrap().insert(
+        pid.clone(),
+        Arc::new(PlanetRuntime {
+            planet_id: pid.clone(),
+            node: Mutex::new(Some(node)),
+            plane,
+            stopping,
+            conflicts,
+            net_local,
+        }),
+    );
+    {
+        let mut reg = state.registry.lock().unwrap();
+        if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
+            e.running = true;
+            e.last_node_id = Some(node_id);
+        }
+        if let Err(e) = reg.save(&state.config_dir) {
+            eprintln!("[runtime] registry 写盘失败: {e}");
+        }
+    }
+    state.events.push(&pid, "planetStarted", "planet started");
+    Ok(())
+}
+
+/// 启动失败登记:事件 planetStartFailed + registry.running=false(重启恢复
+/// 与 REST 共用),返回 message 供上层转错误体。
+fn start_failed(state: &AppState, pid: &str, message: &str) -> String {
+    state.events.push(pid, "planetStartFailed", message);
+    let mut reg = state.registry.lock().unwrap();
+    if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
+        e.running = false;
+    }
+    if let Err(e) = reg.save(&state.config_dir) {
+        eprintln!("[runtime] registry 写盘失败: {e}");
+    }
+    message.to_string()
+}
+
+/// 停一个 planet 实例(红线顺序)。返回 false = 本就未运行(幂等)。
+/// registry 中 running=true 但运行时缺失的残留(如上次启动失败)也会被纠正。
+pub async fn stop_planet(state: &AppState, id: &str) -> bool {
+    // 与 start_planet 同一门闩,防启停交叠
+    let _gate = state.runtime_gate.lock().await;
+    // 先短锁取运行时,锁即释放:后续任何路径都不得带着 planets 锁碰 registry
+    // (net_join 等是 registry → planets 的取用序,反向嵌套会成环)
+    let rt = state.planets.lock().unwrap().remove(id);
+    let Some(rt) = rt else {
+        // 无运行时但 registry 仍标 running:残留状态,纠正即可
+        let mut reg = state.registry.lock().unwrap();
+        if let Some(e) = reg.planets.iter_mut().find(|e| e.id == id) {
+            if e.running {
+                e.running = false;
+                e.last_node_id = None;
+                if let Err(err) = reg.save(&state.config_dir) {
+                    eprintln!("[runtime] registry 写盘失败: {err}");
+                }
+                drop(reg);
+                state.events.push(id, "planetStopped", "planet stopped");
+                return true;
+            }
+        }
+        return false;
+    };
+    // 1. 置 stopping:sink 见即不再动设备;node 槽位取空(此后查询视为已停)
+    rt.stopping.store(true, Ordering::SeqCst);
+    let node = {
+        let mut g = rt.node.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        g.take()
+    };
+    // 2. 先拆设备面(join 全部设备读线程),再关核心(join 驱动线程 → delete)
+    lock(&rt.plane).teardown_all();
+    if let Some(node) = node {
+        let _ = tokio::task::spawn_blocking(move || node.shutdown()).await;
+    }
+    // 3. 快照/冲突缓存清理 + registry + 事件
+    state
+        .net_cache
+        .lock()
+        .unwrap()
+        .retain(|(p, _), _| p != id);
+    let mut reg = state.registry.lock().unwrap();
+    if let Some(e) = reg.planets.iter_mut().find(|e| e.id == id) {
+        e.running = false;
+        e.last_node_id = None;
+    }
+    if let Err(e) = reg.save(&state.config_dir) {
+        eprintln!("[runtime] registry 写盘失败: {e}");
+    }
+    drop(reg);
+    state.events.push(id, "planetStopped", "planet stopped");
+    true
+}
+
+/// 各 planet 的实时状态快照(GET /status、/planets、/planets/{id} 共用)。
+/// node 查询在 planets 锁外做(先短锁取 Arc 列表)。
+pub fn live_infos(state: &AppState) -> HashMap<String, LiveInfo> {
+    let rts: Vec<Arc<PlanetRuntime>> = state.planets.lock().unwrap().values().cloned().collect();
+    let (major, minor, rev) = NodeHandle::core_version();
+    let core_version = format!("{major}.{minor}.{rev}");
+    rts.into_iter()
+        .map(|rt| {
+            let online = rt.online();
+            let info = LiveInfo {
+                online,
+                node_id: rt.node_id().unwrap_or_default(),
+                core_version: core_version.clone(),
+                // PLANET 角色对端的最小延迟(无则 None)
+                latency_ms: if online {
+                    rt.peers()
+                        .iter()
+                        .filter(|p| p.role == zt_core::PeerRole::Planet)
+                        .filter_map(|p| p.latency_ms)
+                        .min()
+                        .map(|v| v.max(0) as u64)
+                } else {
+                    None
+                },
+                network_count: rt.networks().len(),
+            };
+            (rt.planet_id.clone(), info)
+        })
+        .collect()
+}
