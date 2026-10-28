@@ -17,6 +17,7 @@
 | dataStore 语义 | 按 Android NodeRuntime 平移:`<dataDir>/<worldId>/` 分目录;planet 文件作为 hook 输入重定向 |
 | identity | POC 每节点独立全新 identity(避免与本机在跑的 zerotier-one 同根体系撞身份);共享 identity 语义留给 daemon 阶段 |
 | UDP 端口 | 错开本机 zerotier-one 的 9993:POC 节点用 9994、9995 |
+| POC 2 设备路线 | **首选 feth L2**(tun-rs macOS TAP,内核处理 ARP,对齐官方 MacEthernetTap 机制——1.16.2 在 Darwin≥17 用 feth 伪以太对而非 utun);退路 utun L3 + 用户态 ARP 垫层(机制已定:订阅 `ff:ff:ff:ff:ff:ff` + ADI=本机各 IPv4 主机序,ARP reply 经 processVirtualNetworkFrame 回喂核心,头文件 1893-1919 行硬性要求) |
 | 失败退路 | POC 3 若互扰 → 每 planet 一进程(形态 B);POC 1/2 成果全部保留 |
 
 ## 1. 范围
@@ -24,7 +25,7 @@
 ### 做
 
 1. **POC 1(FFI 控制面)**:单 Node 启动 → join 测试网络 → 状态机走到 OK,取得 network config 与分配地址。不建任何网络设备。
-2. **POC 2(设备+配置应用)**:tun-rs 建 utun → 应用 managed IP/route → ping 通网内另一成员;macOS utun(L3)的 ARP 用户态垫层在此验证。
+2. **POC 2(设备+配置应用)**:tun-rs 建 feth L2 设备 → 应用 managed IP/route → ping 通网内另一成员;内核处理 ARP(对齐官方);utun L3 + ARP 垫层为退路。
 3. **POC 3(双 Node 互扰)**:同进程两 Node 并发,验证 identity/dataStore/UDP 端口隔离与互不干扰,双网络同时在线。
 
 ### 不做(本轮明确排除)
@@ -62,11 +63,15 @@ ZT 核心 C API 是"Rust 持有资源 + 核心反向回调"结构。zt-core 用 
 | 物理包收发 | `send_wire_packet(addr, data)` | UDP socket 由 Rust 侧持有,bind 各自端口 |
 | path/peer 查询 | `get_object_address` 等 | 最小实现,POC 不做多余功能 |
 
-### 线程模型
+### 线程模型(C API 事实已核实,1.16.2)
 
-- 每 Node 一条专属 OS 线程:循环驱动核心后台任务处理与超时调度(具体机制以 ZeroTierOne.h 实际 API 为准——服务循环入口、时间源、退避间隔在实现计划中从该头文件定死,不猜)。
+- 驱动方式:`ZT_Node_processBackgroundTasks(now, &deadline)` 轮询,deadline 为 in/out(ms 墙钟,下次绝对时刻,下限 60ms 粒度、常态 5000ms);官方 OneService 即"到点才调 + poll(timeout=deadline-now)"单线程串行模型。
+- 每 Node 一条专属驱动线程:poll [UDP socket(非阻塞)、wakeup pipe];设备帧由独立设备线程阻塞读出后经 channel + pipe 唤醒投递驱动线程——保证对同一 Node 的全部 `process*` 调用串行(官方约定,`ZT_Node_delete` 前必须停掉其它线程)。
+- `ZT_Node_new` 的 `ZT_Node_Config` 指针必须非 NULL(全零即可);`callbacks.version = 0`;无 stateDeleteFunction——删除 = statePut(len=-1)。
+- planet 注入:stateGet 回调命中 `(ZT_STATE_OBJECT_PLANET, id={0,0})` 返回自定义 World 二进制(构造时读取,首次加载不校验签名;运行期换 planet = 重建 Node);statePut 的回写按官方语义落盘。
+- IPv4 ARP 硬性要求(头文件注释明文):tap 实现者须对每个本机 IPv4 调 `multicastSubscribe(nwid, 0xffffffffffff, ADI=IPv4 主机序)`,官方每 5000ms 扫描 diff——L2 设备同样需要(core 据此决定投递哪些广播)。
 - 回调在 Node 线程上下文执行;跨线程状态经 channel 交主线程。封装层保证 Rust 侧借用不跨越 FFI 边界存活。
-- 节点优雅关闭:先 leave/离线处理再销毁句柄,避免 dataStore 半写。
+- 节点优雅关闭:先停驱动/设备线程并等其真正退出,再 `ZT_Node_delete`(防 UAF,Android shutdown 同序)。
 
 ### 错误与安全
 
@@ -113,8 +118,8 @@ ZT 核心 C API 是"Rust 持有资源 + 核心反向回调"结构。zt-core 用 
 
 | 风险 | 应对 |
 |---|---|
-| 单进程多 Node 全局状态互扰(核心风险,无官方书面承诺) | POC 3 直接检验;失败 → 形态 B(每 planet 一进程),POC 1/2 成果保留 |
-| macOS utun ARP 垫层正确性 | 参照官方 MacEthernetTap 用户态 ARP 模式;现网实测 |
+| 单进程多 Node 全局状态互扰(核心风险,无官方书面承诺) | POC 3 直接检验;源码级证据已降低风险:核心无全局可变状态(仅随机数池带锁共享、prometheus 计数器共享,RuntimeEnvironment 为实例成员);失败 → 形态 B(每 planet 一进程),POC 1/2 成果保留 |
+| tun-rs macOS feth TAP 成熟度 | POC 2 直接检验;退路 utun L3 + 用户态 ARP 垫层(机制已定死,见 §0) |
 | Core 子集构建链复杂度 | 对齐 Android 树外 CMakeLists(GLOB node/*.cpp)成熟方案;退路为 build.rs cc 逐文件编译清单(仍从 1.16.2 tarball) |
 | 1.16.2 C API 与预期不符(服务循环/回调形态) | 以头文件为准修正封装层设计;头文件已在案 |
 
