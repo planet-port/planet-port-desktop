@@ -13,8 +13,11 @@ pub const DEFAULT_API_PORT: u16 = 9998;
 ///    与普通用户 CLI 解析结果不一致,故复用已存在的系统目录保证两端落到同一目录);
 /// ③ `dirs::config_dir()/planet-portd`(用户级回退,开发期)。
 pub fn config_dir() -> PathBuf {
+    // 空字符串等同未设置,避免 PathBuf("") 泄漏为相对路径
     if let Some(d) = std::env::var_os("PLANET_PORT_CONFIG_DIR") {
-        return PathBuf::from(d);
+        if !d.is_empty() {
+            return PathBuf::from(d);
+        }
     }
     let system_dir = PathBuf::from("/Library/Application Support/planet-portd");
     if system_dir.is_dir() {

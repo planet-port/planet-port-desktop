@@ -185,8 +185,12 @@ async fn main() {
             let t = t.trim().to_string();
             if t.is_empty() {
                 eprintln!("token 文件 {} 为空,重新生成", token_path.display());
-                gen_token().unwrap()
+                let t = gen_token().unwrap();
+                write_file_0644(&token_path, &t).unwrap();
+                t
             } else {
+                // 兼容旧版本写入的 0600:一次性归位 0644,失败可忽略(CLI 读不到才需处理)
+                let _ = fs::set_permissions(&token_path, fs::Permissions::from_mode(0o644));
                 t
             }
         }
