@@ -70,7 +70,7 @@ impl NodeSink for DeviceSink {
         let r = match op {
             NetConfigOp::Up | NetConfigOp::ConfigUpdate => self.lock().apply(&cfg, &self.frame_tx_slot),
             NetConfigOp::Down | NetConfigOp::Destroy => {
-                self.lock().teardown();
+                self.lock().teardown(nwid);
                 Ok(())
             }
         };
@@ -154,14 +154,14 @@ fn main() {
         Ok(id) => id,
         Err(e) => {
             eprintln!("{e}");
-            plane.lock().unwrap_or_else(std::sync::PoisonError::into_inner).teardown();
+            plane.lock().unwrap_or_else(std::sync::PoisonError::into_inner).teardown_all();
             h.shutdown();
             std::process::exit(1);
         }
     };
     if let Err(e) = h.join(nwid) {
         eprintln!("join 失败: {e}");
-        plane.lock().unwrap_or_else(std::sync::PoisonError::into_inner).teardown();
+        plane.lock().unwrap_or_else(std::sync::PoisonError::into_inner).teardown_all();
         h.shutdown();
         std::process::exit(1);
     }
@@ -171,7 +171,10 @@ fn main() {
     let mut next_ping = Instant::now();
     while Instant::now() < end {
         let dev = plane.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let dev_name = if dev.is_up() { dev.if_name().to_string() } else { "(未建)".to_string() };
+        let dev_name = dev
+            .if_name_of(nwid)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "(未建)".to_string());
         let frames_in = dev.frames_in();
         println!(
             "[t] address={:010x} online={} frames_to_dev={} frames_in={} dev={}",
@@ -197,7 +200,7 @@ fn main() {
     }
 
     println!("===== teardown(停线程→删路由→销毁 feth)=====");
-    plane.lock().unwrap_or_else(std::sync::PoisonError::into_inner).teardown();
+    plane.lock().unwrap_or_else(std::sync::PoisonError::into_inner).teardown_all();
     println!("===== shutdown(驱动线程 join → ZT_Node_delete)=====");
     h.shutdown();
     println!("exit clean");

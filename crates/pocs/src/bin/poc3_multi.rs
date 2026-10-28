@@ -109,7 +109,7 @@ impl NodeSink for Sink {
                 d.apply(&cfg, &self.frame_tx_slot)
             }
             NetConfigOp::Down | NetConfigOp::Destroy => {
-                p.lock().unwrap_or_else(std::sync::PoisonError::into_inner).teardown();
+                p.lock().unwrap_or_else(std::sync::PoisonError::into_inner).teardown(nwid);
                 Ok(())
             }
         };
@@ -176,10 +176,10 @@ impl Inst {
         self.net(nwid).map(|n| n.status)
     }
     /// 帧计数与设备名快照(打印用)。
-    fn dev_desc(&self) -> String {
+    fn dev_desc(&self, nwid: u64) -> String {
         let Some(p) = &self.plane else { return "(--no-device)".into() };
         let d = p.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if d.is_up() { d.if_name().to_string() } else { "(未建)".into() }
+        d.if_name_of(nwid).map(|s| s.to_string()).unwrap_or_else(|| "(未建)".into())
     }
     fn frames_to_dev(&self) -> u64 {
         self.frames_to_dev.load(Ordering::Relaxed)
@@ -221,7 +221,7 @@ fn spawn_node(
 /// 再 shutdown(join 驱动线程 → ZT_Node_delete)。
 fn stop_node(inst: &mut Inst) {
     if let Some(p) = &inst.plane {
-        p.lock().unwrap_or_else(std::sync::PoisonError::into_inner).teardown();
+        p.lock().unwrap_or_else(std::sync::PoisonError::into_inner).teardown_all();
     }
     if let Some(h) = inst.h.take() {
         h.shutdown();
@@ -265,7 +265,7 @@ fn print_status(inst: &Inst, nwid: u64) {
         inst.online(),
         inst.frames_to_dev(),
         inst.frames_in(),
-        inst.dev_desc()
+        inst.dev_desc(nwid)
     );
     match inst.net(nwid) {
         Some(n) => {

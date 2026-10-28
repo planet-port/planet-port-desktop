@@ -1,5 +1,10 @@
 //! sockaddr_storage <-> SocketAddr;ZeroTier 把前缀长度编码在 sin_port。
 //!
+//! # 架构红线
+//!
+//! - 只做纯转换,不持有核心内存;回调内调用 `from_sockaddr_storage` 属拷贝,允许;
+//! - 网络条目(地址/路由)的前缀长度在 sin_port,收发包用真实端口,互不可混。
+//!
 //! 说明:zt-sys 的绑定自带 Darwin 版 `sockaddr_storage/sockaddr_in/...`(bindgen
 //! 产物,与 libc 布局一致但类型不同),FFI 签名必须用它,故本模块直接以 zt_sys
 //! 的类型为边界,避免跨类型 transmute。

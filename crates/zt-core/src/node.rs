@@ -4,6 +4,19 @@
 //! 回调出口通道(frame/event/netcfg)也在此线程消费并转发给 sink,
 //! 从而保证"回调数据 → sink"与 process* 同线程,无需对 Node 加锁。
 //!
+//! # 架构红线
+//!
+//! - 回调 glue 只做「拷贝 + channel send」,绝不直接调 sink、不回调 Node 方法;
+//! - 全部 sink 调用(on_event/on_net_config/on_frame/local_ipv4s)只发生在
+//!   驱动线程,且以 catch_unwind 包裹:sink panic 不许穿越驱动线程/FFI;
+//! - FrameOut(核心→设备,sink 写设备)与 FrameIn(设备→核心,
+//!   processVirtualNetworkFrame)两条通道方向不可混用;
+//! - 关停硬顺序:running=false → 唤醒 poll → Cmd::Stop → join 驱动线程
+//!   → ZT_Node_delete → drop Inner(join 必须先于 delete,否则悬垂);
+//! - `networks()/peers()` 等查询返回的核心缓冲必须用
+//!   `ZT_Node_freeQueryResult` 释放(本模块内完成,不外借指针);
+//! - FFI 边界禁 panic/unwrap;对端应答通道断开一律转 `NodeError`,不炸进程。
+//!
 //! FFI 约束:回调内禁 panic(不 unwrap、不索引越界)、不跨 FFI 保存 Rust 引用;
 //! 同一 Node 的 process* 串行由驱动线程单线程保证;
 //! ZT_Node_delete 前必须先 join 驱动线程(见 shutdown)。
@@ -30,9 +43,14 @@ const MCAST_SCAN_MS: i64 = 5000;
 const POLL_MAX_MS: i32 = 500;
 
 /// 发给驱动线程的串行命令(与 process* 同线程执行,天然互斥)。
+///
+/// 除 Stop 外均携带 `Sender<Result<(), NodeError>>` 应答端:驱动线程执行完
+/// 核心 C 调用后回报真实 rc,调用方才能把错误返回给上层(而非一律 Ok)。
 pub(crate) enum Cmd {
-    Join(u64),
-    Leave(u64),
+    Join(u64, Sender<Result<(), NodeError>>),
+    Leave(u64, Sender<Result<(), NodeError>>),
+    Orbit(u64, u64, Sender<Result<(), NodeError>>),
+    Deorbit(u64, Sender<Result<(), NodeError>>),
     Stop,
 }
 
@@ -54,6 +72,76 @@ impl std::fmt::Display for NodeError {
 }
 
 impl std::error::Error for NodeError {}
+
+/// 核心 rc -> Result;非 OK 时把真实错误码报给调用方(不再吞成 Ok)。
+fn rc_to_err(what: &str, rc: zt::ZT_ResultCode) -> Result<(), NodeError> {
+    if rc == zt::ZT_ResultCode_ZT_RESULT_OK {
+        return Ok(());
+    }
+    Err(NodeError::InvalidArg(format!("{what} 返回错误码 {rc}")))
+}
+
+/// 对端信任层级角色(ZT_PeerRole)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeerRole {
+    Leaf,
+    Moon,
+    Planet,
+}
+
+/// 到某对端的一条物理路径快照。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerPath {
+    pub addr: std::net::SocketAddr,
+    /// 未过期且有收包记录(`expired == 0 && lastReceive != 0`)
+    pub active: bool,
+    /// 核心标记的 trusted path(trustedPathId 非零)
+    pub trusted: bool,
+}
+
+/// 单个对端快照(`ZT_Node_peers` 查询结果的 Rust 拷贝,不持有核心内存)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerInfo {
+    pub address: u64,
+    pub role: PeerRole,
+    /// 远端版本三元组;任一分量 <0(未知)即 None
+    pub version: Option<(i32, i32, i32)>,
+    /// 最近测得的延迟毫秒;核心报告 <0(未知)即 None
+    pub latency_ms: Option<i64>,
+    pub paths: Vec<PeerPath>,
+}
+
+impl PeerInfo {
+    /// 从 ZT_Peer 拷贝(查询结果指针随时可能被 free,必须立即深拷)。
+    ///
+    /// # Safety
+    /// `p` 必须指向核心刚返回、尚未释放的有效 `ZT_Peer`。
+    pub(crate) unsafe fn from_zt(p: &zt::ZT_Peer) -> Self {
+        let version = (p.versionMajor >= 0 && p.versionMinor >= 0 && p.versionRev >= 0)
+            .then_some((p.versionMajor, p.versionMinor, p.versionRev));
+        let latency_ms = (p.latency >= 0).then_some(i64::from(p.latency));
+        // 切片上限做 min 防御:核心计数异常时按数组容量截断
+        let n_paths = (p.pathCount as usize).min(p.paths.len());
+        let paths = p.paths[..n_paths]
+            .iter()
+            // 空槽(核心未填充)特征:lastSend 与 lastReceive 均为 0,跳过
+            .filter(|pp| !(pp.lastSend == 0 && pp.lastReceive == 0))
+            .filter_map(|pp| {
+                Some(PeerPath {
+                    addr: sa::from_sockaddr_storage(&pp.address)?,
+                    active: pp.expired == 0 && pp.lastReceive != 0,
+                    trusted: pp.trustedPathId != 0,
+                })
+            })
+            .collect();
+        let role = match p.role {
+            zt::ZT_PeerRole_ZT_PEER_ROLE_MOON => PeerRole::Moon,
+            zt::ZT_PeerRole_ZT_PEER_ROLE_PLANET => PeerRole::Planet,
+            _ => PeerRole::Leaf,
+        };
+        Self { address: p.address, role, version, latency_ms, paths }
+    }
+}
 
 // 核心生成的虚拟网络帧(vnet_frame 回调)→ 驱动线程 → sink 写设备。
 // 反方向(设备收帧 → processVirtualNetworkFrame)走 FrameIn 通道,与 FrameOut 完全独立。
@@ -107,6 +195,8 @@ pub struct NodeHandle {
     inner: *mut Inner,
     // Some = 驱动线程存活;shutdown 时 join 后置 None
     driver: Option<JoinHandle<()>>,
+    // Inner 是否已回收(shutdown 已执行);Drop 据此避免二次释放
+    shut_down: bool,
 }
 
 /// CLOEXEC 管道两端(用 File 持有,drop 即关闭)。
@@ -219,7 +309,7 @@ impl NodeHandle {
                 }
                 NodeError::Io(io::Error::other(format!("驱动线程启动失败: {e}")))
             })?;
-        Ok(Self { node, inner, driver: Some(handle) })
+        Ok(Self { node, inner, driver: Some(handle), shut_down: false })
     }
 
     pub fn address(&self) -> u64 {
@@ -232,14 +322,25 @@ impl NodeHandle {
         (a as _, b as _, c as _)
     }
 
-    /// 加入网络。实际 ZT_Node_join 在驱动线程执行(与 process* 串行)。
+    /// 加入网络。实际 ZT_Node_join 在驱动线程执行(与 process* 串行),
+    /// 核心 rc 非 OK 时返回真实错误。
     pub fn join(&self, nwid: u64) -> Result<(), NodeError> {
-        self.send_cmd(Cmd::Join(nwid))
+        self.send_cmd(|tx| Cmd::Join(nwid, tx))
     }
 
-    /// 离开网络。实际 ZT_Node_leave 在驱动线程执行。
+    /// 离开网络。实际 ZT_Node_leave 在驱动线程执行,rc 非 OK 时返回真实错误。
     pub fn leave(&self, nwid: u64) -> Result<(), NodeError> {
-        self.send_cmd(Cmd::Leave(nwid))
+        self.send_cmd(|tx| Cmd::Leave(nwid, tx))
+    }
+
+    /// 加入 moon(实际 ZT_Node_orbit 在驱动线程执行,rc 非 OK 时返回真实错误)。
+    pub fn orbit(&self, moon_world_id: u64, seed: u64) -> Result<(), NodeError> {
+        self.send_cmd(|tx| Cmd::Orbit(moon_world_id, seed, tx))
+    }
+
+    /// 移除 moon(实际 ZT_Node_deorbit 在驱动线程执行,不存在时核心返回 OK)。
+    pub fn deorbit(&self, moon_world_id: u64) -> Result<(), NodeError> {
+        self.send_cmd(|tx| Cmd::Deorbit(moon_world_id, tx))
     }
 
     /// 设备→核心帧通道发送端(设备读线程用;发出后自动唤醒驱动线程 poll)。
@@ -265,6 +366,26 @@ impl NodeHandle {
         }
     }
 
+    /// 已知对端列表快照(直接读核心查询接口,与驱动线程无共享可变状态)。
+    ///
+    /// 红线:`ZT_Node_peers` 返回的缓冲必须用 `ZT_Node_freeQueryResult`
+    /// 释放 —— 拷贝在本函数内完成,指针不外借。
+    pub fn peers(&self) -> Vec<PeerInfo> {
+        unsafe {
+            let l = zt::ZT_Node_peers(self.node);
+            let mut out = Vec::new();
+            if !l.is_null() {
+                let cnt = (*l).peerCount as usize;
+                let peers = std::slice::from_raw_parts((*l).peers, cnt);
+                for p in peers {
+                    out.push(PeerInfo::from_zt(p));
+                }
+                zt::ZT_Node_freeQueryResult(self.node, l as *mut _);
+            }
+            out
+        }
+    }
+
     /// 核心是否 online(有可用物理路径到达根服务器)。
     pub fn online(&self) -> bool {
         unsafe {
@@ -274,19 +395,32 @@ impl NodeHandle {
         }
     }
 
-    fn send_cmd(&self, cmd: Cmd) -> Result<(), NodeError> {
-        self.inner().cmd_tx.send(cmd).map_err(|_| {
+    /// 下发命令并等待驱动线程的 rc 应答(命令与 process* 同线程串行执行)。
+    ///
+    /// 红线:阻塞等应答,故绝不可在 sink 回调(驱动线程)内调用本路径
+    /// (join/leave/orbit/deorbit),否则自等自死锁。
+    fn send_cmd(&self, make: impl FnOnce(Sender<Result<(), NodeError>>) -> Cmd) -> Result<(), NodeError> {
+        let (tx, rx) = channel();
+        self.inner().cmd_tx.send(make(tx)).map_err(|_| {
             NodeError::DataStoreFailed("驱动线程已退出".into())
         })?;
         // 唤醒 poll,让命令立即被处理
         self.inner().wake();
-        Ok(())
+        rx.recv().map_err(|_| NodeError::DataStoreFailed("驱动线程已退出(命令无应答)".into()))?
     }
 
     /// 关停顺序(强制):running=false → 唤醒 poll → Cmd::Stop → join 驱动线程
     /// → ZT_Node_delete → drop Inner。join 必须先于 delete,否则驱动线程仍在
     /// 使用已释放的 Node(悬垂)。
     pub fn shutdown(mut self) {
+        self.shutdown_inner();
+    }
+
+    fn shutdown_inner(&mut self) {
+        if self.shut_down {
+            return;
+        }
+        self.shut_down = true;
         self.inner().running.store(false, Ordering::SeqCst);
         self.inner().wake();
         let _ = self.inner().cmd_tx.send(Cmd::Stop);
@@ -301,6 +435,56 @@ impl NodeHandle {
 
     fn inner(&self) -> &Inner {
         unsafe { &*self.inner }
+    }
+}
+
+impl Drop for NodeHandle {
+    fn drop(&mut self) {
+        if self.shut_down {
+            return;
+        }
+        // 兜底:调用方漏 shutdown。debug_assert 在测试/调试构建立即暴露,
+        // 发布构建仍按硬顺序尽力回收,绝不泄漏 Node/驱动线程。
+        debug_assert!(
+            false,
+            "NodeHandle 未显式 shutdown 即 drop,已兜底执行关停(顺序:驱动线程 join → ZT_Node_delete)"
+        );
+        self.shutdown_inner();
+    }
+}
+
+/// sink 调用统一包裹:panic 不穿越驱动线程(架构红线)。
+///
+/// panic → 打日志 + 尽力推 `NodeEvent::Fatal` + running=false,返回 None;
+/// 调用方见 None 须立即退出驱动线程(sink 已不可信,不杀进程)。
+fn call_sink<R>(
+    sink: &mut Box<dyn NodeSink>,
+    running: &AtomicBool,
+    what: &str,
+    f: impl FnOnce(&mut dyn NodeSink) -> R,
+) -> Option<R> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&mut **sink))) {
+        Ok(r) => Some(r),
+        Err(p) => {
+            let msg = format!("sink panic({what}): {}", panic_msg(p));
+            eprintln!("[driver] {msg}");
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                sink.on_event(NodeEvent::Fatal(msg));
+            }));
+            running.store(false, Ordering::SeqCst);
+            None
+        }
+    }
+}
+
+/// panic 载荷转可读文本(不 unwrap、不假定类型)。
+fn panic_msg(p: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = p.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = p.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".into()
     }
 }
 
@@ -320,6 +504,8 @@ unsafe fn run_driver(mut d: Driver) {
         libc::pollfd { fd: udp_fd, events: libc::POLLIN, revents: 0 },
         libc::pollfd { fd: d.wake_rd.as_raw_fd(), events: libc::POLLIN, revents: 0 },
     ];
+    // POLLERR/POLLNVAL 上报去重:状态保持时只报一次,避免忙转刷屏
+    let mut poll_reported = [false; 2];
     loop {
         let now = now_ms();
         if d.deadline <= now {
@@ -330,25 +516,41 @@ unsafe fn run_driver(mut d: Driver) {
             // 核心 deadline 恒为将来时刻(下限 ZT_CORE_TIMER_TASK_GRANULARITY),防御性钳制
             d.deadline = if dl > now { dl } else { now + 1 };
             if rc as i32 >= 100 {
-                d.sink.on_event(NodeEvent::Fatal(format!("核心致命错误 rc={rc}")));
+                call_sink(&mut d.sink, &inner.running, "on_event", |s| {
+                    s.on_event(NodeEvent::Fatal(format!("核心致命错误 rc={rc}")))
+                });
                 inner.running.store(false, Ordering::SeqCst);
                 return;
             }
         }
-        // 命令(本线程执行,保证 process* 串行)
+        // 命令(本线程执行,保证 process* 串行;执行后回报真实 rc)
         loop {
             match d.cmd_rx.try_recv() {
-                Ok(Cmd::Join(nwid)) => {
-                    let _ = unsafe {
+                Ok(Cmd::Join(nwid, reply)) => {
+                    let rc = unsafe {
                         zt::ZT_Node_join(d.node, nwid, std::ptr::null_mut(), std::ptr::null_mut())
                     };
+                    let _ = reply.send(rc_to_err("ZT_Node_join", rc));
                 }
-                Ok(Cmd::Leave(nwid)) => {
+                Ok(Cmd::Leave(nwid, reply)) => {
                     let mut nuptr: *mut core::ffi::c_void = std::ptr::null_mut();
-                    let _ = unsafe {
+                    let rc = unsafe {
                         zt::ZT_Node_leave(d.node, nwid, &mut nuptr, std::ptr::null_mut())
                     };
                     current_networks.retain(|&x| x != nwid);
+                    let _ = reply.send(rc_to_err("ZT_Node_leave", rc));
+                }
+                Ok(Cmd::Orbit(world_id, seed, reply)) => {
+                    let rc = unsafe {
+                        zt::ZT_Node_orbit(d.node, std::ptr::null_mut(), world_id, seed)
+                    };
+                    let _ = reply.send(rc_to_err("ZT_Node_orbit", rc));
+                }
+                Ok(Cmd::Deorbit(world_id, reply)) => {
+                    let rc = unsafe {
+                        zt::ZT_Node_deorbit(d.node, std::ptr::null_mut(), world_id)
+                    };
+                    let _ = reply.send(rc_to_err("ZT_Node_deorbit", rc));
                 }
                 Ok(Cmd::Stop) => return,
                 Err(_) => break,
@@ -366,16 +568,30 @@ unsafe fn run_driver(mut d: Driver) {
                     current_networks.retain(|&x| x != nwid);
                 }
             }
-            d.sink.on_net_config(nwid, op, cfg);
+            if call_sink(&mut d.sink, &inner.running, "on_net_config", |s| {
+                s.on_net_config(nwid, op, cfg)
+            })
+            .is_none()
+            {
+                return;
+            }
         }
         // 事件 → sink
         while let Ok(ev) = d.event_rx.try_recv() {
-            d.sink.on_event(ev);
+            if call_sink(&mut d.sink, &inner.running, "on_event", |s| s.on_event(ev)).is_none() {
+                return;
+            }
         }
         // 核心产出帧 → sink(由 sink 写设备;不得在此回喂 processVirtualNetworkFrame)
         while let Ok(f) = d.frame_rx.try_recv() {
             let FrameOut::Vnet { nwid, src, dst, eth, payload } = f;
-            d.sink.on_frame(nwid, src, dst, eth, &payload);
+            if call_sink(&mut d.sink, &inner.running, "on_frame", |s| {
+                s.on_frame(nwid, src, dst, eth, &payload)
+            })
+            .is_none()
+            {
+                return;
+            }
         }
         // 设备读出的帧 → processVirtualNetworkFrame(方向:设备→核心,与上面互斥)
         while let Ok(f) = d.frame_in_rx.try_recv() {
@@ -401,14 +617,23 @@ unsafe fn run_driver(mut d: Driver) {
             if dl > 0 && dl < d.deadline {
                 d.deadline = dl;
             }
-            if rc as i32 >= 100 {
-                d.sink.on_event(NodeEvent::Fatal(format!("processVirtualNetworkFrame rc={rc}")));
+            if rc as i32 >= 100
+                && call_sink(&mut d.sink, &inner.running, "on_event", |s| {
+                    s.on_event(NodeEvent::Fatal(format!("processVirtualNetworkFrame rc={rc}")))
+                })
+                .is_none()
+            {
+                return;
             }
         }
         // 组播订阅:每 5000ms 对本机每个 IPv4 订阅 (ffffffffffff, ADI=IPv4 主机序)
         if now - last_mcast_ms >= MCAST_SCAN_MS {
             last_mcast_ms = now;
-            let ips = d.sink.local_ipv4s();
+            let Some(ips) = call_sink(&mut d.sink, &inner.running, "local_ipv4s", |s| {
+                s.local_ipv4s()
+            }) else {
+                return;
+            };
             for nwid in &current_networks {
                 for ip in &ips {
                     let _ = unsafe {
@@ -456,6 +681,33 @@ unsafe fn run_driver(mut d: Driver) {
         if n > 0 && polls[1].revents & libc::POLLIN != 0 {
             let mut b = [0u8; 64];
             let _ = unsafe { libc::read(polls[1].fd, b.as_mut_ptr() as *mut _, b.len()) };
+        }
+        // POLLERR/POLLNVAL:fd 级异常。NVAL = fd 无效(节点已不可用,退出驱动线程
+        // 防忙转);ERR 多为暂态(如 ICMP 差错),打日志 + 事件,状态保持时只报一次。
+        for (i, p) in polls.iter().enumerate() {
+            let err = p.revents & libc::POLLERR != 0;
+            let nval = p.revents & libc::POLLNVAL != 0;
+            if !err && !nval {
+                poll_reported[i] = false;
+                continue;
+            }
+            let what = if i == 0 { "UDP socket" } else { "唤醒管道" };
+            let kind = if nval { "POLLNVAL(fd 无效)" } else { "POLLERR" };
+            if !poll_reported[i] {
+                poll_reported[i] = true;
+                eprintln!("[driver] {what} poll 异常: {kind}");
+                if call_sink(&mut d.sink, &inner.running, "on_event", |s| {
+                    s.on_event(NodeEvent::Fatal(format!("{what} poll 异常: {kind}")))
+                })
+                .is_none()
+                {
+                    return;
+                }
+            }
+            if nval {
+                inner.running.store(false, Ordering::SeqCst);
+                return;
+            }
         }
         if !inner.running.load(Ordering::SeqCst) {
             return;

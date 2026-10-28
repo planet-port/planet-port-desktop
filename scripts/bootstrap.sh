@@ -47,6 +47,8 @@ cp "$SRC/osdep/OSUtils.cpp" "$SRC/osdep/OSUtils.hpp" "$CORE_DIR/osdep/"
 cp "$SRC/osdep/Binder.hpp" "$SRC/osdep/Phy.hpp" \
   "$SRC/osdep/BlockingQueue.hpp" "$SRC/osdep/ExtOsdep.hpp" "$CORE_DIR/osdep/"
 cp "$SRC/version.h" "$CORE_DIR/"
+# 上游许可全文随 Core/ 分发(MPL-2.0;crates/zt-core/LICENSE-MPL.txt 指向此处)
+cp "$SRC/LICENSE.txt" "$CORE_DIR/"
 mkdir -p "$CORE_DIR/ext/nlohmann" \
   "$CORE_DIR/ext/prometheus-cpp-lite-1.0/core/include" \
   "$CORE_DIR/ext/prometheus-cpp-lite-1.0/simpleapi/include"

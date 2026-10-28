@@ -1,4 +1,10 @@
 //! 对外类型:Node 参数、回调交付的数据模型、ZT 结构体拷贝。
+//!
+//! # 架构红线
+//!
+//! - 本模块类型是回调(glue)与驱动线程之间传递的数据快照:`from_zt` 必须
+//!   完整拷贝,绝不持有指向核心内存的指针/引用(回调返回后核心缓冲即失效);
+//! - 回调内(调用 `from_zt` 处)只做拷贝 + channel send,不调用任何 sink。
 
 use std::ffi::CStr;
 use std::net::{IpAddr, SocketAddr};
@@ -70,6 +76,8 @@ pub struct NetConfig {
     pub name: String,
     pub mac: u64,
     pub status: NetStatus,
+    /// 是否私有网络(核心 ZT_VirtualNetworkType:PRIVATE=true / PUBLIC=false)
+    pub is_private: bool,
     pub mtu: u16,
     pub netconf_revision: u64,
     pub assigned: Vec<IpNet>,
@@ -141,6 +149,8 @@ impl NetConfig {
             name,
             mac: c.mac,
             status,
+            // Core/include/ZeroTierOne.h: ZT_NETWORK_TYPE_PRIVATE=0 / PUBLIC=1
+            is_private: c.type_ == zt_sys::ZT_VirtualNetworkType_ZT_NETWORK_TYPE_PRIVATE,
             mtu: c.mtu as u16,
             netconf_revision: c.netconfRevision,
             assigned,

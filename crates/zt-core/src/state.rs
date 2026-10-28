@@ -1,6 +1,12 @@
 //! dataStore 对象 ↔ 落盘文件。语义平移 Android NodeRuntime.stateFile:
 //! identity 跨 planet 共享于根;moon/peer/netconf 按 planet worldId 分目录;
 //! planet 重定向到注入文件(get)/根下 planet(put 回写)。
+//!
+//! # 架构红线
+//!
+//! - 本模块只在核心回调 glue(state_get/state_put)内被调用:禁止 panic/unwrap,
+//!   失败以返回值表达;identity.secret 与 planet 落盘必须 0600;
+//! - 每 Node 的 StateStore 独立目录,节点间不得共享(隔离红线,见 POC3)。
 
 use std::fs;
 use std::io;
