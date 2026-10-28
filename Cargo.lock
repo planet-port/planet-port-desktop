@@ -324,6 +324,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "daemon"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "planet-port-api",
+ "serde",
+ "serde_json",
+ "tokio",
+ "zt-core",
+]
+
+[[package]]
 name = "dirs"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

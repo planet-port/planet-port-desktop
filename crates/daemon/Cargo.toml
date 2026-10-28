@@ -1,0 +1,18 @@
+[package]
+name = "daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "planet-portd"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+serde.workspace = true
+serde_json.workspace = true
+planet-port-api = { path = "../api" }
+# Task 4 接入 NodeRuntime 时使用,先引入
+zt-core = { path = "../zt-core" }
