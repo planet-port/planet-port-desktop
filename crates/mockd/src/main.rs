@@ -106,7 +106,7 @@ impl Store {
                     custom_dns: vec![],
                 },
                 NetworkEntry {
-                    planet: "company".into(),
+                    planet: "2187945993".into(),
                     nwid: "9f77ac39c000001".into(),
                     name: Some("prod".into()),
                     status: "OK".into(),
@@ -126,7 +126,7 @@ impl Store {
             peers: vec![
                 PeerEntry { planet: "official".into(), address: "7cee7c9f1a".into(), role: "PLANET".into(), version: Some("1.16.2".into()), latency_ms: Some(38), path: Some("udp/1.2.3.4:9993".into()) },
                 PeerEntry { planet: "official".into(), address: "4a2b8c9d0e".into(), role: "LEAF".into(), version: Some("1.16.2".into()), latency_ms: Some(6), path: Some("udp/5.6.7.8:9993".into()) },
-                PeerEntry { planet: "company".into(), address: "a1b2c3d4e5".into(), role: "PLANET".into(), version: Some("1.16.2".into()), latency_ms: Some(12), path: None },
+                PeerEntry { planet: "2187945993".into(), address: "a1b2c3d4e5".into(), role: "PLANET".into(), version: Some("1.16.2".into()), latency_ms: Some(12), path: None },
             ],
             moons: vec![MoonEntry {
                 planet: "official".into(),
@@ -137,7 +137,7 @@ impl Store {
             }],
             events: vec![
                 EventEntry { planet: "official".into(), ts_ms: 1761000000000, kind: "status".into(), message: "node ONLINE".into() },
-                EventEntry { planet: "company".into(), ts_ms: 1761000001000, kind: "conflict".into(), message: "subnet conflict avoided on 9f77ac39c000001".into() },
+                EventEntry { planet: "2187945993".into(), ts_ms: 1761000001000, kind: "conflict".into(), message: "subnet conflict avoided on 9f77ac39c000001".into() },
             ],
         }
     }
@@ -184,6 +184,17 @@ fn resolve_planet(
                 Some(candidates),
             ))
         }
+    }
+}
+
+/// 查询端点的 ?planet= 过滤:接受 id 或 name,统一解析为 canonical id(未知名 → 404)
+fn filter_planet(
+    store: &Store,
+    q: &HashMap<String, String>,
+) -> Result<Option<String>, (StatusCode, Json<ApiError>)> {
+    match q.get("planet").map(|s| s.as_str()) {
+        None => Ok(None),
+        Some(p) => Ok(Some(resolve_planet(store, Some(p))?)),
     }
 }
 
@@ -420,26 +431,26 @@ async fn planet_share(
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
     let store = st.inner.lock().unwrap();
-    let i = find_planet(&store, &id)?;
+    find_planet(&store, &id)?;
     let ttl = body.get("ttlSeconds").and_then(|v| v.as_u64()).unwrap_or(300);
     let token = st.seq.fetch_add(1, Ordering::SeqCst);
     let url = format!("http://127.0.0.1:9998/share/{token}");
     let expires_at = now_ms() / 1000 + ttl;
-    let _ = store.planets[i].id;
     Ok(Json(json!(ShareLink { url, expires_at })))
 }
 
 async fn networks_list(
     State(st): State<AppState>,
     Query(q): Query<HashMap<String, String>>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
     let store = st.inner.lock().unwrap();
+    let filter = filter_planet(&store, &q)?;
     let items: Vec<&NetworkEntry> = store
         .networks
         .iter()
-        .filter(|n| q.get("planet").map(|p| n.planet == *p).unwrap_or(true))
+        .filter(|n| filter.as_ref().map(|f| n.planet == *f).unwrap_or(true))
         .collect();
-    Json(json!({ "networks": items }))
+    Ok(Json(json!({ "networks": items })))
 }
 
 async fn net_join(
@@ -542,27 +553,29 @@ async fn net_set(
 async fn peers(
     State(st): State<AppState>,
     Query(q): Query<HashMap<String, String>>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
     let store = st.inner.lock().unwrap();
+    let filter = filter_planet(&store, &q)?;
     let items: Vec<&PeerEntry> = store
         .peers
         .iter()
-        .filter(|p| q.get("planet").map(|f| p.planet == *f).unwrap_or(true))
+        .filter(|p| filter.as_ref().map(|f| p.planet == *f).unwrap_or(true))
         .collect();
-    Json(json!({ "peers": items }))
+    Ok(Json(json!({ "peers": items })))
 }
 
 async fn moons_list(
     State(st): State<AppState>,
     Query(q): Query<HashMap<String, String>>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
     let store = st.inner.lock().unwrap();
+    let filter = filter_planet(&store, &q)?;
     let items: Vec<&MoonEntry> = store
         .moons
         .iter()
-        .filter(|m| q.get("planet").map(|p| m.planet == *p).unwrap_or(true))
+        .filter(|m| filter.as_ref().map(|f| m.planet == *f).unwrap_or(true))
         .collect();
-    Json(json!({ "moons": items }))
+    Ok(Json(json!({ "moons": items })))
 }
 
 async fn moon_import(
@@ -655,19 +668,20 @@ async fn moon_deorbit(
 async fn events(
     State(st): State<AppState>,
     Query(q): Query<HashMap<String, String>>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
     let store = st.inner.lock().unwrap();
+    let filter = filter_planet(&store, &q)?;
     let after: Option<u64> = q.get("after").and_then(|s| s.parse().ok());
     let limit: usize = q.get("limit").and_then(|s| s.parse().ok()).unwrap_or(40);
     let items: Vec<&EventEntry> = store
         .events
         .iter()
-        .filter(|e| q.get("planet").map(|p| e.planet == *p).unwrap_or(true))
+        .filter(|e| filter.as_ref().map(|f| e.planet == *f).unwrap_or(true))
         .filter(|e| after.map(|a| e.ts_ms > a).unwrap_or(true))
         .rev()
         .take(limit)
         .collect();
-    Json(json!({ "events": items }))
+    Ok(Json(json!({ "events": items })))
 }
 
 async fn dump(
