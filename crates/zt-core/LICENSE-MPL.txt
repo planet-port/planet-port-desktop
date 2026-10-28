@@ -1,9 +1,9 @@
 本 crate(zt-core)封装 libzerotiercore(ZeroTier One,https://github.com/zerotier/ZeroTierOne),
 其源码以 Mozilla Public License 2.0(MPL-2.0)发布。
 
-本文件为分发占位:上游 MPL-2.0 全文随 `Core/LICENSE.txt` 一并分发
-(`scripts/bootstrap.sh` 拉取上游源码时拷入 `Core/`);正式分发阶段须在此处
-补齐完整 MPL-2.0 文本与 NOTICE 说明。
+本 crate 链接的 ZeroTier 核心源码由 `scripts/bootstrap.sh` 拉取并裁剪至 `Core/`,
+MPL-2.0 全文随该脚本一并分发为 `Core/LICENSE-MPL.txt`(`Core/LICENSE.txt` 为上游的
+索引/指引文件);正式分发阶段须在此处补齐完整 MPL-2.0 文本与 NOTICE 说明。
 
 本 crate 自身代码按仓库根 LICENSE(MIT)与本文件声明共同约束:对核心源码的
 修改与链接遵循 MPL-2.0。
