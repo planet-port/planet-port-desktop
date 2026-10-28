@@ -127,3 +127,46 @@ ZT 核心 C API 是"Rust 持有资源 + 核心反向回调"结构。zt-core 用 
 
 - 仅使用 1.16.2(MPL-2.0)源码;submodule 固定 tag,不 cherry-pick BSL 时代提交。
 - 构建产物分发时随附 MPL 许可文本与 ZeroTier, Inc. 署名(义务在本阶段建文件占位,分发阶段生效)。
+
+## 8. POC 结果记录(2026-10-28 实测)
+
+### POC 1 — FFI 控制面:✓
+
+- `ZT_Node_new` → identity 生成并落盘;重启同 dataDir 复用(address 不变)。
+- join `5cf54f181554090f`:UP → ONLINE,网络 REQUESTING_CONFIGURATION → ACCESS_DENIED
+  →(控制器授权)→ **OK rev=6**,assigned `10.121.16.103/24`,routes `10.121.16.0/24`(on-link)。
+- 事件序列与 dataStore 落盘(identity/planet/peers.d/networks.d)完整。
+
+### POC 2 — feth L2 设备 + 配置应用:✓
+
+- netconf Up 时建 feth 对(内核自动单元号,实测 `feth0`,与官方 zerotier-one 的
+  feth194/345/1986/2527/4684 不冲突),MAC 取核心分配值,managed 地址/路由差分应用。
+- **ping 网内真实成员 `10.121.16.229` 通**(3.3~23ms),帧双向计数递增
+  (设备→核心 `frames_in`、核心→设备 `frames_to_dev`),ARP 由内核完成。
+- teardown:停读线程 → 删路由 → 销毁 feth,退出干净。
+- 附带实测:同机两个同 /24 接口的路由并存;**内核对本地地址直接交付、绕过 ZT
+  数据面**——因此双节点都在本机时,互 ping 只能作为「双方 netconf OK 且地址配齐」
+  的控制面证据,数据面证据以网内真实设备对照为准。
+
+### POC 3 — 同进程双 Node 并发与隔离:隔离项全过;「双在线互 ping」受环境阻塞
+
+poc3_multi(`--no-device`,无需 sudo)五项断言:
+
+| # | 检查项 | 结果 |
+|---|---|---|
+| 1 | identity 独立(内容不同/各在己目录/首字段=节点 address) | **PASS** |
+| 2 | dataStore 隔离(目录不同、对方 identity 字节零出现、公共文件内容不同) | **PASS** |
+| 3 | UDP 9994/9995 各自 bind,同进程重复 bind 均 `EADDRINUSE` | **PASS** |
+| 4 | node-b shutdown→重建复用 dataStore(address 不变),node-a 全程 online | **PASS** |
+| 5 | a↔b 互 ping(控制面在线证据) | **PENDING**(见下) |
+
+- 内存基线:双 Node(`--no-device`)进程峰值 RSS **18.5 MB**
+  (`getrusage(RUSAGE_CHILDREN).ru_maxrss`,等价 `/usr/bin/time -l`;sudo 全量跑时可复测)。
+- **结论:同进程多 Node 全局状态互扰未发现反例**(Task 5 核心风险检验通过,
+  形态 A「单进程多 Node」可行)。
+- 阻塞项(环境,非代码):**根服务器 `124.222.91.224:9993` 仅对本地源端口 9994 的
+  UDP 流应答**。同一 identity 换端口结果翻转(node-b:9994→ONLINE,9995/9997/9998
+  及全新身份 9996/50000 全部静默、无 ONLINE 也无 ACCESS_DENIED);STUN 实测本机
+  9994/9995/50000 双向 UDP 均正常,排除本机/局域网按端口过滤。根服务器存活
+  (ICMP 11ms,官方节点视角 PLANET 时延 32ms)。待用户在根服务器侧排查
+  (安全组/iptables/zerotier 日志),或换网络复验「双在线 + 互 ping」。
