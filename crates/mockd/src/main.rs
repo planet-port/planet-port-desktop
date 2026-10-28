@@ -143,7 +143,27 @@ impl Store {
     }
 }
 
-/// 定位链 ③④:显式指定 → 校验;省略 → 单 running 自动选,多 running 409
+/// 仅按 id/name 解析 canonical id(未知名 404),不做 running 校验;查询过滤专用
+fn resolve_planet_exists(
+    store: &Store,
+    planet: &str,
+) -> Result<String, (StatusCode, Json<ApiError>)> {
+    store
+        .planets
+        .iter()
+        .find(|x| x.id == planet || x.name == planet)
+        .map(|x| x.id.clone())
+        .ok_or_else(|| {
+            err(
+                StatusCode::NOT_FOUND,
+                "planetNotFound",
+                &format!("planet \"{planet}\" not found"),
+                None,
+            )
+        })
+}
+
+/// 定位链 ③④(仅变更端点):显式指定 → 校验(含 running);省略 → 单 running 自动选,多 running 409
 fn resolve_planet(
     store: &Store,
     planet: Option<&str>,
@@ -193,14 +213,15 @@ fn resolve_planet(
     }
 }
 
-/// 查询端点的 ?planet= 过滤:接受 id 或 name,统一解析为 canonical id(未知名 → 404)
+/// 查询端点的 ?planet= 过滤:接受 id 或 name,统一解析为 canonical id(未知名 → 404);
+/// 语义是过滤而非定位,不做 running 校验
 fn filter_planet(
     store: &Store,
     q: &HashMap<String, String>,
 ) -> Result<Option<String>, (StatusCode, Json<ApiError>)> {
     match q.get("planet").map(|s| s.as_str()) {
         None => Ok(None),
-        Some(p) => Ok(Some(resolve_planet(store, Some(p))?)),
+        Some(p) => Ok(Some(resolve_planet_exists(store, p)?)),
     }
 }
 
