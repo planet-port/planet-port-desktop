@@ -150,7 +150,13 @@ fn resolve_planet(
 ) -> Result<String, (StatusCode, Json<ApiError>)> {
     if let Some(p) = planet {
         return match store.planets.iter().find(|x| x.id == p || x.name == p) {
-            Some(x) => Ok(x.id.clone()),
+            Some(x) if x.status == "running" => Ok(x.id.clone()),
+            Some(x) => Err(err(
+                StatusCode::CONFLICT,
+                "planetNotRunning",
+                &format!("planet \"{}\" is not running", x.name),
+                None,
+            )),
             None => Err(err(
                 StatusCode::NOT_FOUND,
                 "planetNotFound",
@@ -232,33 +238,34 @@ async fn version() -> Json<Value> {
     Json(json!({"version": "0.1.0-mock"}))
 }
 
+/// /status 与 /planets 共用的 PlanetStatus 投影(types.rs 文档注释:列表项复用同一结构)
+fn to_status(p: &PlanetDetail) -> PlanetStatus {
+    PlanetStatus {
+        id: p.id.clone(),
+        name: p.name.clone(),
+        icon: p.icon.clone(),
+        color: p.color.clone(),
+        kind: p.kind.clone(),
+        status: p.status.clone(),
+        online: p.online,
+        node_id: if p.online { p.last_node_id.clone() } else { None },
+        core_version: if p.online { Some("1.16.2".into()) } else { None },
+        latency_ms: if p.online { Some(38u64) } else { None },
+        network_count: p.network_count,
+        port: p.port,
+    }
+}
+
 async fn status(State(st): State<AppState>) -> Json<Value> {
     let store = st.inner.lock().unwrap();
-    let latency = |p: &PlanetDetail| if p.online { Some(38u64) } else { None };
-    let items: Vec<PlanetStatus> = store
-        .planets
-        .iter()
-        .map(|p| PlanetStatus {
-            id: p.id.clone(),
-            name: p.name.clone(),
-            icon: p.icon.clone(),
-            color: p.color.clone(),
-            kind: p.kind.clone(),
-            status: p.status.clone(),
-            online: p.online,
-            node_id: if p.online { p.last_node_id.clone() } else { None },
-            core_version: if p.online { Some("1.16.2".into()) } else { None },
-            latency_ms: latency(p),
-            network_count: p.network_count,
-            port: p.port,
-        })
-        .collect();
+    let items: Vec<PlanetStatus> = store.planets.iter().map(to_status).collect();
     Json(json!({ "planets": items }))
 }
 
 async fn planets_list(State(st): State<AppState>) -> Json<Value> {
     let store = st.inner.lock().unwrap();
-    Json(json!({ "planets": store.planets }))
+    let items: Vec<PlanetStatus> = store.planets.iter().map(to_status).collect();
+    Json(json!({ "planets": items }))
 }
 
 async fn planets_import(
@@ -406,7 +413,7 @@ async fn planets_delete(
     let removed = store.planets.remove(i);
     log_event(
         &mut store,
-        "official",
+        &pid,
         "planetRemoved",
         &format!("planet \"{}\" removed", removed.name),
     );
