@@ -17,6 +17,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::JoinHandle;
 
 use crate::config::{NetConfig, NetConfigOp, NodeEvent, NodeParams, NodeSink};
+use crate::device::{FrameIn, FrameInTx};
 use crate::sa;
 use crate::state::{zt_obj, StateStore};
 use zt_sys as zt;
@@ -55,7 +56,7 @@ impl std::fmt::Display for NodeError {
 impl std::error::Error for NodeError {}
 
 // 核心生成的虚拟网络帧(vnet_frame 回调)→ 驱动线程 → sink 写设备。
-// 反方向(设备收帧 → processVirtualNetworkFrame)是 FrameIn 通道,Task 4 再加。
+// 反方向(设备收帧 → processVirtualNetworkFrame)走 FrameIn 通道,与 FrameOut 完全独立。
 #[allow(dead_code)]
 pub(crate) enum FrameOut {
     Vnet { nwid: u64, src: u64, dst: u64, eth: u16, payload: Vec<u8> },
@@ -68,6 +69,8 @@ struct Inner {
     frame_out: Sender<FrameOut>,
     event_out: Sender<NodeEvent>,
     netcfg_out: Sender<(u64, NetConfigOp, NetConfig)>,
+    // 设备→核心帧通道发送端(设备线程经 NodeHandle::frame_in_tx 取得)
+    frame_in: Sender<FrameIn>,
     // 命令通道发送端;NodeHandle 借此下发 join/leave/stop
     pub(crate) cmd_tx: Sender<Cmd>,
     // 唤醒管道写端(shutdown 时写一字节让 poll 立即返回)
@@ -90,6 +93,7 @@ struct Driver {
     sink: Box<dyn NodeSink>,
     cmd_rx: Receiver<Cmd>,
     frame_rx: Receiver<FrameOut>,
+    frame_in_rx: Receiver<FrameIn>,
     event_rx: Receiver<NodeEvent>,
     netcfg_rx: Receiver<(u64, NetConfigOp, NetConfig)>,
     wake_rd: File,
@@ -133,6 +137,7 @@ impl NodeHandle {
         let udp = UdpSocket::bind(("0.0.0.0", params.bind_port)).map_err(NodeError::Io)?;
         udp.set_nonblocking(true).map_err(NodeError::Io)?;
         let (frame_tx, frame_rx) = channel();
+        let (frame_in_tx, frame_in_rx) = channel();
         let (event_tx, event_rx) = channel();
         let (netcfg_tx, netcfg_rx) = channel();
         let (cmd_tx, cmd_rx) = channel();
@@ -141,6 +146,7 @@ impl NodeHandle {
             store: StateStore::new(params.data_dir.clone(), world_id, params.planet_file.clone()),
             udp,
             frame_out: frame_tx,
+            frame_in: frame_in_tx,
             event_out: event_tx,
             netcfg_out: netcfg_tx,
             cmd_tx,
@@ -196,6 +202,7 @@ impl NodeHandle {
             sink: Box::new(sink),
             cmd_rx,
             frame_rx,
+            frame_in_rx,
             event_rx,
             netcfg_rx,
             wake_rd,
@@ -233,6 +240,12 @@ impl NodeHandle {
     /// 离开网络。实际 ZT_Node_leave 在驱动线程执行。
     pub fn leave(&self, nwid: u64) -> Result<(), NodeError> {
         self.send_cmd(Cmd::Leave(nwid))
+    }
+
+    /// 设备→核心帧通道发送端(设备读线程用;发出后自动唤醒驱动线程 poll)。
+    pub fn frame_in_tx(&self) -> FrameInTx {
+        let wake = self.inner().wake_wr.try_clone().expect("复制唤醒管道写端失败");
+        FrameInTx::new(self.inner().frame_in.clone(), wake)
     }
 
     /// 当前网络配置快照(直接读核心查询接口;只读,与驱动线程无共享可变状态)。
@@ -359,10 +372,38 @@ unsafe fn run_driver(mut d: Driver) {
         while let Ok(ev) = d.event_rx.try_recv() {
             d.sink.on_event(ev);
         }
-        // 核心产出帧 → sink(POC1 无设备,仅计数/打印;不得回喂 processVirtualNetworkFrame)
+        // 核心产出帧 → sink(由 sink 写设备;不得在此回喂 processVirtualNetworkFrame)
         while let Ok(f) = d.frame_rx.try_recv() {
             let FrameOut::Vnet { nwid, src, dst, eth, payload } = f;
             d.sink.on_frame(nwid, src, dst, eth, &payload);
+        }
+        // 设备读出的帧 → processVirtualNetworkFrame(方向:设备→核心,与上面互斥)
+        while let Ok(f) = d.frame_in_rx.try_recv() {
+            if f.payload.is_empty() || f.nwid == 0 {
+                continue;
+            }
+            let mut dl: i64 = 0;
+            let rc = unsafe {
+                zt::ZT_Node_processVirtualNetworkFrame(
+                    d.node,
+                    std::ptr::null_mut(),
+                    now_ms(),
+                    f.nwid,
+                    f.src,
+                    f.dst,
+                    u32::from(f.eth),
+                    0,
+                    f.payload.as_ptr() as *const _,
+                    f.payload.len() as _,
+                    &mut dl,
+                )
+            };
+            if dl > 0 && dl < d.deadline {
+                d.deadline = dl;
+            }
+            if rc as i32 >= 100 {
+                d.sink.on_event(NodeEvent::Fatal(format!("processVirtualNetworkFrame rc={rc}")));
+            }
         }
         // 组播订阅:每 5000ms 对本机每个 IPv4 订阅 (ffffffffffff, ADI=IPv4 主机序)
         if now - last_mcast_ms >= MCAST_SCAN_MS {
