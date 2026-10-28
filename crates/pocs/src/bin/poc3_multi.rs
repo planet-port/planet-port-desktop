@@ -12,8 +12,8 @@
 //!   4. node-b shutdown 后重新 start 复用 dataStore(address 不变),
 //!      重启窗口内 node-a 持续 online
 //!   5. a↔b 互 ping:两节点都在本机,内核对本地地址直接交付、绕过 ZT 数据面
-//!      (Task 4 已证),故本项仅作为「双方 netconf OK 且地址已配齐」的
-//!      控制面在线证据;数据面证据以 --target(网内真实设备)对照为准
+//!      (Task 4 已证),仅作记录性输出、不参与 PASS/FAIL 判定;数据面证据以
+//!      POC2(tcpdump+帧计数)与 --target(网内真实设备)对照为准
 //!
 //! 用法:
 //!   无 sudo 自验(不建设备,先验证隔离项 1-4):--no-device
@@ -390,10 +390,6 @@ fn main() {
     };
     println!("node-a address = {:010x}", a.address());
     println!("node-b address = {:010x}", b.address());
-    println!(
-        "identity 地址不同: {}",
-        a.address() != b.address()
-    );
 
     let mut join_err: Option<String> = None;
     for inst in [&mut a, &mut b] {
@@ -410,15 +406,17 @@ fn main() {
     }
 
     // ===== 断言 3:端口互不抢占(同进程对已 bind 端口重复 bind 必须失败)=====
-    let rebind_a = UdpSocket::bind(("0.0.0.0", args.port_a));
-    let rebind_b = UdpSocket::bind(("0.0.0.0", args.port_b));
-    let assert3 = rebind_a.is_err() && rebind_b.is_err();
+    let rebind_a = UdpSocket::bind(("0.0.0.0", args.port_a)).err();
+    let rebind_b = UdpSocket::bind(("0.0.0.0", args.port_b)).err();
+    let assert3 = [&rebind_a, &rebind_b].iter().all(
+        |e| matches!(e, Some(err) if err.kind() == std::io::ErrorKind::AddrInUse),
+    );
     println!(
         "[probe] 重复 bind {}/{}: {:?} / {:?}(均须 AddrInUse)",
         args.port_a,
         args.port_b,
-        rebind_a.err().map(|e| e.to_string()),
-        rebind_b.err().map(|e| e.to_string())
+        rebind_a.as_ref().map(|e| e.to_string()),
+        rebind_b.as_ref().map(|e| e.to_string())
     );
 
     // ===== 主循环 =====
@@ -431,10 +429,6 @@ fn main() {
     let mut a_online_samples: u32 = 0;
     let mut a_online_fail: u32 = 0;
     let mut next_target_ping = Instant::now();
-    a_online_samples += 1;
-    if !a.online() {
-        a_online_fail += 1;
-    }
 
     while Instant::now() < end {
         print_status(&a, nwid);
@@ -524,11 +518,13 @@ fn main() {
     // ===== 断言 1:identity 独立 =====
     let sec_a = std::fs::read(a.data_dir.join("identity.secret"));
     let sec_b = std::fs::read(b.data_dir.join("identity.secret"));
+    let addrs_differ = a.address() != b.address();
     let assert1 = match (&sec_a, &sec_b) {
         (Ok(x), Ok(y)) => {
             !x.is_empty()
                 && !y.is_empty()
                 && x != y
+                && addrs_differ
                 && identity_addr(x).as_deref() == Some(&*format!("{:010x}", a.address()))
                 && identity_addr(y).as_deref() == Some(&*format!("{:010x}", b.address()))
         }
@@ -552,11 +548,13 @@ fn main() {
     // 对方 identity.secret 字节不得出现在自己树内任何文件(内容级交叉污染扫描):
     // A 的树里不得有 B 的 secret,B 的树里不得有 A 的 secret
     if let (Ok(x), Ok(y)) = (&sec_a, &sec_b) {
-        let cross = ta.values().any(|v| v.windows(y.len()).any(|w| w == y))
-            || tb.values().any(|v| v.windows(x.len()).any(|w| w == x));
-        if cross {
-            println!("[assert2] 检测到对方 identity 字节,隔离被破坏");
-            assert2 = false;
+        if !x.is_empty() && !y.is_empty() {
+            let cross = ta.values().any(|v| v.windows(y.len()).any(|w| w == y))
+                || tb.values().any(|v| v.windows(x.len()).any(|w| w == x));
+            if cross {
+                println!("[assert2] 检测到对方 identity 字节,隔离被破坏");
+                assert2 = false;
+            }
         }
     }
     // 公共相对路径:identity*/networks.d/* 内容必须不同;根 planet 同 world 回写应相同
@@ -584,10 +582,12 @@ fn main() {
 
     // ===== 断言 4/5 汇总 =====
     let assert3_v = if assert3 { Verdict::Pass } else { Verdict::Fail };
-    let assert5 = match cross_ping {
-        Some((ra, rb)) if ra && rb => Verdict::Pass,
-        Some(_) => Verdict::Fail,
-        None => Verdict::Pending,
+    let dir_str = |v: Option<(bool, bool)>| match v {
+        Some((true, true)) => "A→B 通/B→A 通".to_string(),
+        Some((true, false)) => "A→B 通/B→A 不通".to_string(),
+        Some((false, true)) => "A→B 不通/B→A 通".to_string(),
+        Some((false, false)) => "A→B 不通/B→A 不通".to_string(),
+        None => "未采样".to_string(),
     };
     // 待授权即置 PENDING 的项:重启未执行(理论上总会执行)或未同时 OK
     if !restart_done {
@@ -595,7 +595,7 @@ fn main() {
     }
 
     println!("===== 隔离断言汇总 =====");
-    println!("[assert 1] identity 独立(内容不同/各在己目录/address 一致): {}", v_str(assert1.into()));
+    println!("[assert 1] identity 独立(内容不同/address 不同且各与自身一致): {}", v_str(assert1.into()));
     println!("[assert 2] dataStore 隔离(无交叉文件/无内容污染): {}", v_str(assert2.into()));
     println!(
         "[assert 3] UDP 端口独立 bind 且互不抢占({}/{}): {}",
@@ -606,16 +606,16 @@ fn main() {
         v_str(assert4)
     );
     println!(
-        "[assert 5] a↔b 互 ping(控制面在线证据,数据面以 --target 对照为准): {}",
-        v_str(assert5)
+        "[assert 5] a↔b 互 ping: 信息性({}) —— 单机双节点互 ping 走内核本地交付不经 ZT 数据面,不作为互扰判据;数据面证据见 POC2(tcpdump+帧计数)",
+        dir_str(cross_ping)
     );
-    let all: [Verdict; 5] = [assert1.into(), assert2.into(), assert3_v, assert4, assert5];
+    let all: [Verdict; 4] = [assert1.into(), assert2.into(), assert3_v, assert4];
     if all.contains(&Verdict::Fail) {
         println!("RESULT = FAIL(存在失败项)");
     } else if all.contains(&Verdict::Pending) {
         println!("RESULT = PENDING(待控制器授权 node-b 后复跑完整流程)");
     } else {
-        println!("RESULT = PASS(五项全过)");
+        println!("RESULT = PASS(隔离断言 1-4 全过;断言 5 仅信息性)");
     }
 
     println!("===== teardown(设备 → 驱动线程 → delete,两节点)=====");
