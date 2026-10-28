@@ -1,0 +1,12 @@
+[package]
+name = "zt-sys"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+links = "zerotiercore"
+license = "MPL-2.0"
+
+# 依赖许可：cc MIT/Apache-2.0；bindgen BSD-3-Clause(传递 clang-sys Apache-2.0/LLVM)
+[build-dependencies]
+cc = "1"
+bindgen = { version = "0.70", default-features = false, features = ["runtime"] }

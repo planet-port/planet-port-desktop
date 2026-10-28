@@ -1,2 +1,6 @@
 /target
 .DS_Store
+# ZeroTier 核心源码(bootstrap 产物,不入库)
+/Core/
+# POC 本地环境:planet 副本与运行期 dataStore
+crates/pocs/fixtures/
