@@ -23,7 +23,7 @@ verify_tarball() { echo "${ZT_SHA256}  ${TARBALL}" | shasum -a 256 --check - >/d
 
 mkdir -p "$CACHE_DIR"
 if [[ -s "$TARBALL" ]] && ! verify_tarball; then
-  err "缓存损坏，已删除：${TARBALL}" ; rm -f "$TARBALL"
+  rm -f "$TARBALL"; err "缓存损坏，已删除：${TARBALL}"
 fi
 if [[ ! -s "$TARBALL" ]]; then
   echo "下载 ${ZT_TARBALL_URL:-$ZT_URL}"
