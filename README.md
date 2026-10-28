@@ -26,6 +26,21 @@ cargo run -p planet-port -- info
   联调用 `PLANET_PORT_TOKEN=dev` 即可。
 - 未设置 URL 时 CLI 使用内置默认端口 9998;真实 `planet-portd` 的端口文件协商(CLI 读取)尚未实现。
 
+### 环境变量
+
+| 变量 | 作用 | 优先级 |
+|---|---|---|
+| `PLANET_PORT_URL` | 覆盖 daemon API 地址 | 高于内置默认 `http://127.0.0.1:9998`,低于 `--api-url` 显式传参 |
+| `PLANET_PORT_TOKEN` | 鉴权 token(`X-ZT1-Auth` 头) | 高于 token 文件(`<config_dir>/planet-portd/authtoken.secret`) |
+| `PLANET_PORT_PLANET` | 默认 planet(定位链②) | 低于 `--planet` 显式传参,高于 daemon 侧自动定位(③④) |
+
+CLI 是一次性子进程,`use` 命令即通过输出 `export PLANET_PORT_PLANET=<id>` 供 eval 写入该变量。
+
+### 请求超时
+
+常规请求全局 10s 超时,超时以错误退出(不误报 daemon 未在线);`events --follow`
+的轮询请求无超时,长挂不受影响。
+
 ## planet 定位链
 
 变更类命令(join / leave / set / orbit / deorbit / dump / moon import)必须落到**恰好一个**
@@ -65,7 +80,7 @@ planet 实例,按以下顺序解析:
 | `listnetworks` | 跨 planet 网络列表,带 PLANET 列;`--planet` 过滤 |
 | `listpeers` | peers 按 planet 分组展示 |
 | `listmoons` | moons 聚合表;`--planet` 过滤 |
-| `events [--limit N] [--follow]` | 事件日志表,`--limit` 默认 40;`--follow` 每 2s 轮询按 ts 游标增量输出,Ctrl-C 退出 |
+| `events [--limit N] [--follow]` | 事件日志表,`--limit` 默认 40;`--follow` 每 2s 轮询按 ts 游标增量输出,Ctrl-C 退出;daemon 断开/不可达时命令报错退出(exit 3),不会静默重连,长时挂着需自行拉起与保活 |
 
 ### 变更类(按定位链落到单一 planet)
 
@@ -73,7 +88,7 @@ planet 实例,按以下顺序解析:
 |---|---|
 | `join <nwid>` | 加入网络 |
 | `leave <nwid>` | 退出网络 |
-| `set <nwid> <k>=<v>...` | 客户端本地配置:`routeViaZeroTier=0\|1`、`dnsMode=none\|network\|custom`、`customDns=<逗号分隔>`;未知 key 退出码 2 |
+| `set <nwid> <k>=<v>...` | 客户端本地配置:`routeViaZeroTier=0\|1`(非 0/1 退出码 2)、`dnsMode=none\|network\|custom`、`customDns=<逗号分隔>`;未知 key 或不带任何 k=v 退出码 2 |
 | `orbit <moonid> <seed>` | orbit 一个 moon |
 | `deorbit <moonid>` | deorbit |
 | `moon import <file>` | 导入 .moon 文件,关联定位链 planet(成功为 201) |
@@ -88,7 +103,7 @@ planet 实例,按以下顺序解析:
 | `planet show <name\|id>` | 详情(worldId、类型、roots、来源、大小、修订时间、端口等) |
 | `planet rename <name\|id> <新名>` | 重命名别名 |
 | `planet start <name\|id>` / `planet stop <name\|id>` | 上线 / 下线(保留登记) |
-| `planet rm <name\|id> [--yes]` | 删除登记;有活跃网络时拒绝;交互确认,`--yes` 供脚本跳过 |
+| `planet rm <name\|id> [--yes]` | 删除登记;有活跃网络时拒绝;交互确认提示走 stderr(stdout 纯净),`--yes` 供脚本跳过;`-j` 下必须配 `--yes`,否则退出码 2 |
 | `planet export <name\|id> [-o <file>]` | 导出 planet 二进制;缺省 `-o` 写 stdout |
 | `planet share <name\|id> [--ttl <秒>]` | 生成临时下载链接并打印 URL 与过期时间 |
 
