@@ -11,7 +11,7 @@
 |---|---|
 | 本轮范围 | POC 1-3,每步可独立止步,验证通过后再立 daemon 计划 |
 | 工程形态 | 持久地基 crate:`zt-sys`(bindgen)+ `zt-core`(safe 封装)+ `pocs`(三个 bin);POC 代码即 daemon 地基,零弃置 |
-| 核心库来源 | git submodule pin **1.16.2 tag**(MPL-2.0),cmake 构建静态库,build.rs 驱动;禁止取用 BSL 时代(1.4.6~1.14.x)代码 |
+| 核心库来源 | **bootstrap 脚本模式**(对齐 iOS/Android 模板):`scripts/bootstrap.sh` 钉 1.16.2 tag + SHA256 拉官方 tarball,解压裁剪子集到 `Core/`(gitignore,不入库),`.fetched-tag` 版本戳 + 构建期校验 fail-fast;禁止取用 BSL 时代(1.4.6~1.14.x)代码 |
 | FFI 契约面 | 官方 `include/ZeroTierOne.h`(ZT_Node_* 回调式纯 C API,MPL-2.0) |
 | 线程模型 | 每 Node 一条专属 OS 线程跑核心服务循环(zts 同构),回调经 trait 进 Rust;POC 不引入 tokio |
 | dataStore 语义 | 按 Android NodeRuntime 平移:`<dataDir>/<worldId>/` 分目录;planet 文件作为 hook 输入重定向 |
@@ -35,15 +35,18 @@ daemon 进程模型与 REST API 真实现、service 组命令、事件日志、�
 
 ```
 planet-port-desktop/
+├── scripts/bootstrap.sh   # 拉 1.16.2 tarball(SHA256 校验)→ 裁剪解压到 Core/
+├── Core/                  # gitignore:核心源码子集(bootstrap 产物,含 .fetched-tag 版本戳)
 ├── crates/
-│   ├── zt-sys/        # bindgen 于 include/ZeroTierOne.h,链接静态 libzerotiercore
-│   ├── zt-core/       # unsafe→safe 封装:Node 句柄、回调 trait、线程循环
-│   └── pocs/          # 三个 bin:poc1_control / poc2_device / poc3_multi
-├── vendor/ZeroTierOne/  # git submodule,pin 1.16.2 tag
-└── pocs/fixtures/       # gitignore:planet.Gozi25 副本、运行期 dataStore 输出
+│   ├── zt-sys/            # bindgen 于 Core/include/ZeroTierOne.h;build.rs 编译 Core 子集出静态库
+│   ├── zt-core/           # unsafe→safe 封装:Node 句柄、回调 trait、线程循环
+│   └── pocs/              # 三个 bin:poc1_control / poc2_device / poc3_multi
+└── pocs/fixtures/         # gitignore:planet.Gozi25 副本、运行期 dataStore 输出
 ```
 
-- submodule 即官方仓库本体(构建时只编译 core 相关目标);锁 tag 1.16.2,升级需换 tag 重新评估。
+- **裁剪子集与 iOS/Android 完全一致**:`node/` 整目录 + `include/`(ZeroTierOne.h/ZeroTierDebug.h)+ `osdep/` 精选 6 文件(Binder/BlockingQueue/ExtOsdep/OSUtils/Phy)+ `version.h` + `ext/` 精选头(nlohmann/json.hpp、prometheus-cpp-lite);不含 controller/service 等其余部分。
+- bootstrap 细节对齐两端模板:`ZT_VERSION=1.16.2` + `ZT_SHA256`(与 iOS/Android 同值)、`ZT_TARBALL_URL` 镜像与 `ZT_CACHE_DIR` 离线缓存支持;build.rs 检查 `Core/.fetched-tag` 不匹配即报错终止(Android GradleException / iOS preBuildScript 的等价物)。
+- zt-sys build.rs 用 cc 或 cmake 驱动 Core 子集编译(实现计划定,倾向对齐 Android 树外 CMakeLists 的 GLOB 方案);升级版本 = 换 tag + SHA 重新评估。
 - planet 文件含内网根服务器地址,属半敏感配置,副本放 gitignore 的 fixtures 目录,不入库。
 
 ## 3. FFI 封装层(zt-core)设计
@@ -112,7 +115,7 @@ ZT 核心 C API 是"Rust 持有资源 + 核心反向回调"结构。zt-core 用 
 |---|---|
 | 单进程多 Node 全局状态互扰(核心风险,无官方书面承诺) | POC 3 直接检验;失败 → 形态 B(每 planet 一进程),POC 1/2 成果保留 |
 | macOS utun ARP 垫层正确性 | 参照官方 MacEthernetTap 用户态 ARP 模式;现网实测 |
-| cmake 子模块构建链复杂度 | build.rs 只做最小 core 目标;若官方构建系统不友好,退路为手写编译清单(仍从 1.16.2 源码) |
+| Core 子集构建链复杂度 | 对齐 Android 树外 CMakeLists(GLOB node/*.cpp)成熟方案;退路为 build.rs cc 逐文件编译清单(仍从 1.16.2 tarball) |
 | 1.16.2 C API 与预期不符(服务循环/回调形态) | 以头文件为准修正封装层设计;头文件已在案 |
 
 ## 7. 许可合规落地
