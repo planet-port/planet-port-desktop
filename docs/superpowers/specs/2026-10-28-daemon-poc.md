@@ -71,7 +71,7 @@ ZT 核心 C API 是"Rust 持有资源 + 核心反向回调"结构。zt-core 用 
 ### 错误与安全
 
 - FFI 返回码逐一定义映射,禁止 unwrap 穿越 FFI;
-- 封装层单测:identity 持久化往返、dataStore 目录隔离(不依赖真实网络)。
+- 封装层行为验证(不依赖真实网络的离线用例):identity 持久化往返、dataStore 目录隔离——通过 POC bin 的可观察行为验证,不引入测试框架。
 
 ## 4. 验收标准
 
