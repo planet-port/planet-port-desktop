@@ -163,15 +163,22 @@ fn rename(client: &Client, id: &str, new_name: &str, json: bool) -> Result<(), C
 }
 
 fn rm(client: &Client, id: &str, yes: bool, json: bool) -> Result<(), CliError> {
+    // -j 时 stdout 只允许输出 JSON,交互确认会污染输出,必须显式 --yes
+    if json && !yes {
+        return Err(CliError::Usage(
+            "--json requires --yes for planet rm (confirmation prompt would corrupt stdout)".into(),
+        ));
+    }
     if !yes {
-        print!("delete planet \"{}\" and its config? [y/N] ", id);
-        std::io::stdout().flush().ok();
+        // 确认提示与人话反馈都走 stderr,stdout 保持纯净
+        eprint!("delete planet \"{}\" and its config? [y/N] ", id);
+        std::io::stderr().flush().ok();
         let mut answer = String::new();
         std::io::stdin()
             .read_line(&mut answer)
             .map_err(|e| CliError::Io(e.to_string()))?;
         if !answer.trim().eq_ignore_ascii_case("y") {
-            println!("aborted");
+            eprintln!("aborted");
             return Ok(());
         }
     }

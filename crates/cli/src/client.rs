@@ -1,6 +1,10 @@
 use planet_port_api::types::ApiError;
 use planet_port_api::{token_file, DEFAULT_API_PORT};
 use serde_json::Value;
+use std::time::Duration;
+
+/// 常规请求全局超时;events --follow 的轮询请求走无超时 agent,长挂不受影响
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub enum CliError {
     Offline,
@@ -24,6 +28,7 @@ impl CliError {
 
 pub struct Client {
     agent: ureq::Agent,
+    poll_agent: ureq::Agent,
     base: String,
     token: String,
 }
@@ -46,17 +51,38 @@ impl Client {
                 .trim()
                 .to_string(),
         };
-        let agent = ureq::Agent::new_with_config(
+        let agent = Self::make_agent(Some(REQUEST_TIMEOUT));
+        let poll_agent = Self::make_agent(None);
+        Ok(Self {
+            agent,
+            poll_agent,
+            base,
+            token,
+        })
+    }
+
+    fn make_agent(timeout: Option<Duration>) -> ureq::Agent {
+        ureq::Agent::new_with_config(
             ureq::config::Config::builder()
                 .http_status_as_error(false)
+                .timeout_global(timeout)
                 .build(),
-        );
-        Ok(Self { agent, base, token })
+        )
     }
 
     /// 底层请求:返回状态码与原始字节,文本/二进制端点共用同一错误语义
     fn request_bytes(
         &self,
+        method: &str,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<(u16, Vec<u8>), CliError> {
+        self.send(&self.agent, method, path, body)
+    }
+
+    fn send(
+        &self,
+        agent: &ureq::Agent,
         method: &str,
         path: &str,
         body: Option<&Value>,
@@ -75,8 +101,14 @@ impl Client {
             None => Vec::new(),
         };
         let req = builder.body(bytes).map_err(|e| CliError::Io(e.to_string()))?;
-        // 连接失败统一视为 daemon 不在线(退出码 3)
-        let mut resp = self.agent.run(req).map_err(|_| CliError::Offline)?;
+        // 连接失败统一视为 daemon 不在线(退出码 3);超时单独提示,避免误报"未运行"
+        let mut resp = agent.run(req).map_err(|e| match e {
+            ureq::Error::Timeout(_) => CliError::Io(format!(
+                "request to {method} {url} timed out after {}s",
+                REQUEST_TIMEOUT.as_secs()
+            )),
+            _ => CliError::Offline,
+        })?;
         let status = resp.status().as_u16();
         let buf = resp
             .body_mut()
@@ -107,6 +139,11 @@ impl Client {
     pub fn get_json(&self, path: &str) -> Result<Value, CliError> {
         let (c, t) = self.request("GET", path, None)?;
         self.parse(c, t)
+    }
+    /// events --follow 专用的轮询 GET:无全局超时,daemon 偶发阻塞不会中断长挂
+    pub fn get_json_polling(&self, path: &str) -> Result<Value, CliError> {
+        let (c, buf) = self.send(&self.poll_agent, "GET", path, None)?;
+        self.parse(c, String::from_utf8_lossy(&buf).into_owned())
     }
     /// GET 纯文本端点(如 /dump),2xx 返回正文,非 2xx 仍走 ApiError 解析
     pub fn get_text(&self, path: &str) -> Result<String, CliError> {

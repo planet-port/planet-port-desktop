@@ -39,10 +39,10 @@ pub fn events(
         render(&v);
         return Ok(());
     }
-    // --follow:2s 轮询,按 ts 游标增量输出
+    // --follow:2s 轮询,按 ts 游标增量输出;走无超时轮询路径,daemon 偶发阻塞不中断
     let mut after: Option<u64> = None;
     loop {
-        let v = client.get_json(&endpoints::events(planet.as_deref(), limit, after))?;
+        let v = client.get_json_polling(&endpoints::events(planet.as_deref(), limit, after))?;
         let entries: Vec<EventEntry> = serde_json::from_value(
             v.get("events").cloned().unwrap_or(Value::Null),
         )
