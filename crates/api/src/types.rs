@@ -9,6 +9,7 @@ pub enum PlanetKind {
 
 /// GET /status 的每一项;/planets 列表项复用同一结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlanetStatus {
     pub id: String,
     pub name: String,
@@ -27,6 +28,7 @@ pub struct PlanetStatus {
 
 /// GET /planets/{id} 返回体
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlanetDetail {
     pub id: String,
     pub name: String,
@@ -47,6 +49,7 @@ pub struct PlanetDetail {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RouteLine {
     pub target: String,
     pub via: Option<String>,
@@ -54,6 +57,7 @@ pub struct RouteLine {
 
 /// GET /networks 的每一项
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NetworkEntry {
     pub planet: String,
     pub nwid: String,
@@ -75,6 +79,7 @@ pub struct NetworkEntry {
 
 /// GET /peers 的每一项
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PeerEntry {
     pub planet: String,
     pub address: String,
@@ -86,6 +91,7 @@ pub struct PeerEntry {
 
 /// GET /moons 的每一项
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MoonEntry {
     pub planet: String,
     pub moon_id: String,
@@ -96,6 +102,7 @@ pub struct MoonEntry {
 
 /// GET /events 的每一项
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventEntry {
     pub planet: String,
     pub ts_ms: u64,
@@ -105,6 +112,7 @@ pub struct EventEntry {
 
 /// 统一错误体(候选列表仅 planet 歧义时出现)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ApiError {
     pub error: String,
     pub message: String,
@@ -114,6 +122,7 @@ pub struct ApiError {
 
 /// POST /planets/{id}/share 返回体
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ShareLink {
     pub url: String,
     pub expires_at: u64, // unix 秒
