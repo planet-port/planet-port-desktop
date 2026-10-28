@@ -201,11 +201,16 @@ pub struct NodeHandle {
 
 // SAFETY:句柄仅由裸指针 + JoinHandle + bool 组成,可跨线程转移/共享,前提:
 // - process*(含全部回调出口消费)只在唯一驱动线程执行(本模块保证);
-// - join/leave/orbit/deorbit 经命令通道转发到驱动线程串行执行,查询类
-//   (networks/peers/status)在核心内部经 _networks_m/_backgroundTasksLock
-//   等互斥量保护(Core/node/Node.hpp),与驱动线程互斥,跨线程调用安全;
-// - dataStore/UDP 仅由驱动线程经回调触达;wake() 只对管道 fd 做 write(线程安全);
-// - shutdown 的 join 先于 ZT_Node_delete 的硬顺序不受调用线程影响。
+// - join/leave/orbit/deorbit 经命令通道转发到驱动线程串行执行;
+// - 查询类(networks/peers/status)由调用线程直接调核心查询接口:核心对
+//   查询缓冲的分配/释放自洽(freeQueryResult),但 peers()/online 对 Peer
+//   的 latency/version/paths 及 _online 的逐字段读不持核心互斥量,与驱动
+//   线程的写构成**良性数据竞争** —— 最坏是读到撕裂前的旧值(时延/地址
+//   脏读),不涉及指针有效性,属可接受的快照不精确;本期不改实现,
+//   查询迁移到驱动线程命令通道留二期;
+// - 结构安全(裸指针/channel/pipe)论证不变:dataStore/UDP 仅由驱动线程
+//   触达;wake() 只对管道 fd 做 write(线程安全);shutdown 的 join 先于
+//   ZT_Node_delete 的硬顺序不受调用线程影响。
 // 上层(daemon)据此可在 REST 工作线程持有句柄,并把 start/shutdown 放进
 // spawn_blocking。node/inner 指针不外借,调用方无其它形式触及。
 unsafe impl Send for NodeHandle {}
@@ -361,7 +366,8 @@ impl NodeHandle {
         FrameInTx::new(self.inner().frame_in.clone(), wake)
     }
 
-    /// 当前网络配置快照(直接读核心查询接口;只读,与驱动线程无共享可变状态)。
+    /// 当前网络配置快照(直接读核心查询接口;网络列表受核心
+    /// `_networks_m` 保护,无数据竞争)。
     pub fn networks(&self) -> Vec<NetConfig> {
         unsafe {
             let l = zt::ZT_Node_networks(self.node);
@@ -378,10 +384,14 @@ impl NodeHandle {
         }
     }
 
-    /// 已知对端列表快照(直接读核心查询接口,与驱动线程无共享可变状态)。
+    /// 已知对端列表快照(直接读核心查询接口)。
     ///
     /// 红线:`ZT_Node_peers` 返回的缓冲必须用 `ZT_Node_freeQueryResult`
     /// 释放 —— 拷贝在本函数内完成,指针不外借。
+    ///
+    /// 已知不精确:对每个 Peer 的 latency/version/paths 逐字段读不持核心
+    /// 互斥量,与驱动线程的写存在良性数据竞争,可能读到旧值(见
+    /// `unsafe impl Send/Sync` 的 SAFETY 注释);内存安全不受影响。
     pub fn peers(&self) -> Vec<PeerInfo> {
         unsafe {
             let l = zt::ZT_Node_peers(self.node);
@@ -399,6 +409,7 @@ impl NodeHandle {
     }
 
     /// 核心是否 online(有可用物理路径到达根服务器)。
+    /// `_online` 为普通 bool,读侧与驱动线程写存在良性数据竞争(脏读布尔)。
     pub fn online(&self) -> bool {
         unsafe {
             let mut s: zt::ZT_NodeStatus = std::mem::zeroed();
@@ -516,7 +527,7 @@ unsafe fn run_driver(mut d: Driver) {
         libc::pollfd { fd: udp_fd, events: libc::POLLIN, revents: 0 },
         libc::pollfd { fd: d.wake_rd.as_raw_fd(), events: libc::POLLIN, revents: 0 },
     ];
-    // POLLERR/POLLNVAL 上报去重:状态保持时只报一次,避免忙转刷屏
+    // POLLERR/POLLNVAL 日志去重:状态保持时只报一次,避免忙转刷屏
     let mut poll_reported = [false; 2];
     loop {
         let now = now_ms();
@@ -694,8 +705,10 @@ unsafe fn run_driver(mut d: Driver) {
             let mut b = [0u8; 64];
             let _ = unsafe { libc::read(polls[1].fd, b.as_mut_ptr() as *mut _, b.len()) };
         }
-        // POLLERR/POLLNVAL:fd 级异常。NVAL = fd 无效(节点已不可用,退出驱动线程
-        // 防忙转);ERR 多为暂态(如 ICMP 差错),打日志 + 事件,状态保持时只报一次。
+        // POLLERR/POLLNVAL:fd 级异常,两者后果天差地别。NVAL = fd 无效
+        // (节点已不可用,置 running=false 并退出驱动线程防忙转);ERR 多为
+        // 暂态(如 ICMP 差错),**只打 stderr 日志,不发 Fatal** —— 上层把
+        // Fatal 视为停机,一次暂态 ERR 不应冻结设备面。日志按状态保持去重。
         for (i, p) in polls.iter().enumerate() {
             let err = p.revents & libc::POLLERR != 0;
             let nval = p.revents & libc::POLLNVAL != 0;
@@ -704,17 +717,10 @@ unsafe fn run_driver(mut d: Driver) {
                 continue;
             }
             let what = if i == 0 { "UDP socket" } else { "唤醒管道" };
-            let kind = if nval { "POLLNVAL(fd 无效)" } else { "POLLERR" };
+            let kind = if nval { "POLLNVAL(fd 无效)" } else { "POLLERR(多为暂态,已忽略)" };
             if !poll_reported[i] {
                 poll_reported[i] = true;
                 eprintln!("[driver] {what} poll 异常: {kind}");
-                if call_sink(&mut d.sink, &inner.running, "on_event", |s| {
-                    s.on_event(NodeEvent::Fatal(format!("{what} poll 异常: {kind}")))
-                })
-                .is_none()
-                {
-                    return;
-                }
             }
             if nval {
                 inner.running.store(false, Ordering::SeqCst);

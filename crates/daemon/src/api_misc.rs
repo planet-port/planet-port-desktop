@@ -194,18 +194,17 @@ pub async fn moon_import(
             )
         })?;
     // 定位链 + entry(data_dir 决定 moon 落哪个 planet):running 校验在前
-    let (pid, entry) = {
+    let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
+    let entry = {
         let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let pid = resolve_running_planet(&reg, q.get("planet").map(|s| s.as_str()))?;
-        let entry = reg.planets.iter().find(|e| e.id == pid).cloned().ok_or_else(|| {
+        reg.planets.iter().find(|e| e.id == pid).cloned().ok_or_else(|| {
             err(
                 StatusCode::CONFLICT,
                 "planetNotRunning",
                 &format!("planet \"{pid}\" is not running"),
                 None,
             )
-        })?;
-        (pid, entry)
+        })?
     };
     // 先看大小再读入(与 /planets import 同款,8MB 上限)
     let meta = fs::metadata(source).map_err(|e| {
@@ -329,11 +328,9 @@ pub async fn moon_orbit(
             )
         })?,
     };
-    // 定位(registry 锁)与运行时获取(planets 锁)分开:两锁不得嵌套
-    let pid = {
-        let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        resolve_running_planet(&reg, q.get("planet").map(|s| s.as_str()))?
-    };
+    // 定位(registry 锁在 resolve_running_planet 内短持)与运行时获取(planets
+    // 锁)分开:两锁不得嵌套
+    let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
     let rt = not_running(&st, &pid)?;
     // orbit 在驱动线程执行并阻塞等应答,放阻塞线程池
     let rt2 = std::sync::Arc::clone(&rt);
@@ -380,18 +377,17 @@ pub async fn moon_deorbit(
 ) -> Result<StatusCode, ApiErr> {
     let mid = parse_moon_id(&moon_id)?;
     let mid_hex = format!("{mid:016x}");
-    let (pid, entry) = {
+    let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
+    let entry = {
         let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let pid = resolve_running_planet(&reg, q.get("planet").map(|s| s.as_str()))?;
-        let entry = reg.planets.iter().find(|e| e.id == pid).cloned().ok_or_else(|| {
+        reg.planets.iter().find(|e| e.id == pid).cloned().ok_or_else(|| {
             err(
                 StatusCode::CONFLICT,
                 "planetNotRunning",
                 &format!("planet \"{pid}\" is not running"),
                 None,
             )
-        })?;
-        (pid, entry)
+        })?
     };
     if !entry.moons.iter().any(|m| m.moon_id == mid_hex) {
         return Err(err(
@@ -436,18 +432,17 @@ pub async fn dump(
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<String, ApiErr> {
     // 单 planet 定位链(mockd dump 同款:running 校验)
-    let (pid, entry) = {
+    let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
+    let entry = {
         let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let pid = resolve_running_planet(&reg, q.get("planet").map(|s| s.as_str()))?;
-        let entry = reg.planets.iter().find(|e| e.id == pid).cloned().ok_or_else(|| {
+        reg.planets.iter().find(|e| e.id == pid).cloned().ok_or_else(|| {
             err(
                 StatusCode::CONFLICT,
                 "planetNotRunning",
                 &format!("planet \"{pid}\" is not running"),
                 None,
             )
-        })?;
-        (pid, entry)
+        })?
     };
     let rt = runtime_of(&st, &pid);
     let name = crate::api_planet::name_of(&entry);

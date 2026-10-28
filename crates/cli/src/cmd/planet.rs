@@ -17,6 +17,12 @@ pub enum PlanetCmd {
         /// Optional alias
         #[arg(long)]
         name: Option<String>,
+        /// Override data dir (absolute path); omit to use daemon default
+        #[arg(long)]
+        data_dir: Option<String>,
+        /// Override UDP port; omit to use daemon auto-assignment
+        #[arg(long)]
+        port: Option<u16>,
     },
     /// Show planet details
     Show { id: String },
@@ -50,7 +56,14 @@ pub enum PlanetCmd {
 pub fn run(client: &Client, cmd: &PlanetCmd, json: bool) -> Result<(), CliError> {
     match cmd {
         PlanetCmd::List => list(client, json),
-        PlanetCmd::Import { source, name } => import(client, source, name.clone(), json),
+        PlanetCmd::Import { source, name, data_dir, port } => import(
+            client,
+            source,
+            name.clone(),
+            data_dir.clone(),
+            *port,
+            json,
+        ),
         PlanetCmd::Show { id } => show(client, id, json),
         PlanetCmd::Rename { id, new_name } => rename(client, id, new_name, json),
         PlanetCmd::Start { id } => {
@@ -114,9 +127,17 @@ fn import(
     client: &Client,
     source: &str,
     name: Option<String>,
+    data_dir: Option<String>,
+    port: Option<u16>,
     json: bool,
 ) -> Result<(), CliError> {
-    let body = json!({ "source": source, "name": name });
+    // dataDir/port 为 daemon API 已支持的覆写项;无值时不写字段,行为不变
+    let body = json!({
+        "source": source,
+        "name": name,
+        "dataDir": data_dir,
+        "port": port,
+    });
     let resp = client.post_json(endpoints::planets(), &body)?;
     if json {
         print_json(&resp);

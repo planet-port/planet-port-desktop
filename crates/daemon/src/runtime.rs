@@ -7,7 +7,9 @@
 //!   (plane/net_local/net_cache/conflicts/Ring)+ 设备操作,绝不调用
 //!   node.join/leave/orbit(阻塞应答 = 自等自死锁),绝不取 registry 锁;
 //! - start 在 `spawn_blocking` 执行(NodeHandle::start 含首次
-//!   processBackgroundTasks 与 identity 生成/装载,毫秒级阻塞);
+//!   processBackgroundTasks 与 identity 生成/装载,毫秒级阻塞);成功后按
+//!   registry net_local 逐网络 re-join(核心不持久化成员关系,
+//!   networks.d/<nwid>.conf 只是 netconf 缓存,重启后须显式 join);
 //! - stop 红线顺序:stopping=true → plane.teardown_all()(join 设备读线程)
 //!   → node.shutdown()(join 驱动线程 → ZT_Node_delete)→ 移出 map →
 //!   registry.running=false → 事件。shutdown 同样放 spawn_blocking。
@@ -266,7 +268,8 @@ pub fn status_name(s: &NetStatus) -> &'static str {
 
 /// 拉起一个 planet 实例。失败时已完成登记(事件 planetStartFailed +
 /// registry.running=false),调用方拿 Err(message) 转 REST 错误即可。
-/// 已在运行则幂等成功。
+/// 已在运行则幂等成功。成功后按 registry net_local 逐网络 re-join
+/// (重启恢复;Core 不持久化成员关系,见函数尾部注释)。
 pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(), String> {
     // 启停全程持门闩:防并发双 start 双实例(后者覆盖前者即泄漏线程/端口)
     let _gate = state.runtime_gate.lock().await;
@@ -317,17 +320,15 @@ pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(),
         .map_err(|m| start_failed(state, &pid, &m))?;
 
     let node_id = format!("{:010x}", node.address());
-    state.planets.lock().unwrap().insert(
-        pid.clone(),
-        Arc::new(PlanetRuntime {
-            planet_id: pid.clone(),
-            node: Mutex::new(Some(node)),
-            plane,
-            stopping,
-            conflicts,
-            net_local,
-        }),
-    );
+    let rt = Arc::new(PlanetRuntime {
+        planet_id: pid.clone(),
+        node: Mutex::new(Some(node)),
+        plane,
+        stopping,
+        conflicts,
+        net_local: Arc::clone(&net_local),
+    });
+    state.planets.lock().unwrap().insert(pid.clone(), Arc::clone(&rt));
     {
         let mut reg = state.registry.lock().unwrap();
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
@@ -339,6 +340,26 @@ pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(),
         }
     }
     state.events.push(&pid, "planetStarted", "planet started");
+
+    // 重启恢复:registry net_local 中的网络必须显式 re-join。Core 的
+    // networks.d/<nwid>.conf 只是 netconf 缓存,不承载成员关系,核心重启后
+    // 不会自动恢复 join。失败仅记事件不判 start 失败(网络未授权时核心本就
+    // 静默,join 调用自身几乎不会失败;个别失败不应把整个实例拉回 stopped)。
+    let nwids: Vec<u64> = lock(&rt.net_local).keys().copied().collect();
+    for nwid in nwids {
+        let rt2 = Arc::clone(&rt);
+        match tokio::task::spawn_blocking(move || rt2.node_join(nwid)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => state.events.push(
+                &pid,
+                "join",
+                &format!("重启恢复 re-join 网络 {nwid:016x} 失败: {e}"),
+            ),
+            Err(e) => {
+                eprintln!("[runtime] re-join 任务失败: {e}");
+            }
+        }
+    }
     Ok(())
 }
 

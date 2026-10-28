@@ -12,7 +12,7 @@
 | 进程模型 | 单进程多 Node:每 planet 一个 zt-core NodeHandle(自带专属驱动线程,POC 已验证隔离);REST 用 axum+tokio(mockd 同栈) |
 | 身份模型 | **每 planet 独立 identity**(用户 2026-10-28 拍板),dataDir 隔离 |
 | 存储布局 | `<config>/planet-portd/`:`registry.json`(planet 登记+本地网络配置+moon 记录)、`planets/<worldId>.bin`、`data/<worldId>/`(StateStore)、`authtoken.secret`、`port` |
-| API 端口/鉴权 | 默认 9998,实际端口写 port 文件(api crate 已定义路径);token 0600 首启生成,X-ZT1-Auth 头(契约同官方) |
+| API 端口/鉴权 | 默认 9998,实际端口写 port 文件(api crate 已定义路径);token 0644 首启生成(对齐官方 macOS authtoken.secret 的可读性,理由见 daemon main.rs),X-ZT1-Auth 头(契约同官方) |
 | UDP 端口分配 | 避开 9993(官方),从 9994 起顺序分配并记入 registry(稳定复用);冲突时递增重试 |
 | 路由共存策略(前置清单⑤定案) | managed routes **一律安装**到本实例接口(与官方 zerotier-one 多网络同 /24 并存的行为一致,由内核路由次序决定);与其它接口同网段时打共存事件;routeViaZeroTier=0 时整个 planet 的 managed routes 不安装 |
 | DNS(前置范围裁剪) | dnsMode 三值存储与回显照契约;一期**不写系统 DNS**(none=不动,network/custom=记录+事件提示未应用),系统 resolver 写入留二期 |
@@ -76,7 +76,7 @@ planet-portd (root)
 1. DevicePlane 落 Drop(join reader→删路由→销毁 feth)与 NodeHandle 落 Drop(未 shutdown 时 debug_assert + 尽力 shutdown);
 2. run_driver 的 sink 调用包 catch_unwind,panic → NodeEvent::Fatal + 停机(不杀进程);
 3. reader 线程错误改为退避重试(事件上报),spawn_reader 失败不再 `.ok()` 吞;
-4. poll 处理 POLLERR/POLLNVAL(日志+事件);
+4. poll 处理 POLLERR/POLLNVAL(ERR 仅日志,暂态不视为停机;NVAL 日志+事件并退出驱动线程);
 5. 路由共存策略(§0);6. 信号处理(daemon 层);7. `crates/zt-core/LICENSE-MPL.txt` 占位 + bootstrap 增拷 LICENSE-MPL.txt 入 Core/;
 8. 新增 `NodeHandle::peers()`(包装 ZT_Node_peers,role/latency/paths/版本/active 标志,快照拷贝);
 9. 架构红线写入 zt-core 模块文档(回调 glue 只拷贝+send;sink 必须在驱动线程;FrameIn/FrameOut 方向;shutdown join→delete 顺序)。

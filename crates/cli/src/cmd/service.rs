@@ -84,10 +84,7 @@ fn install() {
         .map(|(a, b)| a == b)
         .unwrap_or(false);
     if !same {
-        if let Err(e) = fs::copy(&exe, BIN_PATH) {
-            eprintln!("拷贝二进制 {} → {} 失败: {e}", exe.display(), BIN_PATH);
-            std::process::exit(1);
-        }
+        copy_exe(&exe, BIN_PATH);
     }
     if let Err(e) = fs::set_permissions(BIN_PATH, fs::Permissions::from_mode(0o755)) {
         eprintln!("设置 {BIN_PATH} 权限失败: {e}");
@@ -106,8 +103,30 @@ fn install() {
     }
 
     // 3. 装载(RunAtLoad=true:bootstrap 装载即拉起一次,随开机自动启动;
-    //    KeepAlive=false:进程退出后 launchd 不自动重启)
-    launchctl(&["bootstrap", "system/", PLIST_PATH]);
+    //    KeepAlive=false:进程退出后 launchd 不自动重启)。
+    //    重复安装幂等:先 bootout 卸掉已加载的旧服务(未加载属预期),
+    //    bootstrap 撞上「已装载」则提示用 start,不硬退。
+    match launchctl_output(&["bootout", &format!("system/{LABEL}")]) {
+        Ok(_) => println!("已卸载旧服务 {LABEL}(重装)"),
+        Err(stderr) => {
+            let s = stderr.to_lowercase();
+            if s.contains("not loaded") || s.contains("no such process") || s.contains("could not find") {
+                // 首次安装,正常
+            } else {
+                eprintln!("launchctl bootout 失败: {}", stderr.trim());
+                std::process::exit(1);
+            }
+        }
+    }
+    if let Err(stderr) = launchctl_output(&["bootstrap", "system/", PLIST_PATH]) {
+        if stderr.to_lowercase().contains("already bootstrapped") {
+            println!("服务 {LABEL} 已被 launchd 装载,跳过 bootstrap");
+            println!("如需重新拉起: sudo planet-port service start");
+            return;
+        }
+        eprintln!("launchctl bootstrap 失败: {}", stderr.trim());
+        std::process::exit(1);
+    }
 
     println!("已安装 LaunchDaemon {LABEL}");
     println!("  二进制: {BIN_PATH}");
@@ -115,6 +134,22 @@ fn install() {
     println!("  数据:   {APP_DIR}");
     println!("daemon 已随装载启动(RunAtLoad=true),无需再执行 start;");
     println!("仅手动 stop 或退出后需要拉起时: sudo planet-port service start");
+}
+
+/// 二进制更新用「临时文件 + rename」原子替换:直接 fs::copy 覆盖正在运行的
+/// 二进制会因文本文件忙(macOS ETXTBSY)失败,rename 换 inode 则不受影响。
+fn copy_exe(src: &Path, dst: &str) {
+    let tmp = Path::new(dst).with_extension("tmp");
+    let _ = fs::remove_file(&tmp);
+    if let Err(e) = fs::copy(src, &tmp) {
+        eprintln!("拷贝二进制 {} → {} 失败: {e}", src.display(), tmp.display());
+        std::process::exit(1);
+    }
+    if let Err(e) = fs::rename(&tmp, dst) {
+        let _ = fs::remove_file(&tmp);
+        eprintln!("替换二进制 {} 失败: {e}", dst);
+        std::process::exit(1);
+    }
 }
 
 fn uninstall() {

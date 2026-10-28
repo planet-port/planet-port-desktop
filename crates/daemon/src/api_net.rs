@@ -31,12 +31,18 @@ type ApiErr = (StatusCode, Json<planet_port_api::types::ApiError>);
 /// 变更端点定位链:显式 ?planet= → 存在且 running;省略 → 单 running 自动选,
 /// 多 running 409 planetAmbiguous(带候选),零 running 409 noPlanetRunning。
 /// 查找复用 world::resolve_planet_id(id/name/worldId 均可,是 mockd id/name 的超集)。
+///
+/// 锁纪律:registry 锁只在函数内部短持;歧义分支需要每个 running planet 的
+/// 实际网络数(mockd 语义 = 核心网络快照条数,非 registry net_local 条数),
+/// 那是 node 查询,须在不持 registry 锁时做 —— 故先短锁收集候选并 clone
+/// 运行时 Arc,放锁后再查询计数。
 pub(crate) fn resolve_running_planet(
-    reg: &crate::registry::Registry,
+    st: &AppState,
     planet: Option<&str>,
 ) -> Result<String, ApiErr> {
+    let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(p) = planet {
-        return match world::resolve_planet_id(reg, p).and_then(|cid| {
+        return match world::resolve_planet_id(&reg, p).and_then(|cid| {
             reg.planets.iter().find(|x| x.id == cid).map(|x| (cid, x))
         }) {
             Some((cid, x)) if x.running => Ok(cid),
@@ -64,15 +70,17 @@ pub(crate) fn resolve_running_planet(
             None,
         )),
         _ => {
-            let candidates = running
+            let named: Vec<(String, Arc<PlanetRuntime>)> = running
                 .iter()
-                .map(|p| {
-                    format!(
-                        "{} ({})",
-                        crate::api_planet::name_of(p),
-                        p.net_local.len()
-                    )
+                .filter_map(|p| {
+                    runtime_of(st, &p.id).map(|rt| (crate::api_planet::name_of(p), rt))
                 })
+                .collect();
+            drop(reg);
+            // 实际网络数以核心快照为准(leave 后 net_local 仍保留配置,不计数)
+            let candidates: Vec<String> = named
+                .into_iter()
+                .map(|(name, rt)| format!("{name} ({})", rt.networks().len()))
                 .collect();
             Err(err(
                 StatusCode::CONFLICT,
@@ -268,11 +276,9 @@ pub async fn net_join(
     Path(nwid): Path<String>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiErr> {
-    // 定位(registry 锁)与运行时获取(planets 锁)分开:两锁不得嵌套
-    let pid = {
-        let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        resolve_running_planet(&reg, q.get("planet").map(|s| s.as_str()))?
-    };
+    // 定位(registry 锁在 resolve_running_planet 内短持)与运行时获取(planets
+    // 锁)分开:两锁不得嵌套
+    let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
     let rt = not_running(&st, &pid)?;
     let nwid_u = parse_nwid(&nwid)?;
     // 已加入 → 409 alreadyJoined(以核心网络快照为准)
@@ -324,11 +330,9 @@ pub async fn net_leave(
     Path(nwid): Path<String>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiErr> {
-    // 定位(registry 锁)与运行时获取(planets 锁)分开:两锁不得嵌套
-    let pid = {
-        let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        resolve_running_planet(&reg, q.get("planet").map(|s| s.as_str()))?
-    };
+    // 定位(registry 锁在 resolve_running_planet 内短持)与运行时获取(planets
+    // 锁)分开:两锁不得嵌套
+    let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
     let rt = not_running(&st, &pid)?;
     let nwid_u = parse_nwid(&nwid)?;
     if !rt.networks().iter().any(|c| c.nwid == nwid_u) {
@@ -376,23 +380,17 @@ pub async fn net_set(
     Query(q): Query<HashMap<String, String>>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiErr> {
-    let (pid, entry) = {
+    let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
+    let entry = {
         let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let pid = resolve_running_planet(&reg, q.get("planet").map(|s| s.as_str()))?;
-        let entry = reg
-            .planets
-            .iter()
-            .find(|e| e.id == pid)
-            .cloned()
-            .ok_or_else(|| {
-                err(
-                    StatusCode::CONFLICT,
-                    "planetNotRunning",
-                    &format!("planet \"{pid}\" is not running"),
-                    None,
-                )
-            })?;
-        (pid, entry)
+        reg.planets.iter().find(|e| e.id == pid).cloned().ok_or_else(|| {
+            err(
+                StatusCode::CONFLICT,
+                "planetNotRunning",
+                &format!("planet \"{pid}\" is not running"),
+                None,
+            )
+        })?
     };
     let rt = runtime_of(&st, &pid).ok_or_else(|| {
         err(

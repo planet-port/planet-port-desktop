@@ -161,8 +161,11 @@ sudo ./target/debug/planet-portd --config-dir "$HOME/Library/Application Support
 - 启动即写 `authtoken.secret`(0644,缺失/为空时生成)与 `port` 文件(实际监听端口,
   9998 被占用时自动 +1 递增到 +100);**port 文件的存在即活性信号**,CLI 靠它协商地址,
   daemon 退出时最后删除它。
-- 上次运行时标记 running 的 planet 会被自动拉起;网络成员关系持久在
-  `networks.d/<nwid>.conf`,核心启动时自动重新 join,**无需也不支持自动重 join 逻辑**。
+- 上次运行时标记 running 的 planet 会被自动拉起;daemon 在每次 start(含重启
+  自动拉起)时按 registry 中该 planet 的 `net_local` 逐网络自动 re-join。Core 的
+  `networks.d/<nwid>.conf` 只是 netconf 缓存,**不承载网络成员关系**,核心自身
+  不会在重启后恢复 join,故 re-join 必须由 daemon 显式完成(个别网络失败仅记
+  事件,不影响实例启动)。
 
 ### 服务方式运行(推荐)
 
