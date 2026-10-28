@@ -76,7 +76,7 @@ planet-portd (root)
 1. DevicePlane 落 Drop(join reader→删路由→销毁 feth)与 NodeHandle 落 Drop(未 shutdown 时 debug_assert + 尽力 shutdown);
 2. run_driver 的 sink 调用包 catch_unwind,panic → NodeEvent::Fatal + 停机(不杀进程);
 3. reader 线程错误改为退避重试(事件上报),spawn_reader 失败不再 `.ok()` 吞;
-4. poll 处理 POLLERR/POLLNVAL(ERR 仅日志,暂态不视为停机;NVAL 日志+事件并退出驱动线程);
+4. poll 处理 POLLERR/POLLNVAL(ERR 仅日志,暂态不视为停机;NVAL 仅日志并退出驱动线程);
 5. 路由共存策略(§0);6. 信号处理(daemon 层);7. `crates/zt-core/LICENSE-MPL.txt` 占位 + bootstrap 增拷 LICENSE-MPL.txt 入 Core/;
 8. 新增 `NodeHandle::peers()`(包装 ZT_Node_peers,role/latency/paths/版本/active 标志,快照拷贝);
 9. 架构红线写入 zt-core 模块文档(回调 glue 只拷贝+send;sink 必须在驱动线程;FrameIn/FrameOut 方向;shutdown join→delete 顺序)。

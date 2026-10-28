@@ -270,7 +270,7 @@ URL 未显式指定(--url/env)时:默认 `http://127.0.0.1:9998`;若 port_file()
 # 1. 前台起 daemon(复用 POC node-a 身份,绕开家宽 UDP 过滤与新授权):
 sudo ./target/debug/planet-portd --config-dir "$HOME/Library/Application Support/planet-portd" &
 # 2. import(dataDir 覆写指向 POC 数据、port 9994):
-planet-port planet import <path>/pocs/fixtures/planet.Gozi25 --dataDir <abs>/target/poc-data/node-a --port 9994
+planet-port planet import <path>/pocs/fixtures/planet.Gozi25 --data-dir <abs>/target/poc-data/node-a --port 9994
 # 3. start → join 5cf54f181554090f → networks(预期 OK + 10.121.16.103,feth 出现)
 # 4. ping 10.121.16.229 通(数据面);listpeers 见根 peer 与 latency;info
 # 5. events(含 planetStarted/join/status Online);moon import/orbit/deorbit 冒烟
