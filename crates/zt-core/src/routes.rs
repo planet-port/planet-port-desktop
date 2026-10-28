@@ -78,6 +78,7 @@ impl RouteApplier {
             let Some(route) = self.to_route(r) else { continue };
             if let Err(e) = self.rm.add(&route) {
                 eprintln!("[routes] add {}/{} 失败(忽略): {}", r.target.addr, r.target.prefix, e);
+                continue;
             }
             self.applied.push((*r).clone());
         }

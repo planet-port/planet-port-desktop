@@ -172,11 +172,13 @@ fn main() {
     while Instant::now() < end {
         let dev = plane.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let dev_name = if dev.is_up() { dev.if_name().to_string() } else { "(未建)".to_string() };
+        let frames_in = dev.frames_in();
         println!(
-            "[t] address={:010x} online={} frames_to_dev={} dev={}",
+            "[t] address={:010x} online={} frames_to_dev={} frames_in={} dev={}",
             h.address(),
             h.online(),
             frames_to_dev.load(Ordering::Relaxed),
+            frames_in,
             dev_name
         );
         for n in h.networks() {

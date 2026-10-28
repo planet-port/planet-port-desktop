@@ -13,7 +13,7 @@ use std::fs::File;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr};
 use std::os::fd::AsRawFd;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, OnceLock};
 use std::thread::JoinHandle;
@@ -82,6 +82,8 @@ pub struct DevicePlane {
     routes: Option<RouteApplier>,
     stop: Arc<AtomicBool>,
     reader: Option<JoinHandle<()>>,
+    /// 设备→核心方向:reader 线程成功投递 frame_in 的次数(POC 验证用)。
+    frames_in: Arc<AtomicU64>,
 }
 
 impl Default for DevicePlane {
@@ -102,11 +104,17 @@ impl DevicePlane {
             routes: None,
             stop: Arc::new(AtomicBool::new(false)),
             reader: None,
+            frames_in: Arc::new(AtomicU64::new(0)),
         }
     }
 
     pub fn is_up(&self) -> bool {
         self.dev.is_some()
+    }
+
+    /// 设备→核心方向已成功投递核心的帧数(reader 线程计数)。
+    pub fn frames_in(&self) -> u64 {
+        self.frames_in.load(Ordering::Relaxed)
     }
 
     pub fn if_name(&self) -> &str {
@@ -232,9 +240,10 @@ impl DevicePlane {
         let stop = Arc::clone(&self.stop);
         let nwid = self.nwid;
         let mtu = self.mtu;
+        let frames_in = Arc::clone(&self.frames_in);
         let handle = std::thread::Builder::new()
             .name("feth-reader".into())
-            .spawn(move || unsafe { run_reader(dev, stop, nwid, mtu, frame_tx) })
+            .spawn(move || unsafe { run_reader(dev, stop, nwid, mtu, frame_tx, frames_in) })
             .ok();
         self.reader = handle;
     }
@@ -279,6 +288,7 @@ unsafe fn run_reader(
     nwid: u64,
     mtu: u16,
     frame_tx: FrameInTxSlot,
+    frames_in: Arc<AtomicU64>,
 ) {
     let fd = dev.as_raw_fd();
     // 非阻塞:BPF 缓冲一帧读入后内部队列可能还有剩余帧,靠 EAGAIN 判断排空
@@ -312,13 +322,10 @@ unsafe fn run_reader(
                     };
                     let (dst, src) = (mac_of(&buf[..6]), mac_of(&buf[6..12]));
                     let eth = u16::from_be_bytes([buf[12], buf[13]]);
-                    let _ = tx.send(FrameIn {
-                        nwid,
-                        src,
-                        dst,
-                        eth,
-                        payload: buf[ETH_HDR..len].to_vec(),
-                    });
+                    let f = FrameIn { nwid, src, dst, eth, payload: buf[ETH_HDR..len].to_vec() };
+                    if tx.send(f) {
+                        frames_in.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
                 Ok(_) => break, // 短帧(不足以太头)丢弃;BPF 仍可读则下轮 poll 立即返回
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
