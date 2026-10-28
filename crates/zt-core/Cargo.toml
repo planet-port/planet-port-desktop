@@ -1,0 +1,8 @@
+[package]
+name = "zt-core"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+
+[dependencies]
+zt-sys = { path = "../zt-sys" }
