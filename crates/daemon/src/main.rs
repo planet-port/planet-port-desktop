@@ -136,15 +136,27 @@ async fn shutdown(state: AppState, port_path: PathBuf) {
     if int.is_none() {
         eprintln!("[shutdown] 注册 SIGINT 监听失败,SIGINT 优雅退出不可用");
     }
+    // select! 的 if 前置条件为 false 时 async 表达式仍会被求值,不能在其中
+    // unwrap:先把 None 分支折叠成永不完成的 future,再进 select!
     if term.is_none() && int.is_none() {
         eprintln!("[shutdown] 信号监听全部不可用,daemon 将持续运行直至被强制结束");
-        std::future::pending::<()>().await;
-        unreachable!()
     }
+    let mut term_fut = Box::pin(async {
+        match term.as_mut() {
+            Some(s) => s.recv().await,
+            None => std::future::pending().await,
+        }
+    });
+    let mut int_fut = Box::pin(async {
+        match int.as_mut() {
+            Some(s) => s.recv().await,
+            None => std::future::pending().await,
+        }
+    });
     tokio::select! {
-        _ = term.as_mut().unwrap().recv(), if term.is_some() =>
+        _ = &mut term_fut =>
             eprintln!("[shutdown] 收到 SIGTERM,开始优雅退出"),
-        _ = int.as_mut().unwrap().recv(), if int.is_some() =>
+        _ = &mut int_fut =>
             eprintln!("[shutdown] 收到 SIGINT,开始优雅退出"),
     }
     // 待停清单先克隆(短锁):id 取 registry 中标记 running 的(含上次启动
