@@ -1,8 +1,9 @@
 //! planet-portd:多 planet ZeroTier 桌面守护进程。
 //! config_dir 解析、token/port 文件、auth 中间件(常量时间 token 校验)、
 //! /version、/status;planet 生命周期端点见 api_planet.rs,网络面见
-//! api_net.rs,实例运行时见 runtime.rs。
+//! api_net.rs,peers/moons/dump 见 api_misc.rs,实例运行时见 runtime.rs。
 
+mod api_misc;
 mod api_net;
 mod api_planet;
 mod events;
@@ -214,6 +215,7 @@ async fn main() {
         .route("/status", get(status))
         .merge(api_planet::router())
         .merge(api_net::router())
+        .merge(api_misc::router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_mw))
         .route("/share/{token}", get(api_planet::share_download))
         .with_state(state);

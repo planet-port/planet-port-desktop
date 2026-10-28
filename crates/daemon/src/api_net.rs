@@ -85,7 +85,7 @@ pub(crate) fn resolve_running_planet(
 }
 
 /// 查询端点 ?planet= 过滤:解析为 canonical id,未知名 404(过滤语义,不查 running)
-fn filter_planet(
+pub(crate) fn filter_planet(
     reg: &crate::registry::Registry,
     q: &HashMap<String, String>,
 ) -> Result<Option<String>, ApiErr> {
@@ -140,7 +140,7 @@ fn default_net_local() -> NetLocal {
 }
 
 /// 读取某 planet 的 net_local(优先运行时镜像,回退 registry 持久层)
-fn net_local_of(rt: Option<&Arc<PlanetRuntime>>, entry: &RegistryEntry, nwid: u64) -> NetLocal {
+pub(crate) fn net_local_of(rt: Option<&Arc<PlanetRuntime>>, entry: &RegistryEntry, nwid: u64) -> NetLocal {
     if let Some(rt) = rt {
         if let Some(nl) = rt
             .net_local
@@ -159,7 +159,7 @@ fn net_local_of(rt: Option<&Arc<PlanetRuntime>>, entry: &RegistryEntry, nwid: u6
 }
 
 /// 取运行时;定位链已判 running 但运行时缺失(启动失败等)→ 409 planetNotRunning
-fn not_running(st: &AppState, pid: &str) -> Result<Arc<PlanetRuntime>, ApiErr> {
+pub(crate) fn not_running(st: &AppState, pid: &str) -> Result<Arc<PlanetRuntime>, ApiErr> {
     runtime_of(st, pid).ok_or_else(|| {
         err(
             StatusCode::CONFLICT,

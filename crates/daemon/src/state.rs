@@ -83,6 +83,22 @@ impl PlanetRuntime {
             None => Err(zt_core::NodeError::DataStoreFailed("实例已停止".into())),
         }
     }
+
+    /// orbit(moon 命令在驱动线程执行并阻塞等应答;调用方须放 spawn_blocking)
+    pub fn node_orbit(&self, moon_world_id: u64, seed: u64) -> Result<(), zt_core::NodeError> {
+        match self.node.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref() {
+            Some(n) => n.orbit(moon_world_id, seed),
+            None => Err(zt_core::NodeError::DataStoreFailed("实例已停止".into())),
+        }
+    }
+
+    /// deorbit(同上)
+    pub fn node_deorbit(&self, moon_world_id: u64) -> Result<(), zt_core::NodeError> {
+        match self.node.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref() {
+            Some(n) => n.deorbit(moon_world_id),
+            None => Err(zt_core::NodeError::DataStoreFailed("实例已停止".into())),
+        }
+    }
 }
 
 /// (planet_id, nwid) → 该网络的网段/IP 快照。
