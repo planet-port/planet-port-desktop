@@ -23,6 +23,9 @@ pub struct RegistryEntry {
     pub color: Option<String>,
     /// builtin | file | qr | url …(导入来源)
     pub source: String,
+    /// 各根稳定端点("ip:port"),来自导入时解析的 world(Task 3 起填充)
+    #[serde(default)]
+    pub roots: Vec<String>,
     pub file_size: u64,
     pub revision_time_ms: u64,
     pub imported_at_ms: u64,

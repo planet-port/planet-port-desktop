@@ -120,6 +120,8 @@ planet 实例,按以下顺序解析:
 
 - `service` 子命令组(spec §3.2)尚未实现,daemon 生命周期管理在后续任务中落地。
 - 单操作成功输出为简式,如 `200 join OK`;`moon import` 为 `201 moon import OK`。
+- `planet import` 当前仅支持**本地文件路径**;URL 源返回 `400 unsupportedSource`(一期未实现,
+  后续任务接入),容器导入返回 `501 notImplemented`。
 
 ## 手工验证清单(对 mockd 实测)
 
