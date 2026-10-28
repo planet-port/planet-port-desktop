@@ -10,11 +10,12 @@ use std::path::PathBuf;
 pub struct StateStore {
     root: PathBuf,
     world_dir: PathBuf,
-    planet_in: Option<PathBuf>,
+    planet_in: PathBuf,
 }
 
 impl StateStore {
-    pub fn new(root: PathBuf, world_id: u64, planet_in: Option<PathBuf>) -> Self {
+    /// planet_in 必填:node 启动即校验 planet 文件可读,StateStore 不再处理未注入分支。
+    pub fn new(root: PathBuf, world_id: u64, planet_in: PathBuf) -> Self {
         let world_dir = root.join(world_id.to_string());
         Self { root, world_dir, planet_in }
     }
@@ -25,9 +26,8 @@ impl StateStore {
         match obj {
             IdentityPublic => Some(self.root.join("identity.public")),
             IdentitySecret => Some(self.root.join("identity.secret")),
-            // get 优先读注入的 planet 副本;未注入则回落根下 planet(不存在即 -1,
-            // 核心回落内置默认 planet)
-            PlanetGet => Some(self.planet_in.clone().unwrap_or_else(|| self.root.join("planet"))),
+            // get 读注入的 planet 副本(start 已保证存在);put 回写根下 planet
+            PlanetGet => Some(self.planet_in.clone()),
             PlanetPut => Some(self.root.join("planet")),
             Moon => Some(self.world_dir.join(format!("moons.d/{:016x}.moon", id[0]))),
             Peer => Some(self.world_dir.join(format!("peers.d/{:010x}.peer", id[0]))),

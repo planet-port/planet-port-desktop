@@ -6,3 +6,5 @@ license = "MPL-2.0"
 
 [dependencies]
 zt-sys = { path = "../zt-sys" }
+# libc:pipe/poll(驱动线程阻塞原语),MIT/Apache-2.0
+libc = "0.2"

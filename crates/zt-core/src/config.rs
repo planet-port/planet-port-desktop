@@ -9,7 +9,8 @@ use crate::sa;
 /// Node 启动参数。
 pub struct NodeParams {
     pub data_dir: PathBuf,
-    pub planet_file: Option<PathBuf>,
+    /// 注入的 planet 文件(必填:本项目语义即以自定义 planet 接入,不用核心内置 world)
+    pub planet_file: PathBuf,
     pub bind_port: u16,
 }
 
@@ -110,12 +111,14 @@ impl NetConfig {
             _ => NetStatus::RequestingConfiguration,
         };
         let name = CStr::from_ptr(c.name.as_ptr()).to_string_lossy().into_owned();
-        // 以下对 sockaddr/C 字符串的读取都在本 unsafe fn 的前置条件下进行
-        let assigned = c.assignedAddresses[..c.assignedAddressCount as usize]
+        // 切片上限做 min 防御:回调内禁 panic,核心计数异常时按数组容量截断
+        let n_assigned = (c.assignedAddressCount as usize).min(c.assignedAddresses.len());
+        let assigned = c.assignedAddresses[..n_assigned]
             .iter()
             .filter_map(|ss| ip_net_of(ss))
             .collect();
-        let routes = c.routes[..c.routeCount as usize]
+        let n_routes = (c.routeCount as usize).min(c.routes.len());
+        let routes = c.routes[..n_routes]
             .iter()
             .filter_map(|r| {
                 Some(ManagedRoute {

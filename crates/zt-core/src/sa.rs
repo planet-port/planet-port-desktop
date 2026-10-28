@@ -20,7 +20,9 @@ pub unsafe fn from_sockaddr_storage(ss: *const zt::sockaddr_storage) -> Option<S
             zt::AF_INET => {
                 let a = &*(ss as *const zt::sockaddr_in);
                 Some(SocketAddr::new(
-                    IpAddr::V4(Ipv4Addr::from(a.sin_addr.s_addr.to_be_bytes())),
+                    // s_addr 的内存字节即网络序;to_ne_bytes 按内存原序取回(LE 上
+                    // 等价于逐字节读,不可用 to_be_bytes 二次反转)
+                    IpAddr::V4(Ipv4Addr::from(a.sin_addr.s_addr.to_ne_bytes())),
                     u16::from_be(a.sin_port),
                 ))
             }
@@ -47,7 +49,8 @@ pub fn to_sockaddr_storage(addr: &SocketAddr, port_override: Option<u16>) -> zt:
             a.sin_len = std::mem::size_of::<zt::sockaddr_in>() as u8;
             a.sin_family = zt::AF_INET as _;
             a.sin_port = port;
-            a.sin_addr.s_addr = u32::from_be_bytes(v4.octets());
+            // octets 即目标内存字节序(网络序);from_ne_bytes 保证存回去不变
+            a.sin_addr.s_addr = u32::from_ne_bytes(v4.octets());
         },
         IpAddr::V6(v6) => unsafe {
             let a = &mut *(&mut ss as *mut _ as *mut zt::sockaddr_in6);
