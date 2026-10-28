@@ -1,0 +1,281 @@
+//! LaunchDaemon 服务管理:`planet-port service <install|uninstall|start|stop|status>`。
+//!
+//! install 把当前 CLI 同目录的 daemon 二进制(current_exe 上溯定位)拷到
+//! `/Library/Application Support/planet-portd/bin/planet-portd` 并写
+//! `/Library/LaunchDaemons/com.planetport.daemon.plist`,之后经 launchctl
+//! bootstrap 装载。plist 指向拷贝而非 target/debug 原路径:构建产物路径不稳定。
+//! install/uninstall/start/stop 需 root(euid≠0 → 中文提示 + 退出码 2);
+//! status 无需特权。
+
+use crate::client::{CliError, Client};
+use crate::output::print_json;
+use planet_port_api::endpoints;
+use planet_port_api::port_file;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::process::Command;
+
+const LABEL: &str = "com.planetport.daemon";
+const PLIST_PATH: &str = "/Library/LaunchDaemons/com.planetport.daemon.plist";
+const APP_DIR: &str = "/Library/Application Support/planet-portd";
+const BIN_PATH: &str = "/Library/Application Support/planet-portd/bin/planet-portd";
+
+#[derive(Clone, clap::Subcommand)]
+pub enum ServiceCmd {
+    /// 安装 LaunchDaemon(拷贝二进制、写 plist 并 bootstrap,需 root)
+    Install,
+    /// 卸载 LaunchDaemon(bootout 并删除二进制,数据目录保留,需 root)
+    Uninstall,
+    /// 启动 daemon(经 launchctl,需 root)
+    Start,
+    /// 停止 daemon(SIGTERM 走优雅退出,需 root)
+    Stop,
+    /// 查看 daemon 运行状态(无需 root)
+    Status,
+}
+
+pub fn run(cmd: ServiceCmd, json: bool) -> Result<(), CliError> {
+    match cmd {
+        ServiceCmd::Install => {
+            require_root();
+            install();
+        }
+        ServiceCmd::Uninstall => {
+            require_root();
+            uninstall();
+        }
+        ServiceCmd::Start => {
+            require_root();
+            start();
+        }
+        ServiceCmd::Stop => {
+            require_root();
+            stop();
+        }
+        ServiceCmd::Status => status(json)?,
+    }
+    Ok(())
+}
+
+// ---- 子命令实现 ----
+
+fn require_root() {
+    // euid 判定须真实:root 判断不准会误导安装失败原因(libc 已是 workspace 依赖)
+    if unsafe { libc::geteuid() } != 0 {
+        eprintln!("该操作需要 root 权限,请使用: sudo planet-port service <install|uninstall|start|stop>");
+        std::process::exit(2);
+    }
+}
+
+fn install() {
+    // 1. 拷贝当前二进制到固定路径(plist 指向它,target/debug 路径不稳定)
+    let exe = std::env::current_exe().unwrap_or_else(|e| {
+        eprintln!("无法定位当前可执行文件: {e}");
+        std::process::exit(1);
+    });
+    let bin_dir = Path::new(BIN_PATH).parent().unwrap().to_path_buf();
+    if let Err(e) = fs::create_dir_all(&bin_dir) {
+        eprintln!("无法创建目录 {}: {e}", bin_dir.display());
+        std::process::exit(1);
+    }
+    // 从已安装路径运行 install 时跳过自拷贝(fs::copy 同路径会失败)
+    let same = fs::canonicalize(&exe).ok().zip(fs::canonicalize(BIN_PATH).ok())
+        .map(|(a, b)| a == b)
+        .unwrap_or(false);
+    if !same {
+        if let Err(e) = fs::copy(&exe, BIN_PATH) {
+            eprintln!("拷贝二进制 {} → {} 失败: {e}", exe.display(), BIN_PATH);
+            std::process::exit(1);
+        }
+    }
+    if let Err(e) = fs::set_permissions(BIN_PATH, fs::Permissions::from_mode(0o755)) {
+        eprintln!("设置 {BIN_PATH} 权限失败: {e}");
+        std::process::exit(1);
+    }
+
+    // 2. 写 LaunchDaemon plist
+    let plist = plist_content(BIN_PATH);
+    if let Err(e) = fs::write(PLIST_PATH, plist) {
+        eprintln!("写入 {PLIST_PATH} 失败: {e}");
+        std::process::exit(1);
+    }
+    if let Err(e) = fs::set_permissions(PLIST_PATH, fs::Permissions::from_mode(0o644)) {
+        eprintln!("设置 {PLIST_PATH} 权限失败: {e}");
+        std::process::exit(1);
+    }
+
+    // 3. 装载(RunAtLoad=true 但 KeepAlive=false,装载本身不拉起进程)
+    launchctl(&["bootstrap", "system/", PLIST_PATH]);
+
+    println!("已安装 LaunchDaemon {LABEL}");
+    println!("  二进制: {BIN_PATH}");
+    println!("  配置:   {PLIST_PATH}");
+    println!("  数据:   {APP_DIR}");
+    println!("下一步: sudo planet-port service start 启动 daemon");
+}
+
+fn uninstall() {
+    // 未加载/已卸载属预期,不算失败
+    match launchctl_output(&["bootout", &format!("system/{LABEL}")]) {
+        Ok(_) => println!("已卸载运行中的服务 {LABEL}"),
+        Err(stderr) => {
+            let s = stderr.to_lowercase();
+            if s.contains("not loaded") || s.contains("no such process") || s.contains("could not find") {
+                println!("服务未在运行,跳过卸载步骤");
+            } else {
+                eprintln!("launchctl bootout 失败: {}", stderr.trim());
+            }
+        }
+    }
+    let _ = fs::remove_file(PLIST_PATH);
+    let _ = fs::remove_file(BIN_PATH);
+    // bin 目录若已空则一并移除(数据目录保留)
+    if let Some(dir) = Path::new(BIN_PATH).parent() {
+        let _ = fs::remove_dir(dir);
+    }
+    println!("已删除 {PLIST_PATH} 与 {BIN_PATH}");
+    println!("注意:数据目录 {APP_DIR} 已保留(planet 文件、registry、token 等)。");
+    println!("如需彻底清理,请手动执行: sudo rm -rf \"{APP_DIR}\"");
+}
+
+fn start() {
+    // -k:已在运行则先杀再拉(幂等重启);KeepAlive=false,需显式 start
+    launchctl(&["kickstart", "-k", &format!("system/{LABEL}")]);
+    println!("已请求启动 {LABEL}");
+    println!("查看状态: planet-port service status");
+}
+
+fn stop() {
+    // TERM 命中 daemon 的信号优雅退出路径:逐 planet 红线收尾后删 port 文件
+    launchctl(&["kill", "TERM", &format!("system/{LABEL}")]);
+    println!("已发送 SIGTERM,{LABEL} 将优雅退出");
+}
+
+fn status(json: bool) -> Result<(), CliError> {
+    // 宽松构造:token 缺失不报错;连接成功即在线(401 等任何 HTTP 响应都算,
+    // 探测超时/连接失败才算不在线)
+    let client = Client::new_lenient(None);
+    match client.get_json(endpoints::version()) {
+        Ok(v) => {
+            let port = read_port_file().unwrap_or_else(|| port_of(client.base()));
+            if json {
+                print_json(&serde_json::json!({ "running": true, "port": port, "version": v }));
+            } else {
+                println!("运行中(端口 {port})");
+            }
+            return Ok(());
+        }
+        Err(CliError::Api(401, _)) => {
+            let port = read_port_file().unwrap_or_else(|| port_of(client.base()));
+            println!("运行中(端口 {port}),但 token 校验失败:请确认 authtoken.secret 与 daemon 配置目录一致");
+            return Ok(());
+        }
+        // daemon 应答了非 401 的错误:进程在线,原样透传状态
+        Err(e @ CliError::Api(..)) => return Err(e),
+        Err(CliError::Offline) | Err(CliError::Io(_)) | Err(CliError::Usage(_)) => {}
+    }
+
+    // 不在线:看 plist 是否存在判断「未安装」vs「已安装未运行」
+    if !Path::new(PLIST_PATH).exists() {
+        println!("未安装(找不到 {PLIST_PATH})");
+        println!("安装: sudo planet-port service install");
+        return Ok(());
+    }
+    println!("已安装但未在运行");
+    match launchctl_output_quiet(&["print", &format!("system/{LABEL}")]) {
+        Ok(out) => {
+            let state = kv(&out, "state").unwrap_or_else(|| "未知".into());
+            let pid = kv(&out, "pid");
+            let last = kv(&out, "last exit code");
+            print!("  launchctl 状态: {state}");
+            if let Some(p) = pid {
+                print!(",pid {p}");
+            }
+            if let Some(c) = &last {
+                print!(",上次退出码 {c}");
+            }
+            println!();
+            if last.as_deref().map(|c| c != "0").unwrap_or(false) {
+                println!("  提示:上次异常退出,可查看日志: launchctl print system/{LABEL} | tail");
+            }
+        }
+        Err(_) => println!("  未被 launchd 加载(可能尚未 bootstrap)"),
+    }
+    println!("启动: sudo planet-port service start");
+    Ok(())
+}
+
+// ---- 工具 ----
+
+fn plist_content(bin: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{bin}</string>
+        <string>--config-dir</string>
+        <string>{APP_DIR}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>
+"#
+    )
+}
+
+/// 执行 launchctl,失败打印 stderr 并退出 1(命令拼装错误/权限不足都是硬失败)
+fn launchctl(args: &[&str]) {
+    match launchctl_output(args) {
+        Ok(_) => {}
+        Err(stderr) => {
+            eprintln!("launchctl {} 失败: {}", args.join(" "), stderr.trim());
+            std::process::exit(1);
+        }
+    }
+}
+
+fn launchctl_output(args: &[&str]) -> Result<String, String> {
+    match Command::new("launchctl").args(args).output() {
+        Ok(o) if o.status.success() => Ok(String::from_utf8_lossy(&o.stdout).into_owned()),
+        Ok(o) => Err(String::from_utf8_lossy(&o.stderr).into_owned()),
+        Err(e) => Err(format!("无法执行 launchctl: {e}")),
+    }
+}
+
+fn launchctl_output_quiet(args: &[&str]) -> Result<String, String> {
+    match Command::new("launchctl").args(args).output() {
+        Ok(o) => Ok(String::from_utf8_lossy(&o.stdout).into_owned()),
+        Err(e) => Err(format!("无法执行 launchctl: {e}")),
+    }
+}
+
+/// 读 port 文件(daemon 启动写入;存在即活性信号)
+fn read_port_file() -> Option<u16> {
+    fs::read_to_string(port_file()).ok()?.trim().parse().ok().filter(|p| *p != 0)
+}
+
+/// 从 base URL 提取端口(兜底展示用)
+fn port_of(base: &str) -> u16 {
+    base.rsplit(':').next().and_then(|p| p.parse().ok()).unwrap_or(0)
+}
+
+/// 从 `launchctl print` 输出提取 `key = value` 行的 value
+fn kv(out: &str, key: &str) -> Option<String> {
+    out.lines().find_map(|l| {
+        let (k, v) = l.split_once('=')?;
+        if k.trim() == key {
+            Some(v.trim().to_string())
+        } else {
+            None
+        }
+    })
+}

@@ -1,10 +1,31 @@
 use planet_port_api::types::ApiError;
-use planet_port_api::{token_file, DEFAULT_API_PORT};
+use planet_port_api::{port_file, token_file, DEFAULT_API_PORT};
 use serde_json::Value;
 use std::time::Duration;
 
 /// 常规请求全局超时;events --follow 的轮询请求走无超时 agent,长挂不受影响
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+/// service status 的活性探测超时:仅判断在线与否,长超时会让 status 卡 10s
+const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// 解析 API base URL:显式指定(--api-url / PLANET_PORT_URL)优先;
+/// 否则读 port 文件(存在且内容为 1-65535 的端口则采用,daemon 启停换端口
+/// 后 CLI 无需配置即可跟随),读不到或非法回退默认 9998。
+pub fn resolve_base(api_url: Option<String>) -> String {
+    if let Some(u) = api_url {
+        return u.trim_end_matches('/').to_string();
+    }
+    let mut port = DEFAULT_API_PORT;
+    if let Ok(s) = std::fs::read_to_string(port_file()) {
+        // trim 掉换行/空白;0 非法(1-65535 才算有效端口)
+        if let Ok(p) = s.trim().parse::<u16>() {
+            if p != 0 {
+                port = p;
+            }
+        }
+    }
+    format!("http://127.0.0.1:{port}")
+}
 
 pub enum CliError {
     Offline,
@@ -35,10 +56,7 @@ pub struct Client {
 
 impl Client {
     pub fn new(api_url: Option<String>) -> Result<Self, CliError> {
-        let base = match api_url {
-            Some(u) => u.trim_end_matches('/').to_string(),
-            None => format!("http://127.0.0.1:{DEFAULT_API_PORT}"),
-        };
+        let base = resolve_base(api_url);
         let token = match std::env::var("PLANET_PORT_TOKEN") {
             Ok(t) if !t.is_empty() => t,
             _ => std::fs::read_to_string(token_file())
@@ -51,14 +69,34 @@ impl Client {
                 .trim()
                 .to_string(),
         };
-        let agent = Self::make_agent(Some(REQUEST_TIMEOUT));
+        Ok(Self::build(base, token, Some(REQUEST_TIMEOUT)))
+    }
+
+    /// `service status` 专用:token 缺失不报错(以空 token 构造),仅用于探测
+    /// daemon 是否在线 —— 连接成功即在线(401 也算),不影响「未运行」判定
+    pub fn new_lenient(api_url: Option<String>) -> Self {
+        let base = resolve_base(api_url);
+        let token = std::env::var("PLANET_PORT_TOKEN")
+            .ok()
+            .filter(|t| !t.is_empty())
+            .or_else(|| std::fs::read_to_string(token_file()).ok().map(|t| t.trim().to_string()))
+            .unwrap_or_default();
+        Self::build(base, token, Some(PROBE_TIMEOUT))
+    }
+
+    fn build(base: String, token: String, timeout: Option<Duration>) -> Self {
+        let agent = Self::make_agent(timeout);
         let poll_agent = Self::make_agent(None);
-        Ok(Self {
+        Self {
             agent,
             poll_agent,
             base,
             token,
-        })
+        }
+    }
+
+    pub fn base(&self) -> &str {
+        &self.base
     }
 
     fn make_agent(timeout: Option<Duration>) -> ureq::Agent {

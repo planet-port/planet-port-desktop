@@ -10,6 +10,7 @@ docs/superpowers/specs/2026-10-28-cli-api-design.md。
 |---|---|
 | planet-port-api | REST 契约类型与端点构造(CLI 与 daemon 共用) |
 | mockd | 契约 mock daemon(联调/契约验证,后续 GUI 开发复用) |
+| planet-portd | 真实 daemon(内嵌 zt-core,管理多 planet 实例) |
 | planet-port | CLI 薄客户端 |
 
 ## 开发联调
@@ -20,18 +21,22 @@ export PLANET_PORT_URL=http://127.0.0.1:9998 PLANET_PORT_TOKEN=dev
 cargo run -p planet-port -- info
 ```
 
-- 默认 API 端点 `http://127.0.0.1:9998`,可用 `--api-url` 或 `PLANET_PORT_URL` 覆盖(调试用)。
 - 鉴权走 `X-ZT1-Auth` 头:优先取 `PLANET_PORT_TOKEN` 环境变量,未设置时读取
   token 文件(`<config_dir>/planet-portd/authtoken.secret`)。mockd 接受任意非空 token,
   联调用 `PLANET_PORT_TOKEN=dev` 即可。
-- 未设置 URL 时 CLI 使用内置默认端口 9998;真实 `planet-portd` 的端口文件协商(CLI 读取)尚未实现。
+- 未设置 URL 时 CLI 先读 port 文件(`<config_dir>/planet-portd/port`,planet-portd
+  启动写入):存在且内容为 1-65535 的合法端口 → `http://127.0.0.1:<该端口>`;
+  读不到或非法 → 默认 `http://127.0.0.1:9998`。`--api-url` / `PLANET_PORT_URL`
+  显式指定时完全跳过端口文件。注意:mockd **不写** port 文件,若机器上残留
+  planet-portd 的 port 文件,联调 mockd 需显式设 URL(或删掉该文件)。
 
 ### 环境变量
 
 | 变量 | 作用 | 优先级 |
 |---|---|---|
-| `PLANET_PORT_URL` | 覆盖 daemon API 地址 | 高于内置默认 `http://127.0.0.1:9998`,低于 `--api-url` 显式传参 |
+| `PLANET_PORT_URL` | 覆盖 daemon API 地址 | 高于端口文件协商,低于 `--api-url` 显式传参 |
 | `PLANET_PORT_TOKEN` | 鉴权 token(`X-ZT1-Auth` 头) | 高于 token 文件(`<config_dir>/planet-portd/authtoken.secret`) |
+| `PLANET_PORT_CONFIG_DIR` | planet-portd 的配置目录 | daemon 与 CLI 共用同一解析规则,测试/多实例隔离用 |
 | `PLANET_PORT_PLANET` | 默认 planet(定位链②) | 低于 `--planet` 显式传参,高于 daemon 侧自动定位(③④) |
 
 CLI 是一次性子进程,`use` 命令即通过输出 `export PLANET_PORT_PLANET=<id>` 供 eval 写入该变量。
@@ -67,6 +72,7 @@ planet 实例,按以下顺序解析:
 | 1 | 运行错误(API 4xx/5xx、IO 错误) |
 | 2 | 用法错误(非法参数、未知 set key)与 planet 歧义(409 + 候选列表) |
 | 3 | daemon 不在线,提示 `planet-portd is not running (try: planet-port service start)` |
+| 2 |(service 组)install/uninstall/start/stop 未以 root 运行 |
 
 ## 命令参考
 
@@ -116,17 +122,84 @@ planet 实例,按以下顺序解析:
 用法:`eval $(planet-port use company)`。CLI 是一次性子进程,无法修改父 shell 环境,
 故必须 eval;状态存于环境变量,可见、可覆盖、脚本可自省。
 
+### service 服务管理
+
+| 命令 | 说明 |
+|---|---|
+| `service install` | 需 root:拷贝二进制到 `/Library/Application Support/planet-portd/bin/planet-portd`,写 `/Library/LaunchDaemons/com.planetport.daemon.plist` 并 `launchctl bootstrap system/`;RunAtLoad=true、KeepAlive=false(装载即随开机启动一次,崩溃不自动拉起) |
+| `service uninstall` | 需 root:`launchctl bootout` + 删 plist 与拷贝的二进制;**数据目录保留**,提示手动 `rm -rf` |
+| `service start` | 需 root:`launchctl kickstart -k system/com.planetport.daemon` |
+| `service stop` | 需 root:`launchctl kill TERM …`,命中 daemon 的信号优雅退出路径(逐 planet 红线收尾) |
+| `service status` | 无需 root:ping `/version` 成功 → `运行中(端口 N)`(N 取自 port 文件);失败时按 plist 是否存在区分「未安装」/「已安装未运行」并给出 launchctl 状态摘要 |
+
 ### 说明
 
-- `service` 子命令组(spec §3.2)尚未实现,daemon 生命周期管理在后续任务中落地。
 - 单操作成功输出为简式,如 `200 join OK`;`moon import` 为 `201 moon import OK`。
-- `planet import` 当前仅支持**本地文件路径**;URL 源返回 `400 unsupportedSource`(一期未实现,
-  后续任务接入),容器导入返回 `501 notImplemented`。
+- `planet import` 与 `moon import` 当前仅支持**本地文件路径**;URL 源返回
+  `400 unsupportedSource`(一期未实现,后续任务接入),容器导入返回 `501 notImplemented`。
+- `set` 的 `routeViaZeroTier` 在下一次网络配置更新(控制器下发 netconf)时生效:
+  false 时清空 managed routes 后再 apply,已装上的路由不会立即回撤。
+- `set` 的校验比对 mockd 更严:`routeViaZeroTier` 仅接受 `0|1`(其它值返回 400,
+  退出码 2),`dnsMode` 仅接受 `none|network|custom`。
 
-## 手工验证清单(对 mockd 实测)
+## 真实 daemon(planet-portd)
+
+### 构建
+
+```bash
+cargo build --workspace
+```
+
+### 前台调试运行(需 sudo:实例要创建 utun、装路由)
+
+```bash
+sudo ./target/debug/planet-portd --config-dir "$HOME/Library/Application Support/planet-portd"
+```
+
+- `--config-dir` 缺省时按三级解析:env `PLANET_PORT_CONFIG_DIR` →
+  `/Library/Application Support/planet-portd`(已存在时,service 安装态与 CLI 同目录)→
+  `~/Library/Application Support/planet-portd`。
+- 启动即写 `authtoken.secret`(0644,缺失/为空时生成)与 `port` 文件(实际监听端口,
+  9998 被占用时自动 +1 递增到 +100);**port 文件的存在即活性信号**,CLI 靠它协商地址,
+  daemon 退出时最后删除它。
+- 上次运行时标记 running 的 planet 会被自动拉起;网络成员关系持久在
+  `networks.d/<nwid>.conf`,核心启动时自动重新 join,**无需也不支持自动重 join 逻辑**。
+
+### 服务方式运行(推荐)
+
+```bash
+sudo planet-port service install   # 拷贝二进制 + 写 LaunchDaemon + bootstrap
+sudo planet-port service start     # 拉起
+planet-port service status         # 无需 root 查看状态
+sudo planet-port service stop      # SIGTERM,优雅退出(逐 planet 红线收尾)
+```
+
+### 典型流程
+
+```bash
+planet-port planet import ./planet.mine --name mine   # 导入 planet 文件并登记(不自动上线)
+planet-port planet start mine                         # 上线实例
+eval $(planet-port use mine)                          # 设默认 planet(本 shell)
+planet-port join 5cf54f181554090f                     # 加入网络
+planet-port listnetworks                              # 复查(等控制器授权后状态 RUNNING)
+planet-port info                                      # 聚合状态
+```
+
+### 与 mockd 的行为差异(验证时注意)
+
+- planet 数据为实网:planet 文件解析自真实 world,实例连真实根服务器;
+- `planet import` 的 URL 源不支持(`400 unsupportedSource`),容器导入 `501 notImplemented`;
+- `dns` 模式(`set` 的 `dnsMode`/`customDns`)仅存储,不在本阶段改写系统 resolver;
+- `set` 校验更严(见上「说明」);`routeViaZeroTier` 于下次 netconf 生效。
+
+下文回归清单对 mockd 与 planet-portd 均可执行(两者暴露同一套 REST API;
+对 planet-portd 执行时请清掉或尊重 port 文件,CLI 会自动指向真实 daemon)。
+
+## 手工验证清单(对 mockd 实测,planet-portd 可按同一清单回归)
 
 以下为对 mockd(种子:official running / company running / home-lab stopped)逐条实测结果,
-作为后续对接真实 daemon 时的回归基准:
+作为回归基准;对 planet-portd 执行时命令一致,注意上节行为差异(planet 数据为实网、
+URL 源不支持、container 501):
 
 | 命令 | 预期 | 实测 | 结论 |
 |---|---|---|---|
