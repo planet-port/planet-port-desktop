@@ -21,6 +21,9 @@ struct Cli {
     /// JSON output
     #[arg(short = 'j', long = "json", global = true)]
     json: bool,
+    /// 启用交互式 planet 选择器(默认非交互;仍要求 stdin 为 TTY)
+    #[arg(long = "ui", global = true)]
+    ui: bool,
     /// Override daemon API URL (debug)
     #[arg(long, global = true, env = "PLANET_PORT_URL")]
     api_url: Option<String>,
@@ -123,7 +126,7 @@ fn main() {
                 Ok(c) => c,
                 Err(e) => die(&e),
             };
-            let (planet_flag, query_filter) = resolve_planets(&client, other, planet_flag, json);
+            let (planet_flag, query_filter) = resolve_planets(&client, other, planet_flag, json, cli.ui);
             dispatch(&client, other, &planet_flag, &query_filter, json)
         }
     };
@@ -201,7 +204,8 @@ fn fetch_options(client: &Client, running_only: bool) -> Option<Vec<picker::Plan
     Some(out)
 }
 
-/// 未显式指定 planet 且交互式 TTY 时弹选择列表;返回(单选 planet, 查询过滤集)。
+/// 未显式指定 planet 时的定位。默认非交互(多 planet 走聚合 / 报错);
+/// 仅显式传 --ui 且 stdin 为 TTY 时弹选择列表。返回(单选 planet, 查询过滤集)。
 /// 单选结果回填 planet_flag(等价 --planet);多选子集作为查询过滤集(None = 全部)。
 /// 取消(Esc/Ctrl+C)退出码 130
 fn resolve_planets(
@@ -209,11 +213,14 @@ fn resolve_planets(
     command: &Command,
     planet_flag: Option<String>,
     json: bool,
+    ui: bool,
 ) -> (Option<String>, Option<Vec<String>>) {
+    // 交互选择器三重前置:显式 --ui、非 --json、stdin 为 TTY
+    let interactive = ui && !json && std::io::stdin().is_terminal();
     match planet_need(command) {
         PlanetNeed::None => (planet_flag, None),
         PlanetNeed::Single => {
-            if planet_flag.is_none() && !json && std::io::stdin().is_terminal() {
+            if planet_flag.is_none() && interactive {
                 if let Some(opts) = fetch_options(client, true) {
                     // 多 running 才需要选;单个/零个沿用 daemon 自动选/报错
                     if opts.len() > 1 {
@@ -236,7 +243,7 @@ fn resolve_planets(
                 match opts.len() {
                     1 => return (Some(opts[0].id.clone()), None),
                     0 => {}
-                    _ if !json && std::io::stdin().is_terminal() => {
+                    _ if interactive => {
                         return match picker::pick_single(&opts, "events") {
                             Ok(id) => (Some(id), None),
                             Err(()) => std::process::exit(130),
@@ -255,7 +262,7 @@ fn resolve_planets(
                 // 显式 --planet / 环境变量:等价单成员过滤集
                 return (None, Some(vec![p]));
             }
-            if !json && std::io::stdin().is_terminal() {
+            if interactive {
                 if let Some(opts) = fetch_options(client, false) {
                     if opts.len() > 1 {
                         return match picker::pick_multi(&opts, planet_verb(command)) {
