@@ -58,8 +58,10 @@ planet 实例,按以下顺序解析:
 | ③ | 唯一 running planet 自动选中 | 仅有一个激活 planet 时自动落到它 |
 | ④ | 多个 running planet | **交互式 TTY**:弹 planet 选择列表(见下);非交互(管道/脚本/`-j`):报 `409` 并列出候选,退出码 2,不猜 |
 
-查询类命令(info / list / listnetworks / listpeers / listmoons / events)**默认聚合展示**,
+查询类命令(info / list / listnetworks / listpeers / listmoons)**默认聚合展示**,
 `--planet` 与环境变量在其上的语义是**过滤**,不受上述链约束。
+**events 例外**:必须落到具体 planet——显式 `--planet` > 仅有一个 planet 时自动;
+多 planet 未指定时交互式终端弹单选列表,非交互报用法错误(退出码 2)。
 
 ### 交互式 planet 选择
 
@@ -68,6 +70,7 @@ planet 实例,按以下顺序解析:
 
 - **变更类命令**(join / leave / set / orbit / deorbit / dump / moon import)单选:
   候选为全部 running planet,↑↓ 移动,回车确认;
+  **events** 同为单选,但候选为全部 planet(含已停止,事件是历史记录);
 - **可批量查询命令**(info / list / listnetworks / listpeers / listmoons / events)多选:
   候选含「<全部>」首项,空格勾选,回车确认;勾选「全部」或空选 = 聚合全部,
   勾选子集则按选中集合过滤(多成员时逐 planet 请求合并);
@@ -100,7 +103,7 @@ planet 实例,按以下顺序解析:
 | `listnetworks` | 跨 planet 网络列表,带 PLANET 列;`--planet` 过滤 |
 | `listpeers` | peers 按 planet 分组展示 |
 | `listmoons` | moons 聚合表;`--planet` 过滤 |
-| `events [--limit N] [--follow]` | 事件日志表,`--limit` 默认 40;`--follow` 每 2s 轮询按 ts 游标增量输出,Ctrl-C 退出;daemon 断开/不可达时命令报错退出(exit 3),不会静默重连,长时挂着需自行拉起与保活 |
+| `events [--planet] [--limit N] [--follow]` | 事件日志表,**必须指定 planet**(仅一个 planet 时自动);`--limit` 默认 40;`--follow` 每 2s 轮询按 ts 游标增量输出,Ctrl-C 退出;daemon 断开/不可达时命令报错退出(exit 3),不会静默重连,长时挂着需自行拉起与保活 |
 
 ### 变更类(按定位链落到单一 planet)
 

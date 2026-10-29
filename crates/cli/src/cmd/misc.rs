@@ -25,41 +25,13 @@ pub fn use_planet(client: &Client, planet: &str) -> Result<(), CliError> {
 
 pub fn events(
     client: &Client,
-    filter: &Option<Vec<String>>,
+    planet: &Option<String>,
     limit: usize,
     follow: bool,
     json: bool,
 ) -> Result<(), CliError> {
-    // 过滤集多成员时逐 planet 请求并按 ts 合并;单成员/全量走单次请求
-    let fetch = |after: Option<u64>, polling: bool| -> Result<Value, CliError> {
-        let one = |id: Option<&str>| {
-            if polling {
-                client.get_json_polling(&endpoints::events(id, limit, after))
-            } else {
-                client.get_json(&endpoints::events(id, limit, after))
-            }
-        };
-        match filter {
-            None => one(None),
-            Some(ids) if ids.len() == 1 => one(Some(&ids[0])),
-            Some(ids) => {
-                let mut merged: Vec<Value> = Vec::new();
-                for id in ids {
-                    let v = one(Some(id))?;
-                    merged.extend(
-                        v.get("events")
-                            .and_then(|x| x.as_array())
-                            .cloned()
-                            .unwrap_or_default(),
-                    );
-                }
-                merged.sort_by_key(|e| e.get("ts_ms").and_then(Value::as_u64).unwrap_or(0));
-                Ok(serde_json::json!({ "events": merged }))
-            }
-        }
-    };
     if !follow {
-        let v = fetch(None, false)?;
+        let v = client.get_json(&endpoints::events(planet.as_deref(), limit, None))?;
         if json {
             print_json(&v);
             return Ok(());
@@ -70,7 +42,7 @@ pub fn events(
     // --follow:2s 轮询,按 ts 游标增量输出;走无超时轮询路径,daemon 偶发阻塞不中断
     let mut after: Option<u64> = None;
     loop {
-        let v = fetch(after, true)?;
+        let v = client.get_json_polling(&endpoints::events(planet.as_deref(), limit, after))?;
         let entries: Vec<EventEntry> = serde_json::from_value(
             v.get("events").cloned().unwrap_or(Value::Null),
         )

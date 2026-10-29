@@ -134,10 +134,12 @@ fn main() {
 
 // ---- 交互式 planet 选择 ----
 
-/// 命令对 planet 的依赖形态:变更类单选,可批量查询类多选(含「全部」)
+/// 命令对 planet 的依赖形态:变更类单选(running 候选),events 单选(全量候选,
+/// 仅一个 planet 时自动),可批量查询类多选(含「全部」)
 enum PlanetNeed {
     None,
     Single,
+    Events,
     Multi,
 }
 
@@ -147,8 +149,8 @@ fn planet_need(cmd: &Command) -> PlanetNeed {
         | Command::List
         | Command::Listnetworks
         | Command::Listpeers
-        | Command::Listmoons
-        | Command::Events { .. } => PlanetNeed::Multi,
+        | Command::Listmoons => PlanetNeed::Multi,
+        Command::Events { .. } => PlanetNeed::Events,
         Command::Join { .. }
         | Command::Leave { .. }
         | Command::Set { .. }
@@ -224,6 +226,30 @@ fn resolve_planets(
             }
             (planet_flag, None)
         }
+        PlanetNeed::Events => {
+            // events 必须落到具体 planet:显式指定 > 仅一个 planet 自动 > 交互单选;
+            // 非交互且多 planet → 用法错误(候选含已停止的 planet,事件是历史记录)
+            if planet_flag.is_some() {
+                return (planet_flag, None);
+            }
+            if let Some(opts) = fetch_options(client, false) {
+                match opts.len() {
+                    1 => return (Some(opts[0].id.clone()), None),
+                    0 => {}
+                    _ if !json && std::io::stdin().is_terminal() => {
+                        return match picker::pick_single(&opts, "events") {
+                            Ok(id) => (Some(id), None),
+                            Err(()) => std::process::exit(130),
+                        };
+                    }
+                    n => {
+                        eprintln!("error: events 需要指定 --planet(当前 {n} 个 planet)");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            (None, None)
+        }
         PlanetNeed::Multi => {
             if let Some(p) = planet_flag {
                 // 显式 --planet / 环境变量:等价单成员过滤集
@@ -279,7 +305,7 @@ fn dispatch(
         Command::Planet { cmd } => cmd::planet::run(client, cmd, json),
         Command::Moon { cmd } => cmd::mutate::run_moon(client, cmd, planet_flag, json),
         Command::Use { planet } => cmd::misc::use_planet(client, planet),
-        Command::Events { limit, follow } => cmd::misc::events(client, query_filter, *limit, *follow, json),
+        Command::Events { limit, follow } => cmd::misc::events(client, planet_flag, *limit, *follow, json),
     }
 }
 
