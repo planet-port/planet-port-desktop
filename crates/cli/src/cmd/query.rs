@@ -12,14 +12,19 @@ fn dash<T: ToString>(v: Option<T>) -> String {
 
 /// planet id → 名称映射,列表输出显示 `id (name)`;/status 拿不到时回退纯 id
 fn planet_names(client: &Client) -> HashMap<String, String> {
+    planet_statuses(client)
+        .into_iter()
+        .map(|p| (p.id, p.name))
+        .collect()
+}
+
+/// /status 的 planets 全量(含 stopped):登记即返回,list 分组展示用
+fn planet_statuses(client: &Client) -> Vec<PlanetStatus> {
     let Ok(v) = client.get_json(endpoints::status()) else {
-        return HashMap::new();
+        return Vec::new();
     };
-    let rows: Vec<PlanetStatus> = serde_json::from_value(
-        v.get("planets").cloned().unwrap_or(Value::Null),
-    )
-    .unwrap_or_default();
-    rows.into_iter().map(|p| (p.id, p.name)).collect()
+    serde_json::from_value(v.get("planets").cloned().unwrap_or(Value::Null))
+        .unwrap_or_default()
 }
 
 fn planet_display(names: &HashMap<String, String>, id: &str) -> String {
@@ -97,7 +102,9 @@ pub fn info(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
     Ok(())
 }
 
-/// 按行星分组列出网络(listpeers 同款分组样式)
+/// 按行星分组列出网络(listpeers 同款分组样式)。
+/// 分组覆盖**全部登记行星**(不只在线的):未连接的行星也列出并标注状态,
+/// 其下无网络表;`--planet` 过滤对分组生效
 pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
     let v = fetch_list(client, endpoints::networks, "networks", filter)?;
     if json {
@@ -108,17 +115,34 @@ pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
         v.get("networks").cloned().unwrap_or(Value::Null),
     )
     .unwrap_or_default();
-    let names = planet_names(client);
-    let mut order: Vec<String> = Vec::new();
-    for n in &rows {
-        if !order.contains(&n.planet) {
-            order.push(n.planet.clone());
+    // /status 只取一次:分组与名称展示共用,避免重复请求
+    let planets = planet_statuses(client);
+    let names: HashMap<String, String> = planets
+        .iter()
+        .map(|p| (p.id.clone(), p.name.clone()))
+        .collect();
+    for p in planets {
+        if let Some(f) = filter {
+            if !f.contains(&p.id) && !f.contains(&p.name) {
+                continue;
+            }
         }
-    }
-    for pid in order {
-        println!("planet: {}", planet_display(&names, &pid));
+        // 三态对齐 info:运行且根可达=已连接;运行但离线=连接中;停止=未连接
+        let state = if p.status != "running" {
+            "未连接"
+        } else if p.online {
+            "已连接"
+        } else {
+            "连接中"
+        };
+        println!("planet: {} [{state}]", planet_display(&names, &p.id));
+        let nets: Vec<_> = rows.iter().filter(|n| n.planet == p.id).collect();
+        if nets.is_empty() {
+            println!("  (无网络)\n");
+            continue;
+        }
         let mut t = new_table(&["NETWORK", "NAME", "STATUS", "TYPE", "MANAGED-IPS"]);
-        for n in rows.iter().filter(|n| n.planet == pid) {
+        for n in nets {
             let mut ips = n.assigned_addrs.iter().take(2).cloned().collect::<Vec<_>>();
             if n.assigned_addrs.len() > 2 {
                 ips.push("…".into());

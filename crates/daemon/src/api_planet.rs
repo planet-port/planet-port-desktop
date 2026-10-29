@@ -599,7 +599,7 @@ pub async fn planet_stop(
         let reg = st.registry.lock().unwrap();
         find_entry(&reg, &id)?.id.clone()
     };
-    runtime::stop_planet(&st, &pid).await;
+    runtime::stop_planet(&st, &pid, runtime::StopMark::ExplicitStop).await;
     let reg = st.registry.lock().unwrap();
     let e = find_entry(&reg, &id)?;
     Ok(Json(json!({ "planet": to_detail(e, None) })))

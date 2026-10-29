@@ -97,7 +97,7 @@ impl NodeSink for DaemonSink {
                         "autoStopped",
                         "因致命错误自动收尾:实例已停止",
                     );
-                    stop_planet(&app, &pid).await;
+                    stop_planet(&app, &pid, StopMark::ExplicitStop).await;
                 });
                 drop(handle);
             }
@@ -495,9 +495,20 @@ fn start_failed(state: &AppState, pid: &str, message: &str) -> String {
     message.to_string()
 }
 
+/// stop 的登记语义。registry 的 `running` 字段是**期望状态**:
+/// - [`StopMark::ExplicitStop`]:用户显式 stop / 致命自停 / 删除收尾,
+///   落 `running=false`,下次 daemon 启动不拉起;
+/// - [`StopMark::ShutdownKeep`]:daemon 优雅退出(SIGTERM),保留 `running=true`,
+///   daemon 下次启动时按既有的恢复逻辑自动拉起——服务 stop/start 即暂停/恢复。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StopMark {
+    ExplicitStop,
+    ShutdownKeep,
+}
+
 /// 停一个 planet 实例(红线顺序)。返回 false = 本就未运行(幂等)。
 /// registry 中 running=true 但运行时缺失的残留(如上次启动失败)也会被纠正。
-pub async fn stop_planet(state: &AppState, id: &str) -> bool {
+pub async fn stop_planet(state: &AppState, id: &str, mark: StopMark) -> bool {
     // 与 start_planet 同一门闩,防启停交叠
     let _gate = state.runtime_gate.lock().await;
     // 先短锁取运行时 Arc(不从 map 摘除,红线顺序见 teardown_runtime),锁即释放:
@@ -505,7 +516,16 @@ pub async fn stop_planet(state: &AppState, id: &str) -> bool {
     // (net_join 等是 registry → planets 的取用序,反向嵌套会成环)
     let rt = state.planets.lock().unwrap().get(id).cloned();
     let Some(rt) = rt else {
-        // 无运行时但 registry 仍标 running:残留状态,纠正即可
+        // 无运行时但 registry 仍标 running:残留状态。显式 stop 才纠正登记;
+        // 优雅退出保持期望状态,留给下次启动恢复
+        if mark == StopMark::ShutdownKeep {
+            state.events.push(
+                id,
+                "planetStopped",
+                "planet stopped (daemon 优雅退出,重启后自动恢复)",
+            );
+            return true;
+        }
         let mut reg = state.registry.lock().unwrap();
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == id) {
             if e.running {
@@ -524,7 +544,7 @@ pub async fn stop_planet(state: &AppState, id: &str) -> bool {
     // 1. 置 stopping → 2. 拆设备面/关核心 → 3. 摘出 map → 4. registry + 事件
     // (红线顺序集中在 teardown_runtime;摘出 map 后 handler 若仍持 Arc,其
     //  node 槽位必空,join/leave 走「实例已停止」错误路径,查询按已停处理)
-    teardown_runtime(state, rt).await;
+    teardown_runtime(state, rt, mark).await;
     true
 }
 
@@ -534,7 +554,7 @@ pub async fn stop_planet(state: &AppState, id: &str) -> bool {
 /// map 仍有运行时」的异常残留时也用它收尾,避免 NodeHandle 走 Drop 兜底。
 /// 停止期间 handler 仍可能持同一 Arc:node 槽位已空,join/leave 返回
 /// 「实例已停止」,查询一律按已停处理,不会 panic。
-async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>) {
+async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>, mark: StopMark) {
     // 1. 置 stopping:sink 见即不再动设备;node 槽位取空(此后查询视为已停)
     rt.stopping.store(true, Ordering::SeqCst);
     let node = {
@@ -559,8 +579,12 @@ async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>) {
     {
         let mut reg = state.registry.lock().unwrap();
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == rt.planet_id) {
-            e.running = false;
-            e.last_node_id = None;
+            // 期望状态仅显式 stop 才落 false;优雅退出保留 true 供下次启动恢复。
+            // last_node_id 是展示用的上次节点地址(身份本体在 dataDir),保留即可
+            if mark == StopMark::ExplicitStop {
+                e.running = false;
+                e.last_node_id = None;
+            }
             // 设备已随 teardown 销毁,登记清空(sink 后续的登记任务见
             // running=false 也会自行跳过)
             e.ifaces.clear();
@@ -569,7 +593,12 @@ async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>) {
             eprintln!("[runtime] registry 写盘失败: {e}");
         }
     }
-    state.events.push(&rt.planet_id, "planetStopped", "planet stopped");
+    let stop_msg = if mark == StopMark::ShutdownKeep {
+        "planet stopped (daemon 优雅退出,重启后自动恢复)"
+    } else {
+        "planet stopped"
+    };
+    state.events.push(&rt.planet_id, "planetStopped", stop_msg);
     // DNS:系统 resolver 若仍归本 planet 所有(stop/删除/shutdown 共用此路径)
     // 则还原为自动获取;owner 不匹配(被后应用者覆盖)时内部自行跳过。
     // networksetup 阻塞,放阻塞线程池;失败仅记事件,不影响收尾结果。
@@ -594,7 +623,7 @@ pub async fn teardown_leftover(state: &AppState, id: &str) -> bool {
     let rt = state.planets.lock().unwrap().get(id).cloned();
     match rt {
         Some(rt) => {
-            teardown_runtime(state, rt).await;
+            teardown_runtime(state, rt, StopMark::ExplicitStop).await;
             true
         }
         None => false,

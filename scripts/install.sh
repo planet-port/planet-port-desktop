@@ -11,7 +11,8 @@
 #   2. 二进制安装到 /Library/Application Support/planet-portd/bin/(仅 macOS)
 #   3. /usr/local/bin/planet-port 建软链
 #   4. 执行 planet-port service install(装 launchd 服务并启动;--no-service 跳过)
-#   5. 升级场景:停止前记录运行中的 planet,安装后逐个拉回
+#   5. 升级场景:daemon 按 registry 期望状态自动恢复 planet;脚本另做
+#      拉回兜底(旧版 daemon 升级时 SIGTERM 会落 stopped,需脚本恢复)
 #
 # 环境变量:
 #   PLANET_PORT_VERSION  指定版本(如 v0.1.1),默认取 Releases 最新
@@ -85,7 +86,8 @@ else
     TARBALL="${TMP}/${ASSET}"
 fi
 
-# ── 记录运行中的 planet(优雅停止会标记 stopped,装完需拉回) ───────────────
+# ── 记录运行中的 planet(升级兜底:旧版 daemon 的 SIGTERM 会落 stopped,
+#    新版才保留期望状态;拉回对新版幂等、对旧版是唯一恢复路径) ────────────
 RUNNING=""
 if [[ -x "$LINK" ]]; then
     RUNNING="$("$LINK" info --json 2>/dev/null | awk -F'"' '
@@ -119,10 +121,12 @@ rm -rf "$STAGE"
 if [[ "$NO_SERVICE" -eq 1 ]]; then
     echo "已跳过服务安装(--no-service),需要时执行: sudo planet-port service install"
 else
+    # daemon 随 service install 拉起,并按 registry 期望状态自动恢复 planet;
+    # RUNNING 拉回兜底旧版 daemon 升级(新版幂等,已恢复的 start 直接成功)
     "$LINK" service install
-    # 升级前在跑的 planet 逐个拉回
     for id in $RUNNING; do
-        "$LINK" start "$id" || echo "警告: planet ${id} 恢复失败,请手动: planet-port start ${id}"
+        "$LINK" start "$id" >/dev/null 2>&1 \
+            || echo "警告: planet ${id} 恢复失败,请手动: planet-port start ${id}"
     done
 fi
 

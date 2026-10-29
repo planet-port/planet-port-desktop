@@ -197,9 +197,9 @@ async fn shutdown(state: AppState, port_path: PathBuf) {
         _ = &mut int_fut => "SIGINT",
     };
     eprintln!("收到 {sig},正在停止服务");
-    // 待停清单先克隆(短锁):id 取 registry 中标记 running 的(含上次启动
-    // 失败的残留,stop_planet 会纠正),再并入运行时 map 中可能多出的 id;
-    // name 一并带出供日志展示,运行时残留无登记名时以 id 兜底
+    // 待停清单先克隆(短锁):id 取 registry 中标记 running 的(期望运行,含
+    // 上次启动失败的残留),再并入运行时 map 中可能多出的 id;name 一并带出
+    // 供日志展示,运行时残留无登记名时以 id 兜底
     let mut items: Vec<(String, String)> = state
         .registry
         .lock()
@@ -216,7 +216,8 @@ async fn shutdown(state: AppState, port_path: PathBuf) {
     }
     for (id, name) in &items {
         eprintln!("正在停止行星 {name}({id})");
-        runtime::stop_planet(&state, id).await;
+        // ShutdownKeep:保留 registry 期望状态,daemon 下次启动自动恢复运行
+        runtime::stop_planet(&state, id, runtime::StopMark::ShutdownKeep).await;
     }
     // registry 在每次变更/停止时均已落盘,此处兜底再存一次
     if let Err(e) = state.registry.lock().unwrap().save(&state.config_dir) {
@@ -349,8 +350,9 @@ async fn main() {
             .ok();
     }
 
-    // 5. 恢复:上次运行时标记 running=true 的逐个重启拉起;
-    //    失败(start_planet 内部已登记 planetStartFailed + running=false)则继续
+    // 5. 恢复:registry 中 running=true 即期望运行的 planet(含优雅退出保留的
+    //    状态),逐个拉起;失败(start_planet 内部已登记 planetStartFailed +
+    //    running=false)则继续
     let recover: Vec<registry::RegistryEntry> = state
         .registry
         .lock()
