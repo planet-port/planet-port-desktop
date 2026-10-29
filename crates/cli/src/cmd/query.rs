@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::client::{CliError, Client};
 use crate::output::{new_table, print_json};
 use planet_port_api::endpoints;
@@ -6,6 +8,25 @@ use serde_json::{json, Value};
 
 fn dash<T: ToString>(v: Option<T>) -> String {
     v.map(|x| x.to_string()).unwrap_or_else(|| "—".into())
+}
+
+/// planet id → 名称映射,列表输出显示 `id (name)`;/status 拿不到时回退纯 id
+fn planet_names(client: &Client) -> HashMap<String, String> {
+    let Ok(v) = client.get_json(endpoints::status()) else {
+        return HashMap::new();
+    };
+    let rows: Vec<PlanetStatus> = serde_json::from_value(
+        v.get("planets").cloned().unwrap_or(Value::Null),
+    )
+    .unwrap_or_default();
+    rows.into_iter().map(|p| (p.id, p.name)).collect()
+}
+
+fn planet_display(names: &HashMap<String, String>, id: &str) -> String {
+    match names.get(id) {
+        Some(n) => format!("{id} ({n})"),
+        None => id.to_string(),
+    }
 }
 
 /// 列表型查询的统一取数:过滤集为 None → 全量;单成员 → ?planet= 过滤;
@@ -87,6 +108,7 @@ pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
         v.get("networks").cloned().unwrap_or(Value::Null),
     )
     .unwrap_or_default();
+    let names = planet_names(client);
     let mut order: Vec<String> = Vec::new();
     for n in &rows {
         if !order.contains(&n.planet) {
@@ -94,7 +116,7 @@ pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
         }
     }
     for pid in order {
-        println!("planet: {pid}");
+        println!("planet: {}", planet_display(&names, &pid));
         let mut t = new_table(&["NETWORK", "NAME", "STATUS", "TYPE", "MANAGED-IPS"]);
         for n in rows.iter().filter(|n| n.planet == pid) {
             let mut ips = n.assigned_addrs.iter().take(2).cloned().collect::<Vec<_>>();
@@ -124,6 +146,7 @@ pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -
         v.get("networks").cloned().unwrap_or(Value::Null),
     )
     .unwrap_or_default();
+    let names = planet_names(client);
     let mut t = new_table(&["PLANET", "NETWORK", "NAME", "STATUS", "TYPE", "MANAGED-IPS"]);
     for n in rows {
         let mut ips = n.assigned_addrs.iter().take(2).cloned().collect::<Vec<_>>();
@@ -131,7 +154,7 @@ pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -
             ips.push("…".into());
         }
         t.add_row(vec![
-            n.planet,
+            planet_display(&names, &n.planet),
             n.nwid,
             n.name.unwrap_or_else(|| "—".into()),
             n.status,
@@ -154,6 +177,7 @@ pub fn listpeers(client: &Client, filter: &Option<Vec<String>>, json: bool) -> R
     )
     .unwrap_or_default();
     // 按 planet 分组展示
+    let names = planet_names(client);
     let mut order: Vec<String> = Vec::new();
     for p in &rows {
         if !order.contains(&p.planet) {
@@ -161,7 +185,7 @@ pub fn listpeers(client: &Client, filter: &Option<Vec<String>>, json: bool) -> R
         }
     }
     for pid in order {
-        println!("planet: {pid}");
+        println!("planet: {}", planet_display(&names, &pid));
         let mut t = new_table(&["ROLE", "ADDRESS", "LATENCY", "VERSION", "PATH"]);
         for p in rows.iter().filter(|p| p.planet == pid) {
             let latency = p
@@ -191,10 +215,11 @@ pub fn listmoons(client: &Client, filter: &Option<Vec<String>>, json: bool) -> R
         v.get("moons").cloned().unwrap_or(Value::Null),
     )
     .unwrap_or_default();
+    let names = planet_names(client);
     let mut t = new_table(&["PLANET", "MOONID", "SEED", "SOURCE", "CACHED"]);
     for m in rows {
         t.add_row(vec![
-            m.planet,
+            planet_display(&names, &m.planet),
             m.moon_id,
             m.seed.unwrap_or_else(|| "—".into()),
             if m.from_file { "file" } else { "manual" }.into(),
