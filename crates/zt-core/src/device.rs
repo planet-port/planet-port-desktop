@@ -424,5 +424,5 @@ fn run_reader(
             }
         }
     }
-    eprintln!("[device-reader] 已停止");
+    eprintln!("[device-reader] {nwid:016x} 已停止");
 }
