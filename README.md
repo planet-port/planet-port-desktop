@@ -215,7 +215,9 @@ planet-port info                                      # 聚合状态
 
 - planet 数据为实网:planet 文件解析自真实 world,实例连真实根服务器;
 - `add` 的 URL 源不支持(`400 unsupportedSource`),容器导入 `501 notImplemented`;
-- `dns` 模式(`set` 的 `dnsMode`/`customDns`)仅存储,不在本阶段改写系统 resolver;
+- `dns` 模式(`set` 的 `dnsMode`/`customDns`)为 `network`/`custom` 时,netconf 应用
+  阶段会用 `networksetup` 把 DNS 写进主网络服务,leave 网络 / 停止或删除 planet 时
+  还原为自动获取;失败只记事件,不影响网络数据面;
 - `set` 校验更严(见上「说明」);`routeViaZeroTier` 于下次 netconf 生效。
 
 下文回归清单对 mockd 与 planet-portd 均可执行(两者暴露同一套 REST API;

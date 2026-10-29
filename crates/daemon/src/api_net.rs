@@ -369,6 +369,16 @@ pub async fn net_leave(
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(&nwid_u);
     st.events.push(&rt.planet_id, "leave", &format!("left {nwid}"));
+    // DNS:该网络的系统 resolver 若归本 planet 所有则还原(失败仅记事件)
+    {
+        let events = Arc::clone(&st.events);
+        let config_dir = st.config_dir.clone();
+        let pid = rt.planet_id.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            crate::dns::restore(&config_dir, &events, &pid, Some(nwid_u))
+        })
+        .await;
+    }
     Ok(Json(json!({"result": "ok"})))
 }
 

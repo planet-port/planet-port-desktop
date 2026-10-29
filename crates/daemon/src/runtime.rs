@@ -26,6 +26,7 @@ use zt_core::{
     NodeParams, NodeSink,
 };
 
+use crate::dns;
 use crate::events::Ring;
 use crate::registry::{NetLocal, RegistryEntry};
 use crate::state::{AppState, LiveInfo, NetCache, NetSnapshot, PlanetRuntime};
@@ -161,6 +162,23 @@ impl NodeSink for DaemonSink {
                         "netconf",
                         &format!("网络 {nwid:016x} 设备应用失败: {e}"),
                     );
+                }
+                // DNS 写系统 resolver:dnsMode=network 用 netconf 下发的
+                // dns_servers,=custom 用本地配置;servers 为空不动系统。
+                // networksetup 阻塞且可能失败,spawn_blocking 执行、失败仅记事件
+                let nl_dns = lock(&self.net_local).get(&nwid).cloned();
+                let servers: Vec<String> = match nl_dns.as_ref().map(|n| n.dns_mode.as_str()) {
+                    Some("network") => cfg.dns_servers.iter().map(|s| s.to_string()).collect(),
+                    Some("custom") => nl_dns.map(|n| n.custom_dns).unwrap_or_default(),
+                    _ => Vec::new(),
+                };
+                if !servers.is_empty() {
+                    let app = self.app.clone();
+                    let pid = self.planet_id.clone();
+                    let events = Arc::clone(&self.events);
+                    self.rt.spawn_blocking(move || {
+                        dns::apply(&app.config_dir, &events, &pid, nwid, &servers)
+                    });
                 }
             }
         }
@@ -484,6 +502,18 @@ async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>) {
         }
     }
     state.events.push(&rt.planet_id, "planetStopped", "planet stopped");
+    // DNS:系统 resolver 若仍归本 planet 所有(stop/删除/shutdown 共用此路径)
+    // 则还原为自动获取;owner 不匹配(被后应用者覆盖)时内部自行跳过。
+    // networksetup 阻塞,放阻塞线程池;失败仅记事件,不影响收尾结果
+    {
+        let app = state.clone();
+        let pid = rt.planet_id.clone();
+        let events = Arc::clone(&state.events);
+        let _ = tokio::task::spawn_blocking(move || {
+            dns::restore(&app.config_dir, &events, &pid, None)
+        })
+        .await;
+    }
 }
 
 /// 已持 `runtime_gate` 的调用方(如 planets_delete)用:该 id 若仍有运行时

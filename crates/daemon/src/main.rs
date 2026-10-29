@@ -6,6 +6,7 @@
 mod api_misc;
 mod api_net;
 mod api_planet;
+mod dns;
 mod events;
 mod registry;
 mod runtime;
@@ -295,6 +296,16 @@ async fn main() {
         token: Arc::new(token),
     };
 
+    // 4.5 DNS 残留清理(kill -9 未走 stop 路径):恢复 planet 之前先把上次
+    // 应用未还的系统 resolver 还原为自动获取
+    {
+        let events = Arc::clone(&state.events);
+        let dir_for_dns = dir.clone();
+        tokio::task::spawn_blocking(move || dns::restore_leftover(&dir_for_dns, &events))
+            .await
+            .map_err(|e| eprintln!("[boot] DNS 残留清理任务失败: {e}"))
+            .ok();
+    }
 
     // 5. 恢复:上次运行时标记 running=true 的逐个重启拉起;
     //    失败(start_planet 内部已登记 planetStartFailed + running=false)则继续
