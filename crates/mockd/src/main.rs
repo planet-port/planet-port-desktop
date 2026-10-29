@@ -765,7 +765,17 @@ async fn main() {
         .route("/dump", get(dump))
         .layer(middleware::from_fn(auth_mw))
         .with_state(state);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:9998").await.unwrap();
-    println!("mockd listening on http://127.0.0.1:9998 (any non-empty X-ZT1-Auth accepted)");
+    // 端口可经 MOCKD_PORT 覆盖:多实例并行联调/评估用,默认保持 9998。
+    // 值非法时显式告警再回退——静默回退会撞上真实 daemon 的 9998,
+    // 恰好破坏多实例并行的用途
+    let port = match std::env::var("MOCKD_PORT") {
+        Ok(p) => p.parse::<u16>().unwrap_or_else(|_| {
+            eprintln!("warning: invalid MOCKD_PORT={p}, falling back to 9998");
+            9998
+        }),
+        Err(_) => 9998,
+    };
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.unwrap();
+    println!("mockd listening on http://127.0.0.1:{port} (any non-empty X-ZT1-Auth accepted)");
     axum::serve(listener, app).await.unwrap();
 }

@@ -143,7 +143,7 @@ export PLANET_PORT_URL=http://127.0.0.1:9998 PLANET_PORT_TOKEN=dev
 cargo run -p planet-port -- info
 ```
 
-mockd 接受任意非空 token；注意 mockd **不写** port 文件，若机器上残留 planet-portd 的 port 文件，联调 mockd 需显式设 `PLANET_PORT_URL`（或删掉该文件）。
+mockd 接受任意非空 token；注意 mockd **不写** port 文件，若机器上残留 planet-portd 的 port 文件，联调 mockd 需显式设 `PLANET_PORT_URL`（或删掉该文件）。多实例并行时用 `MOCKD_PORT` 指定监听端口（默认 9998）。
 
 ### 环境变量与请求行为
 
