@@ -11,34 +11,10 @@ use std::io::Write;
 pub enum PlanetCmd {
     /// List registered planets
     List,
-    /// Import planet from file path or URL
-    Import {
-        source: String,
-        /// Optional alias
-        #[arg(long)]
-        name: Option<String>,
-        /// Override data dir (absolute path); omit to use daemon default
-        #[arg(long)]
-        data_dir: Option<String>,
-        /// Override UDP port; omit to use daemon auto-assignment
-        #[arg(long)]
-        port: Option<u16>,
-    },
     /// Show planet details
     Show { id: String },
     /// Rename a planet
     Rename { id: String, new_name: String },
-    /// Start a stopped planet
-    Start { id: String },
-    /// Stop a planet (keep registered)
-    Stop { id: String },
-    /// Remove a planet registration
-    Rm {
-        id: String,
-        /// Skip confirmation (scripts)
-        #[arg(long)]
-        yes: bool,
-    },
     /// Export planet binary to stdout or file
     Export {
         id: String,
@@ -56,30 +32,25 @@ pub enum PlanetCmd {
 pub fn run(client: &Client, cmd: &PlanetCmd, json: bool) -> Result<(), CliError> {
     match cmd {
         PlanetCmd::List => list(client, json),
-        PlanetCmd::Import { source, name, data_dir, port } => import(
-            client,
-            source,
-            name.clone(),
-            data_dir.clone(),
-            *port,
-            json,
-        ),
         PlanetCmd::Show { id } => show(client, id, json),
         PlanetCmd::Rename { id, new_name } => rename(client, id, new_name, json),
-        PlanetCmd::Start { id } => {
-            let resp = client.post_empty(&endpoints::planet_action(id, "start"))?;
-            print_result("start", json, &resp);
-            Ok(())
-        }
-        PlanetCmd::Stop { id } => {
-            let resp = client.post_empty(&endpoints::planet_action(id, "stop"))?;
-            print_result("stop", json, &resp);
-            Ok(())
-        }
-        PlanetCmd::Rm { id, yes } => rm(client, id, *yes, json),
         PlanetCmd::Export { id, out } => export(client, id, out.clone()),
         PlanetCmd::Share { id, ttl } => share(client, id, *ttl, json),
     }
+}
+
+// start/stop/remove 已提级为顶层命令(add/remove/start/stop,对齐用户习惯、
+// 减少层级),实现仍留在本模块
+pub fn start(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
+    let resp = client.post_empty(&endpoints::planet_action(id, "start"))?;
+    print_result("start", json, &resp);
+    Ok(())
+}
+
+pub fn stop(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
+    let resp = client.post_empty(&endpoints::planet_action(id, "stop"))?;
+    print_result("stop", json, &resp);
+    Ok(())
 }
 
 fn print_result(verb: &str, json: bool, body: &Value) {
@@ -123,7 +94,7 @@ fn list(client: &Client, json: bool) -> Result<(), CliError> {
     Ok(())
 }
 
-fn import(
+pub fn import(
     client: &Client,
     source: &str,
     name: Option<String>,
@@ -147,7 +118,7 @@ fn import(
         resp.get("planet").cloned().unwrap_or(Value::Null),
     )
     .map_err(|e| CliError::Io(e.to_string()))?;
-    println!("imported planet \"{}\" (id {}) → running", d.name, d.id);
+    println!("added planet \"{}\" (id {}) → running", d.name, d.id);
     Ok(())
 }
 
@@ -183,11 +154,11 @@ fn rename(client: &Client, id: &str, new_name: &str, json: bool) -> Result<(), C
     Ok(())
 }
 
-fn rm(client: &Client, id: &str, yes: bool, json: bool) -> Result<(), CliError> {
+pub fn rm(client: &Client, id: &str, yes: bool, json: bool) -> Result<(), CliError> {
     // -j 时 stdout 只允许输出 JSON,交互确认会污染输出,必须显式 --yes
     if json && !yes {
         return Err(CliError::Usage(
-            "--json requires --yes for planet rm (confirmation prompt would corrupt stdout)".into(),
+            "--json requires --yes for remove (confirmation prompt would corrupt stdout)".into(),
         ));
     }
     if !yes {

@@ -15,7 +15,7 @@
 | 命令命名 | zerotier-cli 已有命令**原名原参数保留**;新增 `planet`/`use`/`service` 子命令 |
 | 变更类定位 | 优先级链(见 §2),单 planet 自动、多 planet 报错列候选,绝不猜 |
 | shell 上下文 | `use` 命令输出 export 行配合 eval,本质是 `PLANET_PORT_PLANET` 环境变量 |
-| planet import 语义 | import 即上线(登记 + 创建 Node 实例 + 立即运行);`stop` 降级为仅登记 |
+| add(导入)语义 | add 即上线(登记 + 创建 Node 实例 + 立即运行);`stop` 降级为仅登记 |
 | dump 语义 | **不聚合**:按定位链落到单一 planet,一次只 dump 一个实例 |
 | 网络设置模型 | **仅客户端本地配置**:routeViaZeroTier、dnsMode(none/network/custom)、customDns;不提供控制器侧授权项(见 §7) |
 | planet 元数据 | icon(animal key,三端 planets.json 互认)+ color(#RRGGBB);CLI 渲染 emoji,GUI 渲染自有图标,同一字段两种呈现并存 |
@@ -72,17 +72,18 @@ planet-portd(特权 daemon,单进程多 Node:每 planet 一个实例)
 **planet 组**(zerotier-cli 没有,多 planet 管理核心):
 
 ```
-planet-port planet list                    # 登记清单 + 运行状态 + 网络数 + UDP 端口(图标列显示 emoji)
-planet-port planet import <file|URL> [--name <别名>]
+planet-port add <file|URL> [--name <别名>] [--data-dir <路径>] [--port <端口>]
                                            # CLI 仅支持文件与 URL 两种来源
                                            # 校验(0x01 头 + worldId 解析,语义平移 Android PlanetImporter)
                                            # → 登记 → 创建 Node 实例 → 立即上线
+                                           # --data-dir/--port 为开发验证覆写,日常省略
+planet-port start <name|id>                # stopped → 上线(按本地网络配置自动 re-join)
+planet-port stop <name|id>                 # 下线,保留登记;该 planet 下网络全部离线
+planet-port remove <name|id> [--yes]       # 删除登记;有活跃网络时拒绝(先 leave);交互确认,--yes 供脚本跳过
+planet-port planet list                    # 登记清单 + 运行状态 + 网络数 + UDP 端口(图标列显示 emoji)
 planet-port planet show <name|id>          # 详情:World ID、类型(official/custom)、roots、文件大小、
                                            #   修订时间、lastNodeId、来源、网络数、端口、状态
 planet-port planet rename <name|id> <新名>
-planet-port planet start <name|id>         # stopped → 上线
-planet-port planet stop <name|id>          # 下线,保留登记;该 planet 下网络全部离线
-planet-port planet rm <name|id> [--yes]    # 删除登记;有活跃网络时拒绝(先 leave);交互确认,--yes 供脚本跳过
 planet-port planet export <name|id> [-o <file>]
                                            # 导出 planet 二进制;缺省 -o 时写 stdout(供重定向)
 planet-port planet share <name|id> [--ttl <秒>]
@@ -206,8 +207,8 @@ daemon 侧 API 实现(tokio 路由、authtoken、事件轮询/SSE)属于 daemon 
 
 | 通道 | CLI | GUI | 说明 |
 |---|---|---|---|
-| 本地文件导入 | ✓ | ✓ | `planet import <file>` / POST source=path |
-| URL 导入 | ✓ | ✓ | `planet import <url>` / POST source=url |
+| 本地文件导入 | ✓ | ✓ | `add <file>` / POST source=path |
+| URL 导入 | ✓ | ✓ | `add <url>` / POST source=url |
 | 动态二维码扫入 | ✗ | 仅当有摄像头 | GUI 调系统摄像头,QRTransfer 帧协议(语义平移)重组 → ZTP 容器 → POST container;无摄像头则无此功能 |
 | 文件导出 | ✓ | ✓ | `planet export` / GET export |
 | 局域网临时链接 | ✓(打印 URL) | ✓ | POST share → 一次性 token + TTL,供手机/他机浏览器或客户端直接下载 |

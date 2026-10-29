@@ -139,7 +139,7 @@ World 二进制格式以 `Core/node/World.cpp` 的 `World::deserialize` 为准(�
 - [ ] **Step 3: 验证 + 提交**
 
 ```bash
-# 起 daemon 后:planet-port 的 planet import 命令(或 curl)导入 pocs/fixtures/planet.Gozi25
+# 起 daemon 后:planet-port 的 add 命令(或 curl)导入 pocs/fixtures/planet.Gozi25
 # 预期:201,worldId=3530253632,roots 含 124.222.91.224;重复导入 409 planetExists
 # planets/planet.Gozi25 与源文件 shasum 一致;export 回传字节一致;share 链接 curl 下载成功且二次 404
 ```
@@ -270,11 +270,11 @@ URL 未显式指定(--url/env)时:默认 `http://127.0.0.1:9998`;若 port_file()
 # 1. 前台起 daemon(复用 POC node-a 身份,绕开家宽 UDP 过滤与新授权):
 sudo ./target/debug/planet-portd --config-dir "$HOME/Library/Application Support/planet-portd" &
 # 2. import(dataDir 覆写指向 POC 数据、port 9994):
-planet-port planet import <path>/pocs/fixtures/planet.Gozi25 --data-dir <abs>/target/poc-data/node-a --port 9994
-# 3. start → join 5cf54f181554090f → networks(预期 OK + 10.121.16.103,feth 出现)
+planet-port add <path>/pocs/fixtures/planet.Gozi25 --data-dir <abs>/target/poc-data/node-a --port 9994
+# 3. start(顶层)→ join 5cf54f181554090f → networks(预期 OK + 10.121.16.103,feth 出现)
 # 4. ping 10.121.16.229 通(数据面);listpeers 见根 peer 与 latency;info
 # 5. events(含 planetStarted/join/status Online);moon import/orbit/deorbit 冒烟
-# 6. planet stop(feth 消失、networks 空)→ start 恢复
+# 6. stop(feth 消失、networks 空)→ start 恢复(自动 re-join)
 # 7. SIGTERM 优雅退出:无 feth 残留、registry 完整、port 文件已删
 # 8. service install/start/status/stop/uninstall 全流程
 ```

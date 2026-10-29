@@ -99,16 +99,21 @@ planet 实例,按以下顺序解析:
 | `moon import <file>` | 导入 .moon 文件,关联定位链 planet(成功为 201) |
 | `dump` | **单一 planet** 状态 dump,不聚合;歧义时报候选列表 |
 
+### planet 生命周期(顶层命令)
+
+| 命令 | 说明 |
+|---|---|
+| `add <file\|URL> [--name <别名>] [--data-dir <绝对路径>] [--port <UDP端口>]` | 导入 planet 文件并立即上线;`--data-dir`/`--port` 为开发验证覆写(复用既有 dataDir/指定 UDP 端口),日常省略 |
+| `remove <name\|id> [--yes]` | 删除登记;有活跃网络时拒绝;交互确认提示走 stderr(stdout 纯净),`--yes` 供脚本跳过;`-j` 下必须配 `--yes`,否则退出码 2 |
+| `start <name\|id>` / `stop <name\|id>` | 上线 / 下线(保留登记);start 会按登记的本地网络配置自动 re-join |
+
 ### planet 管理
 
 | 命令 | 说明 |
 |---|---|
 | `planet list` | 登记清单(ICON emoji / ID / STATUS / NETWORKS / PORT) |
-| `planet import <file\|URL> [--name <别名>]` | 导入 planet 文件并立即上线 |
 | `planet show <name\|id>` | 详情(worldId、类型、roots、来源、大小、修订时间、端口等) |
 | `planet rename <name\|id> <新名>` | 重命名别名 |
-| `planet start <name\|id>` / `planet stop <name\|id>` | 上线 / 下线(保留登记) |
-| `planet rm <name\|id> [--yes]` | 删除登记;有活跃网络时拒绝;交互确认提示走 stderr(stdout 纯净),`--yes` 供脚本跳过;`-j` 下必须配 `--yes`,否则退出码 2 |
 | `planet export <name\|id> [-o <file>]` | 导出 planet 二进制;缺省 `-o` 写 stdout |
 | `planet share <name\|id> [--ttl <秒>]` | 生成临时下载链接并打印 URL 与过期时间 |
 
@@ -134,7 +139,7 @@ planet 实例,按以下顺序解析:
 ### 说明
 
 - 单操作成功输出为简式,如 `200 join OK`;`moon import` 为 `201 moon import OK`。
-- `planet import` 与 `moon import` 当前仅支持**本地文件路径**;URL 源返回
+- `add`(planet 导入)与 `moon import` 当前仅支持**本地文件路径**;URL 源返回
   `400 unsupportedSource`(一期未实现,后续任务接入),容器导入返回 `501 notImplemented`。
 - `set` 的 `routeViaZeroTier` 在下一次网络配置更新(控制器下发 netconf)时生效:
   false 时清空 managed routes 后再 apply,已装上的路由不会立即回撤。
@@ -179,8 +184,7 @@ sudo planet-port service stop      # SIGTERM,优雅退出(逐 planet 红线收�
 ### 典型流程
 
 ```bash
-planet-port planet import ./planet.mine --name mine   # 导入 planet 文件并登记(不自动上线)
-planet-port planet start mine                         # 上线实例
+planet-port add ./planet.mine --name mine             # 导入 planet 文件并立即上线
 eval $(planet-port use mine)                          # 设默认 planet(本 shell)
 planet-port join 5cf54f181554090f                     # 加入网络
 planet-port listnetworks                              # 复查(等控制器授权后状态 RUNNING)
@@ -190,7 +194,7 @@ planet-port info                                      # 聚合状态
 ### 与 mockd 的行为差异(验证时注意)
 
 - planet 数据为实网:planet 文件解析自真实 world,实例连真实根服务器;
-- `planet import` 的 URL 源不支持(`400 unsupportedSource`),容器导入 `501 notImplemented`;
+- `add` 的 URL 源不支持(`400 unsupportedSource`),容器导入 `501 notImplemented`;
 - `dns` 模式(`set` 的 `dnsMode`/`customDns`)仅存储,不在本阶段改写系统 resolver;
 - `set` 校验更严(见上「说明」);`routeViaZeroTier` 于下次 netconf 生效。
 
@@ -214,7 +218,7 @@ URL 源不支持、container 501):
 | `set ... bogus=1` | exit=2 | `error: unknown key "bogus"; valid: ...`,exit=2 | 通过 |
 | `orbit` / `deorbit` / `moon import` | 200/201 OK;listmoons 复查 | orbit/deorbit `200 ... OK`,moon import `201`;listmoons 增删一致 | 通过 |
 | `dump --planet official` | 单 planet 文本 | 输出 networks/peers/events 概要;不带 `--planet` 时报候选 | 通过 |
-| `planet list/import/show/rename/start/stop/rm/export/share` | 各自预期 | 全部通过;rm 有活跃网络时 409 拒绝(exit=1),交互确认拒绝时 exit=0;export stdout/`-o` 均可 | 通过 |
+| `planet list/show/rename/export/share` + 顶层 `add/remove/start/stop` | 各自预期 | 全部通过;remove 有活跃网络时 409 拒绝(exit=1),交互确认拒绝时 exit=0;export stdout/`-o` 均可 | 通过 |
 | `use company` + eval 后 `join` | 定位链② 生效 | `PLANET_PORT_PLANET=company join` 直接落到 company,无歧义报错 | 通过 |
 | `use 不存在` | exit=2,stdout 无输出 | `error: planet "nosuchplanet" not found`,stdout 0 字节,exit=2 | 通过 |
 | `events [--planet] [--follow]` | 表格/增量输出 | 过滤生效;`--follow` 每 2s 增量输出新事件 | 通过 |
