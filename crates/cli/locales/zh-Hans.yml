@@ -1,0 +1,71 @@
+# CLI 文案(简体中文,源语言)
+# 键名风格对齐 iOS Localizable.xcstrings(点分层级);状态类词条与 iOS 共用同名键。
+# 新增语言:复制本文件为 <locale>.yml 并翻译,无需改代码。
+  # ---- 与 iOS 共用的状态词条 ----
+  status.connected: 已连接
+  status.connecting: 连接中
+  status.disconnected: 未连接
+  common.unknown: 未知
+
+  # ---- list/info ----
+  cli.list.noNetworks: "(无网络)"
+
+  # ---- 交互式选择器 ----
+  cli.picker.cancelEsc: 已取消(Esc)
+  cli.picker.cancelCtrlC: 已取消(Ctrl+C)
+  cli.picker.error: "选择器错误: %{e}"
+  cli.picker.prompt: "选择 planet:%{verb}"
+  cli.picker.helpSingle: "↑↓ 移动,回车确认,Esc/Ctrl+C 取消"
+  cli.picker.all: <全部>
+  cli.picker.helpMulti: "空格勾选,回车确认(空选 = 高亮项;首项 <全部> = 全部),Esc/Ctrl+C 取消"
+  cli.picker.rawModeFailed: "终端 raw 模式失败: %{e}"
+  cli.picker.renderFailed: "选择器渲染失败: %{e}"
+  cli.picker.eventReadFailed: "选择器事件读取失败: %{e}"
+  cli.picker.eventPollFailed: "选择器事件轮询失败: %{e}"
+
+  # ---- 命令反馈 ----
+  cli.events.needPlanet: "error: events 需要指定 --planet(当前 %{n} 个 running planet)"
+  cli.planet.removeConfirm: "planet \"%{id}\" 将自动退出其全部网络、停止并删除登记,确认? [y/N] "
+
+  # ---- service 子命令 ----
+  cli.service.needRoot: "该操作需要 root 权限,请使用: sudo planet-port service <install|uninstall|start|stop>"
+  cli.service.exeNotFound: "无法定位当前可执行文件: %{e}"
+  cli.service.daemonMissing: "在 %{dir} 旁未找到 daemon 二进制 planet-portd,请先构建 daemon"
+  cli.service.mkdirFailed: "无法创建目录 %{dir}: %{e}"
+  cli.service.chmodFailed: "设置 %{path} 权限失败: %{e}"
+  cli.service.writePlistFailed: "写入 %{path} 失败: %{e}"
+  cli.service.logdirFailed: "创建 %{dir} 失败(日志仍写到该路径,由 daemon 自行创建): %{e}"
+  cli.service.newsyslogFailed: "写入 %{path} 失败(daemon.log 不会被系统轮转): %{e}"
+  cli.service.legacyCleaned: "已清理旧版服务标识 %{label}"
+  cli.service.bootedOutForReinstall: "已卸载旧服务 %{label}(重装)"
+  cli.service.bootoutFailed: "launchctl bootout 失败: %{e}"
+  cli.service.alreadyBootstrapped: "服务 %{label} 已被 launchd 装载,跳过 bootstrap"
+  cli.service.bootstrapFailed: "launchctl bootstrap 失败: %{e}"
+  cli.service.installed: "已安装 LaunchDaemon %{label}"
+  cli.service.installedBin: "  二进制: %{path}"
+  cli.service.installedPlist: "  配置:   %{path}"
+  cli.service.installedData: "  数据:   %{dir}"
+  cli.service.copyFailed: "拷贝二进制 %{src} → %{dst} 失败: %{e}"
+  cli.service.renameFailed: "替换二进制 %{path} 失败: %{e}"
+  cli.service.unloaded: "已卸载运行中的服务 %{label}"
+  cli.service.notRunningSkip: "服务未在运行,跳过卸载步骤"
+  cli.service.removed: "已删除 %{plist} 与 %{bin}"
+  cli.service.dataKept: "数据目录已保留:%{dir}"
+  cli.service.started: "已启动(端口 %{port})"
+  cli.service.startTimeout: "启动超时(15s),日志: %{log}"
+  cli.service.stopTimeout: "停止超时(15s),进程仍在收尾,日志: %{log}"
+  cli.service.keepaliveRelaunched: "进程已退出,但触发 KeepAlive 自动重启(异常退出码)"
+  cli.service.stopped: "已停止"
+  cli.service.running: "运行中(端口 %{port})"
+  cli.service.noPlanets: "  尚未登记任何 planet"
+  cli.service.planetRow: "  %{name}: %{state},网络 %{nets} 个"
+  cli.service.planetsUnavailable: "  (planet 列表获取失败)"
+  cli.service.tokenFailed: "运行中(端口 %{port}),但 token 校验失败:请确认 authtoken.secret 与 daemon 配置目录一致"
+  cli.service.notInstalled: "未安装(找不到 %{path})"
+  cli.service.installedNotRunning: "已安装但未在运行"
+  cli.service.launchctlState: "  launchctl 状态: %{state}"
+  cli.service.pidFragment: ",pid %{pid}"
+  cli.service.exitCodeFragment: ",上次退出码 %{code}"
+  cli.service.notLoaded: "  未被 launchd 加载"
+  cli.service.launchctlFailed: "launchctl %{args} 失败: %{e}"
+  cli.service.launchctlExecFailed: "无法执行 launchctl: %{e}"

@@ -164,7 +164,7 @@ pub fn rm(client: &Client, id: &str, yes: bool, json: bool) -> Result<(), CliErr
     }
     if !yes {
         // 确认提示与人话反馈都走 stderr,stdout 保持纯净
-        eprint!("planet \"{}\" 将自动退出其全部网络、停止并删除登记,确认? [y/N] ", id);
+        eprint!("{}", rust_i18n::t!("cli.planet.removeConfirm", id = id));
         std::io::stderr().flush().ok();
         let mut answer = String::new();
         std::io::stdin()

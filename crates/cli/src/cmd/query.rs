@@ -129,16 +129,16 @@ pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
         }
         // 三态对齐 info:运行且根可达=已连接;运行但离线=连接中;停止=未连接
         let state = if p.status != "running" {
-            "未连接"
+            rust_i18n::t!("status.disconnected")
         } else if p.online {
-            "已连接"
+            rust_i18n::t!("status.connected")
         } else {
-            "连接中"
+            rust_i18n::t!("status.connecting")
         };
         println!("planet: {} [{state}]", planet_display(&names, &p.id));
         let nets: Vec<_> = rows.iter().filter(|n| n.planet == p.id).collect();
         if nets.is_empty() {
-            println!("  (无网络)\n");
+            println!("  {}\n", rust_i18n::t!("cli.list.noNetworks"));
             continue;
         }
         let mut t = new_table(&["NETWORK", "NAME", "STATUS", "TYPE", "MANAGED-IPS"]);

@@ -19,3 +19,5 @@ libc = "0.2"
 inquire = "0.7"
 # 自绘多选列表(inquire 不暴露回车时刻高亮下标);树内已有 0.29,MIT
 crossterm = "0.29"
+rust-i18n = "3"
+sys-locale = "0.3.2"

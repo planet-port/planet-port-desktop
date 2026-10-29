@@ -33,9 +33,11 @@ pub enum MultiPick {
 
 fn cancelled(e: &InquireError) {
     match e {
-        InquireError::OperationCanceled => eprintln!("已取消(Esc)"),
-        InquireError::OperationInterrupted => eprintln!("已取消(Ctrl+C)"),
-        other => eprintln!("选择器错误: {other}"),
+        InquireError::OperationCanceled => eprintln!("{}", rust_i18n::t!("cli.picker.cancelEsc")),
+        InquireError::OperationInterrupted => {
+            eprintln!("{}", rust_i18n::t!("cli.picker.cancelCtrlC"))
+        }
+        other => eprintln!("{}", rust_i18n::t!("cli.picker.error", e = other)),
     }
 }
 
@@ -43,8 +45,8 @@ fn cancelled(e: &InquireError) {
 /// Select 回车即选高亮项,天然满足「高亮 = 选中」,无需定制
 pub fn pick_single(planets: &[PlanetOption], verb: &str) -> Result<String, ()> {
     let labels: Vec<String> = planets.iter().map(|p| p.label.clone()).collect();
-    let idx = Select::new(&format!("选择 planet:{verb}"), labels)
-        .with_help_message("↑↓ 移动,回车确认,Esc/Ctrl+C 取消")
+    let idx = Select::new(&rust_i18n::t!("cli.picker.prompt", verb = verb), labels)
+        .with_help_message(&rust_i18n::t!("cli.picker.helpSingle"))
         .raw_prompt();
     match idx {
         Ok(lo) => Ok(planets[lo.index].id.clone()),
@@ -99,21 +101,23 @@ fn render(
 /// 多选(info 等可批量命令):首项「<全部>」= 全量。空选时高亮即选中
 /// (回车选高亮项);有勾选按勾选算
 pub fn pick_multi(planets: &[PlanetOption], verb: &str) -> Result<MultiPick, ()> {
-    let mut labels: Vec<&str> = vec!["<全部>"];
-    labels.extend(planets.iter().map(|p| p.label.as_str()));
-    let hint = "空格勾选,回车确认(空选 = 高亮项;首项 <全部> = 全部),Esc/Ctrl+C 取消";
-    let prompt = format!("选择 planet:{verb}");
+    let all = rust_i18n::t!("cli.picker.all").to_string();
+    let mut labels: Vec<String> = vec![all];
+    labels.extend(planets.iter().map(|p| p.label.clone()));
+    let labels: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+    let hint = rust_i18n::t!("cli.picker.helpMulti").to_string();
+    let prompt = rust_i18n::t!("cli.picker.prompt", verb = verb).to_string();
     let mut cursor = 0usize;
     let mut checked = vec![false; labels.len()];
 
     if let Err(e) = terminal::enable_raw_mode() {
-        eprintln!("终端 raw 模式失败: {e}");
+        eprintln!("{}", rust_i18n::t!("cli.picker.rawModeFailed", e = e));
         return Err(());
     }
     let _guard = RawGuard;
     let _ = execute!(std::io::stderr(), Hide);
-    let mut lines = render(&prompt, hint, &labels, &checked, cursor).map_err(|e| {
-        eprintln!("选择器渲染失败: {e}");
+    let mut lines = render(&prompt, &hint, &labels, &checked, cursor).map_err(|e| {
+        eprintln!("{}", rust_i18n::t!("cli.picker.renderFailed", e = e));
     })?;
 
     // 信号防护:raw 模式的 Drop 守卫只覆盖 panic/正常返回,SIGTERM/SIGHUP
@@ -138,13 +142,15 @@ pub fn pick_multi(planets: &[PlanetOption], verb: &str) -> Result<MultiPick, ()>
             Ok(true) => match event::read() {
                 Ok(ev) => ev,
                 Err(e) => {
-                    eprintln!("\r\n选择器事件读取失败: {e}");
+                    eprint!("\r\n");
+                    eprintln!("{}", rust_i18n::t!("cli.picker.eventReadFailed", e = e));
                     break None;
                 }
             },
             Ok(false) => continue,
             Err(e) => {
-                eprintln!("\r\n选择器事件轮询失败: {e}");
+                eprint!("\r\n");
+                eprintln!("{}", rust_i18n::t!("cli.picker.eventPollFailed", e = e));
                 break None;
             }
         };
@@ -160,7 +166,7 @@ pub fn pick_multi(planets: &[PlanetOption], verb: &str) -> Result<MultiPick, ()>
                             Clear(ClearType::FromCursorDown)
                         );
                     }
-                    lines = render(&prompt, hint, &labels, &checked, cursor)
+                    lines = render(&prompt, &hint, &labels, &checked, cursor)
                         .unwrap_or(lines);
                 }
                 continue;
@@ -203,7 +209,7 @@ pub fn pick_multi(planets: &[PlanetOption], verb: &str) -> Result<MultiPick, ()>
                 Clear(ClearType::FromCursorDown)
             );
         }
-        lines = render(&prompt, hint, &labels, &checked, cursor).unwrap_or(lines);
+        lines = render(&prompt, &hint, &labels, &checked, cursor).unwrap_or(lines);
     };
     // 收尾换行,把光标挪出列表区;守卫 Drop 时恢复光标显示与终端模式
     eprintln!();

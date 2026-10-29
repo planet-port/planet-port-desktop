@@ -32,6 +32,12 @@
 | `PLANET_PORT_CONFIG_DIR` | 配置目录 | daemon 与 CLI 共用同一解析规则,测试/多实例隔离用 |
 | `PLANET_PORT_PLANET` | 默认 planet(定位链②) | 低于 `--planet` 显式传参,高于 daemon 侧自动定位(③④) |
 
+## 多语言
+
+CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(en),**跟随系统语言自动选择,无需配置**:按 `LC_ALL` > `LC_MESSAGES` > `LANG` > 系统语言探测,均无法判定时回退简体中文。表格表头与协议级字段(如 `ONLINE` / `status`)保持英文,对齐 zerotier-cli 惯例;daemon 事件消息属 API 数据,暂不本地化。
+
+新增语言:在 `crates/cli/locales/` 下新建 `<locale>.yml`(键结构参照现有文件)并补充 `main.rs` 中 `map_locale` 的映射即可,无需改动其它代码。
+
 ## planet 定位链
 
 变更类命令(join / leave / set / orbit / deorbit / dump / moon import)必须落到

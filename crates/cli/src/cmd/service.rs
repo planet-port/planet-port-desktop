@@ -75,7 +75,7 @@ pub fn run(cmd: ServiceCmd, json: bool) -> Result<(), CliError> {
 fn require_root() {
     // euid 判定须真实:root 判断不准会误导安装失败原因(libc 已是 workspace 依赖)
     if unsafe { libc::geteuid() } != 0 {
-        eprintln!("该操作需要 root 权限,请使用: sudo planet-port service <install|uninstall|start|stop>");
+        eprintln!("{}", rust_i18n::t!("cli.service.needRoot"));
         std::process::exit(2);
     }
 }
@@ -83,7 +83,7 @@ fn require_root() {
 fn install() {
     // 1. 拷贝当前二进制到固定路径(plist 指向它,target/debug 路径不稳定)
     let exe = std::env::current_exe().unwrap_or_else(|e| {
-        eprintln!("无法定位当前可执行文件: {e}");
+        eprintln!("{}", rust_i18n::t!("cli.service.exeNotFound", e = e));
         std::process::exit(1);
     });
     // 拷贝源是 CLI 同目录的 daemon 二进制 planet-portd,不是 CLI 自己:
@@ -96,8 +96,11 @@ fn install() {
         let sibling = exe.parent().unwrap_or_else(|| Path::new(".")).join("planet-portd");
         if !sibling.exists() {
             eprintln!(
-                "在 {} 旁未找到 daemon 二进制 planet-portd,请先构建 daemon",
-                exe.parent().map(|p| p.display().to_string()).unwrap_or_default()
+                "{}",
+                rust_i18n::t!(
+                    "cli.service.daemonMissing",
+                    dir = exe.parent().map(|p| p.display().to_string()).unwrap_or_default()
+                )
             );
             std::process::exit(1);
         }
@@ -105,7 +108,7 @@ fn install() {
     };
     let bin_dir = Path::new(BIN_PATH).parent().unwrap().to_path_buf();
     if let Err(e) = fs::create_dir_all(&bin_dir) {
-        eprintln!("无法创建目录 {}: {e}", bin_dir.display());
+        eprintln!("{}", rust_i18n::t!("cli.service.mkdirFailed", dir = bin_dir.display(), e = e));
         std::process::exit(1);
     }
     // 从已安装路径运行 install 时跳过自拷贝(fs::copy 同路径会失败)
@@ -116,18 +119,18 @@ fn install() {
         copy_exe(&src, BIN_PATH);
     }
     if let Err(e) = fs::set_permissions(BIN_PATH, fs::Permissions::from_mode(0o755)) {
-        eprintln!("设置 {BIN_PATH} 权限失败: {e}");
+        eprintln!("{}", rust_i18n::t!("cli.service.chmodFailed", path = BIN_PATH, e = e));
         std::process::exit(1);
     }
 
     // 2. 写 LaunchDaemon plist
     let plist = plist_content(BIN_PATH);
     if let Err(e) = fs::write(PLIST_PATH, plist) {
-        eprintln!("写入 {PLIST_PATH} 失败: {e}");
+        eprintln!("{}", rust_i18n::t!("cli.service.writePlistFailed", path = PLIST_PATH, e = e));
         std::process::exit(1);
     }
     if let Err(e) = fs::set_permissions(PLIST_PATH, fs::Permissions::from_mode(0o644)) {
-        eprintln!("设置 {PLIST_PATH} 权限失败: {e}");
+        eprintln!("{}", rust_i18n::t!("cli.service.chmodFailed", path = PLIST_PATH, e = e));
         std::process::exit(1);
     }
 
@@ -135,14 +138,14 @@ fn install() {
     // 无界增长;注册系统级 newsyslog(超 5MB 压缩滚动,保留 3 份)。
     // 失败只警告不阻断——轮转缺失不该挡住安装
     if let Err(e) = fs::create_dir_all(LOG_DIR) {
-        eprintln!("创建 {LOG_DIR} 失败(日志仍写到该路径,由 daemon 自行创建): {e}");
+        eprintln!("{}", rust_i18n::t!("cli.service.logdirFailed", dir = LOG_DIR, e = e));
     }
     let rotation = format!(
         "# logfilename          owner:group mode count size when  flags\n\
          {LOG_PATH}           root:admin  644  3     5120 *     J\n"
     );
     if let Err(e) = fs::write(NEWSYSLOG_CONF, rotation) {
-        eprintln!("写入 {NEWSYSLOG_CONF} 失败(daemon.log 不会被系统轮转): {e}");
+        eprintln!("{}", rust_i18n::t!("cli.service.newsyslogFailed", path = NEWSYSLOG_CONF, e = e));
     }
     // 旧版日志曾落数据目录,搬过来保留历史
     let legacy_log = format!("{APP_DIR}/daemon.log");
@@ -155,7 +158,7 @@ fn install() {
     if Path::new(LEGACY_PLIST_PATH).exists() {
         let _ = launchctl_output(&["bootout", &format!("system/{LEGACY_LABEL}")]);
         let _ = fs::remove_file(LEGACY_PLIST_PATH);
-        println!("已清理旧版服务标识 {LEGACY_LABEL}");
+        println!("{}", rust_i18n::t!("cli.service.legacyCleaned", label = LEGACY_LABEL));
     }
 
     // 4. 装载(RunAtLoad=true:bootstrap 装载即拉起一次,随开机自动启动;
@@ -164,30 +167,30 @@ fn install() {
     //    重复安装幂等:先 bootout 卸掉已加载的旧服务(未加载属预期),
     //    bootstrap 撞上「已装载」则提示用 start,不硬退。
     match launchctl_output(&["bootout", &format!("system/{LABEL}")]) {
-        Ok(_) => println!("已卸载旧服务 {LABEL}(重装)"),
+        Ok(_) => println!("{}", rust_i18n::t!("cli.service.bootedOutForReinstall", label = LABEL)),
         Err(stderr) => {
             let s = stderr.to_lowercase();
             if s.contains("not loaded") || s.contains("no such process") || s.contains("could not find") {
                 // 首次安装,正常
             } else {
-                eprintln!("launchctl bootout 失败: {}", stderr.trim());
+                eprintln!("{}", rust_i18n::t!("cli.service.bootoutFailed", e = stderr.trim()));
                 std::process::exit(1);
             }
         }
     }
     if let Err(stderr) = launchctl_output(&["bootstrap", "system/", PLIST_PATH]) {
         if stderr.to_lowercase().contains("already bootstrapped") {
-            println!("服务 {LABEL} 已被 launchd 装载,跳过 bootstrap");
+            println!("{}", rust_i18n::t!("cli.service.alreadyBootstrapped", label = LABEL));
             return;
         }
-        eprintln!("launchctl bootstrap 失败: {}", stderr.trim());
+        eprintln!("{}", rust_i18n::t!("cli.service.bootstrapFailed", e = stderr.trim()));
         std::process::exit(1);
     }
 
-    println!("已安装 LaunchDaemon {LABEL}");
-    println!("  二进制: {BIN_PATH}");
-    println!("  配置:   {PLIST_PATH}");
-    println!("  数据:   {APP_DIR}");
+    println!("{}", rust_i18n::t!("cli.service.installed", label = LABEL));
+    println!("{}", rust_i18n::t!("cli.service.installedBin", path = BIN_PATH));
+    println!("{}", rust_i18n::t!("cli.service.installedPlist", path = PLIST_PATH));
+    println!("{}", rust_i18n::t!("cli.service.installedData", dir = APP_DIR));
 }
 
 /// 二进制更新用「临时文件 + rename」原子替换:直接 fs::copy 覆盖正在运行的
@@ -196,12 +199,12 @@ fn copy_exe(src: &Path, dst: &str) {
     let tmp = Path::new(dst).with_extension("tmp");
     let _ = fs::remove_file(&tmp);
     if let Err(e) = fs::copy(src, &tmp) {
-        eprintln!("拷贝二进制 {} → {} 失败: {e}", src.display(), tmp.display());
+        eprintln!("{}", rust_i18n::t!("cli.service.copyFailed", src = src.display(), dst = tmp.display(), e = e));
         std::process::exit(1);
     }
     if let Err(e) = fs::rename(&tmp, dst) {
         let _ = fs::remove_file(&tmp);
-        eprintln!("替换二进制 {} 失败: {e}", dst);
+        eprintln!("{}", rust_i18n::t!("cli.service.renameFailed", path = dst, e = e));
         std::process::exit(1);
     }
 }
@@ -209,13 +212,13 @@ fn copy_exe(src: &Path, dst: &str) {
 fn uninstall() {
     // 未加载/已卸载属预期,不算失败
     match launchctl_output(&["bootout", &format!("system/{LABEL}")]) {
-        Ok(_) => println!("已卸载运行中的服务 {LABEL}"),
+        Ok(_) => println!("{}", rust_i18n::t!("cli.service.unloaded", label = LABEL)),
         Err(stderr) => {
             let s = stderr.to_lowercase();
             if s.contains("not loaded") || s.contains("no such process") || s.contains("could not find") {
-                println!("服务未在运行,跳过卸载步骤");
+                println!("{}", rust_i18n::t!("cli.service.notRunningSkip"));
             } else {
-                eprintln!("launchctl bootout 失败: {}", stderr.trim());
+                eprintln!("{}", rust_i18n::t!("cli.service.bootoutFailed", e = stderr.trim()));
             }
         }
     }
@@ -224,7 +227,7 @@ fn uninstall() {
     if Path::new(LEGACY_PLIST_PATH).exists() {
         let _ = launchctl_output(&["bootout", &format!("system/{LEGACY_LABEL}")]);
         let _ = fs::remove_file(LEGACY_PLIST_PATH);
-        println!("已清理旧版服务标识 {LEGACY_LABEL}");
+        println!("{}", rust_i18n::t!("cli.service.legacyCleaned", label = LEGACY_LABEL));
     }
     let _ = fs::remove_file(BIN_PATH);
     // bin 目录若已空则一并移除(数据目录保留)
@@ -238,8 +241,8 @@ fn uninstall() {
             let _ = fs::remove_dir(LOG_DIR);
         }
     }
-    println!("已删除 {PLIST_PATH} 与 {BIN_PATH}");
-    println!("数据目录已保留:{APP_DIR}");
+    println!("{}", rust_i18n::t!("cli.service.removed", plist = PLIST_PATH, bin = BIN_PATH));
+    println!("{}", rust_i18n::t!("cli.service.dataKept", dir = APP_DIR));
 }
 
 /// 探测 daemon 是否在线:HTTP 有应答(含 401)即在线,返回端口
@@ -291,9 +294,9 @@ fn start() {
     match wait_online(std::time::Duration::from_secs(15)) {
         true => {
             let port = probe_online().unwrap_or(0);
-            println!("已启动(端口 {port})");
+            println!("{}", rust_i18n::t!("cli.service.started", port = port));
         }
-        false => println!("启动超时(15s),日志: {LOG_PATH}"),
+        false => println!("{}", rust_i18n::t!("cli.service.startTimeout", log = LOG_PATH)),
     }
 }
 
@@ -308,16 +311,16 @@ fn stop() {
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
     if service_pid().is_some() {
-        println!("停止超时(15s),进程仍在收尾,日志: {LOG_PATH}");
+        println!("{}", rust_i18n::t!("cli.service.stopTimeout", log = LOG_PATH));
         return;
     }
     // pid 已消失:优雅退出本不会被 KeepAlive 拉回;若短暂窗口内又上线,
     // 说明它以非零码退出触发了自动重启,如实报告
     std::thread::sleep(std::time::Duration::from_secs(1));
     if probe_online().is_some() {
-        println!("进程已退出,但触发 KeepAlive 自动重启(异常退出码)");
+        println!("{}", rust_i18n::t!("cli.service.keepaliveRelaunched"));
     } else {
-        println!("已停止");
+        println!("{}", rust_i18n::t!("cli.service.stopped"));
     }
 }
 
@@ -338,13 +341,13 @@ fn status(json: bool) -> Result<(), CliError> {
                     "running": true, "port": port, "version": v, "planets": planets
                 }));
             } else {
-                println!("运行中(端口 {port})");
+                println!("{}", rust_i18n::t!("cli.service.running", port = port));
                 // planet 概览:名称 + 在线状态;daemon 在但无 planet 也一眼可见
                 match client.get_json(endpoints::status()) {
                     Ok(s) => {
                         if let Some(planets) = s.get("planets").and_then(|p| p.as_array()) {
                             if planets.is_empty() {
-                                println!("  尚未登记任何 planet");
+                                println!("{}", rust_i18n::t!("cli.service.noPlanets"));
                             }
                             for p in planets {
                                 let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("?");
@@ -356,24 +359,24 @@ fn status(json: bool) -> Result<(), CliError> {
                                         None => "ONLINE".into(),
                                     }
                                 } else if p.get("status").and_then(|v| v.as_str()) == Some("running") {
-                                    "连接中".into()
+                                    rust_i18n::t!("status.connecting").to_string()
                                 } else {
                                     "stopped".into()
                                 };
                                 let nets = p.get("networkCount").and_then(|v| v.as_u64()).unwrap_or(0);
-                                println!("  {name}: {state},网络 {nets} 个");
+                                println!("{}", rust_i18n::t!("cli.service.planetRow", name = name, state = state, nets = nets));
                             }
                         }
                     }
                     Err(CliError::Api(401, _)) => {}
-                    Err(_) => println!("  (planet 列表获取失败)"),
+                    Err(_) => println!("{}", rust_i18n::t!("cli.service.planetsUnavailable")),
                 }
             }
             return Ok(());
         }
         Err(CliError::Api(401, _)) => {
             let port = read_port_file().unwrap_or_else(|| port_of(client.base()));
-            println!("运行中(端口 {port}),但 token 校验失败:请确认 authtoken.secret 与 daemon 配置目录一致");
+            println!("{}", rust_i18n::t!("cli.service.tokenFailed", port = port));
             return Ok(());
         }
         // daemon 应答了非 401 的错误:进程在线,原样透传状态
@@ -383,25 +386,25 @@ fn status(json: bool) -> Result<(), CliError> {
 
     // 不在线:看 plist 是否存在判断「未安装」vs「已安装未运行」
     if !Path::new(PLIST_PATH).exists() {
-        println!("未安装(找不到 {PLIST_PATH})");
+        println!("{}", rust_i18n::t!("cli.service.notInstalled", path = PLIST_PATH));
         return Ok(());
     }
-    println!("已安装但未在运行");
+    println!("{}", rust_i18n::t!("cli.service.installedNotRunning"));
     match launchctl_output_quiet(&["print", &format!("system/{LABEL}")]) {
         Ok(out) => {
-            let state = kv(&out, "state").unwrap_or_else(|| "未知".into());
+            let state = kv(&out, "state").unwrap_or_else(|| rust_i18n::t!("common.unknown").to_string());
             let pid = kv(&out, "pid");
             let last = kv(&out, "last exit code");
-            print!("  launchctl 状态: {state}");
+            print!("{}", rust_i18n::t!("cli.service.launchctlState", state = state));
             if let Some(p) = pid {
-                print!(",pid {p}");
+                print!("{}", rust_i18n::t!("cli.service.pidFragment", pid = p));
             }
             if let Some(c) = &last {
-                print!(",上次退出码 {c}");
+                print!("{}", rust_i18n::t!("cli.service.exitCodeFragment", code = c));
             }
             println!();
         }
-        Err(_) => println!("  未被 launchd 加载"),
+        Err(_) => println!("{}", rust_i18n::t!("cli.service.notLoaded")),
     }
     Ok(())
 }
@@ -444,7 +447,7 @@ fn launchctl(args: &[&str]) {
     match launchctl_output(args) {
         Ok(_) => {}
         Err(stderr) => {
-            eprintln!("launchctl {} 失败: {}", args.join(" "), stderr.trim());
+            eprintln!("{}", rust_i18n::t!("cli.service.launchctlFailed", args = args.join(" "), e = stderr.trim()));
             std::process::exit(1);
         }
     }
@@ -454,14 +457,14 @@ fn launchctl_output(args: &[&str]) -> Result<String, String> {
     match Command::new("launchctl").args(args).output() {
         Ok(o) if o.status.success() => Ok(String::from_utf8_lossy(&o.stdout).into_owned()),
         Ok(o) => Err(String::from_utf8_lossy(&o.stderr).into_owned()),
-        Err(e) => Err(format!("无法执行 launchctl: {e}")),
+        Err(e) => Err(rust_i18n::t!("cli.service.launchctlExecFailed", e = e).to_string()),
     }
 }
 
 fn launchctl_output_quiet(args: &[&str]) -> Result<String, String> {
     match Command::new("launchctl").args(args).output() {
         Ok(o) => Ok(String::from_utf8_lossy(&o.stdout).into_owned()),
-        Err(e) => Err(format!("无法执行 launchctl: {e}")),
+        Err(e) => Err(rust_i18n::t!("cli.service.launchctlExecFailed", e = e).to_string()),
     }
 }
 

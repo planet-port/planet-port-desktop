@@ -41,6 +41,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 - **Moon 支持**：orbit / deorbit / 导入 `.moon` 文件
 - **服务化常驻**：launchd 一键安装，开机自启、崩溃自动拉起；SIGTERM 优雅退出（逐 planet 红线收尾，保留期望状态，`service start` 后自动恢复）；重启后自动 re-join 已加入网络
 - **事件日志**：`events --follow` 按 ts 游标增量跟踪状态变更
+- **多语言 CLI**：简中 / 繁中 / 英语，跟随系统语言自动选择（无需配置），语言文件可扩展
 
 ## 快速开始
 

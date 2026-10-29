@@ -8,6 +8,10 @@ use clap::{Parser, Subcommand};
 use client::{CliError, Client};
 use std::io::IsTerminal;
 
+// 多语言:文案在 crates/cli/locales/<locale>.yml,新增语言加文件即可。
+// 源语言 zh-Hans(与 iOS Localizable.xcstrings 一致),缺失键回退到它
+rust_i18n::i18n!("locales", fallback = "zh-Hans");
+
 #[derive(Parser)]
 #[command(
     name = "planet-port",
@@ -107,7 +111,40 @@ enum Command {
     },
 }
 
+/// 语言跟随系统,无需配置:LC_ALL > LC_MESSAGES > LANG > sys-locale 探测,
+/// 均无法判定时回退 zh-Hans(源语言)
+fn init_locale() {
+    // 映射放进 find_map:某变量虽已设置但不可映射(如 C / POSIX / 空串)时
+    // 继续尝试下一个变量,而不是直接跳到 sys-locale
+    let detected = ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .find_map(|k| std::env::var(k).ok().as_deref().and_then(map_locale))
+        .or_else(|| sys_locale::get_locale().and_then(|l| map_locale(&l)));
+    rust_i18n::set_locale(&detected.unwrap_or_else(|| "zh-Hans".into()));
+}
+
+/// POSIX locale 值(如 zh_CN.UTF-8 / en_US / zh-Hant)→ 本项目 locale 名。
+/// 只认 en / zh 两族;其余语言暂无文案,返回 None 走 zh-Hans 回退
+fn map_locale(raw: &str) -> Option<String> {
+    // 取首个 `.` / `@` 之前的 language_TERRITORY 部分
+    let tag = raw.split(['.', '@']).next()?.replace('_', "-").to_lowercase();
+    if tag.starts_with("en") {
+        return Some("en".into());
+    }
+    if tag.starts_with("zh") {
+        // 简体:大陆/新加坡;繁体:台湾/香港/澳门;无地区默认简体
+        return Some(match tag.as_str() {
+            t if t.contains("hant") || t.contains("tw") || t.contains("hk") || t.contains("mo") => {
+                "zh-Hant".into()
+            }
+            _ => "zh-Hans".into(),
+        });
+    }
+    None
+}
+
 fn main() {
+    init_locale();
     let cli = Cli::parse();
     let json = cli.json;
     // 定位链 ①>②:--planet 显式指定,否则取 PLANET_PORT_PLANET 环境变量;
@@ -250,7 +287,7 @@ fn resolve_planets(
                         };
                     }
                     n => {
-                        eprintln!("error: events 需要指定 --planet(当前 {n} 个 running planet)");
+                        eprintln!("{}", rust_i18n::t!("cli.events.needPlanet", n = n));
                         std::process::exit(2);
                     }
                 }

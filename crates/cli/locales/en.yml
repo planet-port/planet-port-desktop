@@ -1,0 +1,65 @@
+# CLI messages (English)
+# Status entries are synced with the iOS Localizable.xcstrings; the rest are CLI-specific.
+  status.connected: Connected
+  status.connecting: Connecting
+  status.disconnected: Not Connected
+  common.unknown: Unknown
+
+  cli.list.noNetworks: "(no networks)"
+
+  cli.picker.cancelEsc: Cancelled (Esc)
+  cli.picker.cancelCtrlC: Cancelled (Ctrl+C)
+  cli.picker.error: "Picker error: %{e}"
+  cli.picker.prompt: "Select planet: %{verb}"
+  cli.picker.helpSingle: "Up/Down to move, Enter to confirm, Esc/Ctrl+C to cancel"
+  cli.picker.all: <All>
+  cli.picker.helpMulti: "Space to check, Enter to confirm (no selection = highlighted item; first item <All> = everything), Esc/Ctrl+C to cancel"
+  cli.picker.rawModeFailed: "Failed to enable terminal raw mode: %{e}"
+  cli.picker.renderFailed: "Failed to render picker: %{e}"
+  cli.picker.eventReadFailed: "Failed to read picker event: %{e}"
+  cli.picker.eventPollFailed: "Failed to poll picker event: %{e}"
+
+  cli.events.needPlanet: "error: events requires --planet (%{n} planets currently running)"
+  cli.planet.removeConfirm: "planet \"%{id}\" will leave all its networks, stop and be removed from the registry. Continue? [y/N] "
+
+  cli.service.needRoot: "This operation requires root. Use: sudo planet-port service <install|uninstall|start|stop>"
+  cli.service.exeNotFound: "Failed to locate the current executable: %{e}"
+  cli.service.daemonMissing: "daemon binary planet-portd not found next to %{dir}; build the daemon first"
+  cli.service.mkdirFailed: "Failed to create directory %{dir}: %{e}"
+  cli.service.chmodFailed: "Failed to set permissions on %{path}: %{e}"
+  cli.service.writePlistFailed: "Failed to write %{path}: %{e}"
+  cli.service.logdirFailed: "Failed to create %{dir} (logs will still be written there, created by the daemon itself): %{e}"
+  cli.service.newsyslogFailed: "Failed to write %{path} (daemon.log will not be rotated by the system): %{e}"
+  cli.service.legacyCleaned: "Cleaned up legacy service label %{label}"
+  cli.service.bootedOutForReinstall: "Unloaded existing service %{label} (reinstall)"
+  cli.service.bootoutFailed: "launchctl bootout failed: %{e}"
+  cli.service.alreadyBootstrapped: "Service %{label} is already bootstrapped by launchd, skipping bootstrap"
+  cli.service.bootstrapFailed: "launchctl bootstrap failed: %{e}"
+  cli.service.installed: "LaunchDaemon %{label} installed"
+  cli.service.installedBin: "  Binary: %{path}"
+  cli.service.installedPlist: "  Config: %{path}"
+  cli.service.installedData: "  Data:   %{dir}"
+  cli.service.copyFailed: "Failed to copy binary %{src} → %{dst}: %{e}"
+  cli.service.renameFailed: "Failed to replace binary %{path}: %{e}"
+  cli.service.unloaded: "Unloaded running service %{label}"
+  cli.service.notRunningSkip: "Service not running, skipping unload"
+  cli.service.removed: "Removed %{plist} and %{bin}"
+  cli.service.dataKept: "Data directory kept: %{dir}"
+  cli.service.started: "Started (port %{port})"
+  cli.service.startTimeout: "Start timed out (15s), log: %{log}"
+  cli.service.stopTimeout: "Stop timed out (15s), process still finishing, log: %{log}"
+  cli.service.keepaliveRelaunched: "Process exited but KeepAlive relaunched it (abnormal exit code)"
+  cli.service.stopped: "Stopped"
+  cli.service.running: "Running (port %{port})"
+  cli.service.noPlanets: "  No planets registered"
+  cli.service.planetRow: "  %{name}: %{state}, %{nets} network(s)"
+  cli.service.planetsUnavailable: "  (failed to fetch planet list)"
+  cli.service.tokenFailed: "Running (port %{port}), but token validation failed: make sure authtoken.secret matches the daemon config directory"
+  cli.service.notInstalled: "Not installed (%{path} not found)"
+  cli.service.installedNotRunning: "Installed but not running"
+  cli.service.launchctlState: "  launchctl state: %{state}"
+  cli.service.pidFragment: ", pid %{pid}"
+  cli.service.exitCodeFragment: ", last exit code %{code}"
+  cli.service.notLoaded: "  Not loaded by launchd"
+  cli.service.launchctlFailed: "launchctl %{args} failed: %{e}"
+  cli.service.launchctlExecFailed: "Failed to execute launchctl: %{e}"
