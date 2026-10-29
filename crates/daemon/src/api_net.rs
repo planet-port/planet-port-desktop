@@ -369,7 +369,10 @@ pub async fn net_leave(
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(&nwid_u);
     st.events.push(&rt.planet_id, "leave", &format!("left {nwid}"));
-    // DNS:该网络的系统 resolver 若归本 planet 所有则还原(失败仅记事件)
+    // DNS:该网络的系统 resolver 若归本 planet 所有则还原(失败仅记事件)。
+    // 持 dns_gate:与 netconf apply / stop 的 restore 互斥,标记文件的
+    // check-then-act 不能交叠
+    let _dns_gate = st.dns_gate.lock().await;
     {
         let events = Arc::clone(&st.events);
         let config_dir = st.config_dir.clone();

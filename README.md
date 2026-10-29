@@ -164,8 +164,9 @@ planet 实例,按以下顺序解析:
 - `set` 的 `routeViaZeroTier` 在下一次网络配置更新(控制器下发 netconf)时生效:
   false 时清空 managed routes 后再 apply,已装上的路由不会立即回撤。
 - `set` 的校验比对 mockd 更严:`routeViaZeroTier` 仅接受 `0|1`(其它值返回 400,
-  退出码 2),`dnsMode` 仅接受 `none|network|custom`;`dnsMode` 切回 `none` 时,
-  若该网络当前托管着系统 DNS 会立即还原为自动获取。
+  退出码 2),`dnsMode` 仅接受 `none|network|custom`;netconf 应用阶段算出的
+  DNS servers 为空(dnsMode=none、network 未下发、custom 无配置)时,若该
+  网络当前托管着系统 DNS 会立即还原为自动获取。
 
 ## 真实 daemon(planet-portd)
 
@@ -217,9 +218,10 @@ planet-port info                                      # 聚合状态
 
 - planet 数据为实网:planet 文件解析自真实 world,实例连真实根服务器;
 - `add` 的 URL 源可用(下载后走与本地文件同一套校验),容器导入 `501 notImplemented`;
-- `dns` 模式(`set` 的 `dnsMode`/`customDns`)为 `network`/`custom` 时,netconf 应用
-  阶段会用 `networksetup` 把 DNS 写进主网络服务,leave 网络 / 停止或删除 planet 时
-  还原为自动获取;失败只记事件,不影响网络数据面;
+- `dns` 模式(`set` 的 `dnsMode`/`customDns`)为 `network`/`custom` 且算出的
+  servers 非空时,netconf 应用阶段会用 `networksetup` 把 DNS 写进主网络服务,
+  servers 为空(不再托管)或 leave 网络 / 停止或删除 planet 时还原为自动获取;
+  失败只记事件,不影响网络数据面;
 - `set` 校验更严(见上「说明」);`routeViaZeroTier` 于下次 netconf 生效。
 
 下文回归清单对 mockd 与 planet-portd 均可执行(两者暴露同一套 REST API;

@@ -121,11 +121,22 @@ fn parse_args() -> Option<PathBuf> {
     config_dir
 }
 
+/// acquire_singleton 的失败分类:「锁被其它实例持有」与「锁文件本身打不开」
+/// 是两种不同故障,排查方向不同,文案必须可区分
+enum SingletonError {
+    /// 锁文件创建/打开失败(权限、磁盘等):不是「已有实例」
+    Open(std::io::Error),
+    /// flock 返回 EWOULDBLOCK(即 EAGAIN):锁被其它实例持有
+    Locked,
+    /// flock 的其它错误(如 EOL3NK):按锁文件故障报告
+    Lock(std::io::Error),
+}
+
 /// 单实例守卫:对 `<config>/daemon.lock` 取 `flock(LOCK_EX | LOCK_NB)`。
 /// 第二个实例加锁失败即退出,杜绝两个 daemon 共用同一 config 目录互相
 /// 覆写 registry/token/port。锁文件不删除、内容不复用;返回的 File 须存活
 /// 至进程结束(锁随进程退出由内核释放,显式删文件反而会引入竞态)。
-fn acquire_singleton(dir: &Path) -> std::io::Result<fs::File> {
+fn acquire_singleton(dir: &Path) -> Result<fs::File, SingletonError> {
     use std::os::unix::io::AsRawFd;
     let path = dir.join("daemon.lock");
     let f = fs::OpenOptions::new()
@@ -133,10 +144,16 @@ fn acquire_singleton(dir: &Path) -> std::io::Result<fs::File> {
         .read(true)
         .write(true)
         .truncate(false)
-        .open(&path)?;
+        .open(&path)
+        .map_err(SingletonError::Open)?;
     let rc = unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
     if rc != 0 {
-        return Err(std::io::Error::last_os_error());
+        let e = std::io::Error::last_os_error();
+        // 各平台 EWOULDBLOCK 与 EAGAIN 同值(Linux/macOS 均如此),单臂即可
+        return match e.raw_os_error() {
+            Some(libc::EWOULDBLOCK) => Err(SingletonError::Locked),
+            _ => Err(SingletonError::Lock(e)),
+        };
     }
     Ok(f)
 }
@@ -232,15 +249,24 @@ async fn main() {
     let token_path = dir.join("authtoken.secret");
     let port_path = dir.join("port");
 
-    // 1.5 单实例守卫:在任何副作用(写 token/port、起 planet)之前;持锁失败
-    // 即有另一实例在同一 config 目录运行
+    // 1.5 单实例守卫:在任何副作用(写 token/port、起 planet)之前。锁被
+    // 占用才是「已有实例」;文件打不开是环境故障(权限/磁盘),文案须可区分
+    let lock_path = dir.join("daemon.lock");
     let _singleton = match acquire_singleton(&dir) {
         Ok(f) => f,
-        Err(_) => {
+        Err(SingletonError::Locked) => {
             eprintln!(
                 "another planet-portd instance is running (lock: {})",
-                dir.join("daemon.lock").display()
+                lock_path.display()
             );
+            std::process::exit(1);
+        }
+        Err(SingletonError::Open(e)) => {
+            eprintln!("cannot open lock file {}: {e}", lock_path.display());
+            std::process::exit(1);
+        }
+        Err(SingletonError::Lock(e)) => {
+            eprintln!("cannot lock file {}: {e}", lock_path.display());
             std::process::exit(1);
         }
     };
@@ -291,14 +317,17 @@ async fn main() {
         events: Arc::new(events::Ring::new()),
         planets: Arc::new(Mutex::new(HashMap::new())),
         runtime_gate: Arc::new(tokio::sync::Mutex::new(())),
+        dns_gate: Arc::new(tokio::sync::Mutex::new(())),
         net_cache: Arc::new(Mutex::new(HashMap::new())),
         shares: Arc::new(Mutex::new(HashMap::new())),
         token: Arc::new(token),
     };
 
     // 4.5 DNS 残留清理(kill -9 未走 stop 路径):恢复 planet 之前先把上次
-    // 应用未还的系统 resolver 还原为自动获取
+    // 应用未还的系统 resolver 还原为自动获取。持 dns_gate:与后续 netconf /
+    // leave / stop 的 DNS 路径同一把锁,此刻虽无并发方,语义保持统一
     {
+        let _dns_gate = state.dns_gate.lock().await;
         let events = Arc::clone(&state.events);
         let dir_for_dns = dir.clone();
         tokio::task::spawn_blocking(move || dns::restore_leftover(&dir_for_dns, &events))

@@ -145,6 +145,13 @@ pub struct AppState {
     /// start/stop 串行门闩(异步锁,允许跨 await):并发双 start 会让第二个
     /// NodeHandle 覆盖第一个造成线程/端口泄漏,故启停全程持门闩
     pub runtime_gate: Arc<tokio::sync::Mutex<()>>,
+    /// DNS 托管串行门闩(异步锁):dns.rs 的 apply/restore/restore_leftover
+    /// 都是「读标记 → 写系统/写标记」的 check-then-act,并发执行会让
+    /// dns-applied 标记与系统真实状态脱节(错误还原/漏还原)。所有 DNS 调用
+    /// 路径(netconf spawn 出的 apply/restore、net_leave、teardown_runtime、
+    /// 启动 restore_leftover)先持本锁再进 spawn_blocking;锁只包 DNS 操作,
+    /// 绝不包 netconf/网络面逻辑
+    pub dns_gate: Arc<tokio::sync::Mutex<()>>,
     /// 全部 planet 的网络网段快照(冲突扫描数据源,见 NetCache)
     pub net_cache: NetCache,
     /// token → (planet id, 过期 unix 秒);仅内存,重启即失效

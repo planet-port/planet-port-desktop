@@ -88,7 +88,9 @@ impl NodeSink for DaemonSink {
             if !self.fatal_done.swap(true, Ordering::SeqCst) {
                 let app = self.app.clone();
                 let pid = self.planet_id.clone();
-                // daemon 退出中 spawn 会失败:收尾已由 shutdown 路径负责,忽略即可
+                // daemon 退出中 runtime 已关闭:这里 spawn 的任务可能被静默
+                // 取消(不会报错),退出路径的逐 planet stop_planet 自带同样
+                // 的收尾兜底,故不关心句柄
                 let handle = self.rt.spawn(async move {
                     app.events.push(
                         &pid,
@@ -164,35 +166,33 @@ impl NodeSink for DaemonSink {
                     );
                 }
                 // DNS 写系统 resolver:dnsMode=network 用 netconf 下发的
-                // dns_servers,=custom 用本地配置;servers 为空不动系统。
-                // networksetup 阻塞且可能失败,spawn_blocking 执行、失败仅记事件
+                // dns_servers,=custom 用本地配置;servers 为空(none /
+                // network 未下发 / custom 无配置)即「本网络不再托管」,若当前
+                // 标记正归本网络所有则立即还原。networksetup 阻塞且可能失败,
+                // 放 spawn_blocking 执行、失败仅记事件;全程持 dns_gate,与
+                // net_leave / stop 的 restore 及其它网络的 apply 互斥(标记
+                // 文件的 check-then-act 不能交叠)。锁只包 DNS 操作,设备面与
+                // 冲突扫描已在上方完成,不受影响
                 let nl_dns = lock(&self.net_local).get(&nwid).cloned();
-                // none 分支需在 nl_dns 被 move 前判定(布尔值无借用寿命问题)
-                let none_mode = nl_dns.as_ref().is_some_and(|n| n.dns_mode == "none");
                 let servers: Vec<String> = match nl_dns.as_ref().map(|n| n.dns_mode.as_str()) {
                     Some("network") => cfg.dns_servers.iter().map(|s| s.to_string()).collect(),
                     Some("custom") => nl_dns.map(|n| n.custom_dns).unwrap_or_default(),
                     _ => Vec::new(),
                 };
-                if !servers.is_empty() {
-                    let app = self.app.clone();
-                    let pid = self.planet_id.clone();
-                    let events = Arc::clone(&self.events);
-                    self.rt.spawn_blocking(move || {
-                        dns::apply(&app.config_dir, &events, &pid, nwid, &servers)
-                    });
-                } else if none_mode {
-                    // dnsMode=none:本网络不再托管系统 DNS,若当前标记正归它
-                    // 所有则立即还原(此前残留会一直留到下次 leave/stop)。
-                    // restore 内部校验 owner(planet id + nwid),不匹配即不动,
-                    // 沿用「后应用者拥有」语义;无标记/非本网络同样静默跳过
-                    let app = self.app.clone();
-                    let pid = self.planet_id.clone();
-                    let events = Arc::clone(&self.events);
-                    self.rt.spawn_blocking(move || {
-                        dns::restore(&app.config_dir, &events, &pid, Some(nwid))
-                    });
-                }
+                let app = self.app.clone();
+                let pid = self.planet_id.clone();
+                let events = Arc::clone(&self.events);
+                self.rt.spawn(async move {
+                    let _gate = app.dns_gate.lock().await;
+                    if servers.is_empty() {
+                        // restore 内部校验 owner(planet id + nwid),不匹配
+                        // 即不动,沿用「后应用者拥有」语义;无标记/非本网络
+                        // 同样静默跳过
+                        dns::restore(&app.config_dir, &events, &pid, Some(nwid));
+                    } else {
+                        dns::apply(&app.config_dir, &events, &pid, nwid, &servers);
+                    }
+                });
             }
         }
     }
@@ -517,7 +517,10 @@ async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>) {
     state.events.push(&rt.planet_id, "planetStopped", "planet stopped");
     // DNS:系统 resolver 若仍归本 planet 所有(stop/删除/shutdown 共用此路径)
     // 则还原为自动获取;owner 不匹配(被后应用者覆盖)时内部自行跳过。
-    // networksetup 阻塞,放阻塞线程池;失败仅记事件,不影响收尾结果
+    // networksetup 阻塞,放阻塞线程池;失败仅记事件,不影响收尾结果。
+    // 持 dns_gate:与 netconf apply / net_leave restore 互斥,标记与系统状态
+    // 不能交错写。此处已无其它网络面逻辑,跨 await 持异步锁无碍
+    let _dns_gate = state.dns_gate.lock().await;
     {
         let app = state.clone();
         let pid = rt.planet_id.clone();

@@ -11,8 +11,12 @@
 //!   记录(服务名 + owner + servers),新的应用直接覆盖,不叠加;
 //! - owner 不匹配(已被后应用者覆盖)时还原动作不动系统,只删不了——
 //!   即谁最后写的谁负责还原;
-//! - `dnsMode` 切回 `none` 同样走 `restore`:该网络「不再托管」应立即还原,
+//! - 「不再托管」(netconf 计算出的 servers 为空:dnsMode=none / network 未
+//!   下发 / custom 无配置)同样走 `restore`:该网络不再托管应立即还原,
 //!   owner 校验保证只动自己名下的记录;
+//! - 所有调用方须先持 `AppState::dns_gate` 再进 `spawn_blocking`:本模块是
+//!   「读标记 → 写系统/写标记」的 check-then-act,并发执行会让标记与系统
+//!   真实状态脱节(错误还原/漏还原);
 //! - 还原用 `networksetup -setdnsservers <服务名> Empty` 回到 DHCP 下发。
 
 use std::fs;
@@ -47,12 +51,12 @@ fn read_record(config_dir: &Path) -> Option<DnsRecord> {
     serde_json::from_slice(&bytes).ok()
 }
 
-fn write_record(config_dir: &Path, rec: &DnsRecord) {
-    if let Ok(bytes) = serde_json::to_vec_pretty(rec) {
-        if let Err(e) = fs::write(marker_path(config_dir), bytes) {
-            eprintln!("[dns] 写标记文件失败: {e}");
-        }
-    }
+/// 写标记文件。失败向上返回:此时系统 DNS 已被 setdnsservers 改写但没有
+/// marker 兜底,apply 据此改记 `dnsFailed`(不发 dnsApplied),让事件与
+/// 系统事实一致
+fn write_record(config_dir: &Path, rec: &DnsRecord) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(rec).map_err(|e| e.to_string())?;
+    fs::write(marker_path(config_dir), bytes).map_err(|e| e.to_string())
 }
 
 /// `route -n get default` 取默认接口名。
@@ -145,9 +149,10 @@ fn set_dnsservers(service: &str, servers: &[String]) -> Result<(), String> {
     ))
 }
 
-/// 应用系统 DNS(netconf 应用路径,须在 `spawn_blocking` 内调用)。
-/// servers 为空不动系统;目标状态与当前一致时跳过(netconf 反复
-/// ConfigUpdate 不应反复改写系统)。失败只记 `dnsFailed`。
+/// 应用系统 DNS(netconf 应用路径,须持 `dns_gate` 并在 `spawn_blocking` 内
+/// 调用)。servers 为空不动系统(调用方对空 servers 走 `restore`);目标状态
+/// 与当前一致时跳过(netconf 反复 ConfigUpdate 不应反复改写系统)。失败只记
+/// `dnsFailed`。
 pub fn apply(
     config_dir: &Path,
     events: &Ring,
@@ -172,23 +177,32 @@ pub fn apply(
         });
     match r {
         Ok(service) => {
-            write_record(
-                config_dir,
-                &DnsRecord {
-                    service,
-                    planet_id: planet_id.to_string(),
-                    nwid,
-                    servers: servers.to_vec(),
-                },
-            );
-            events.push(
-                planet_id,
-                "dnsApplied",
-                &format!(
-                    "网络 {nwid:016x} 系统 DNS 已切换为 {}",
-                    servers.join(", ")
+            let rec = DnsRecord {
+                service,
+                planet_id: planet_id.to_string(),
+                nwid,
+                servers: servers.to_vec(),
+            };
+            match write_record(config_dir, &rec) {
+                Ok(()) => events.push(
+                    planet_id,
+                    "dnsApplied",
+                    &format!(
+                        "网络 {nwid:016x} 系统 DNS 已切换为 {}",
+                        servers.join(", ")
+                    ),
                 ),
-            );
+                // setdnsservers 已生效但标记写不进去:重启后无残留可清理,
+                // 也不该宣称应用成功,如实记 dnsFailed
+                Err(m) => events.push(
+                    planet_id,
+                    "dnsFailed",
+                    &format!(
+                        "网络 {nwid:016x} 系统 DNS 已切换但标记文件写入失败\
+                         (重启后无法自动还原):{m}"
+                    ),
+                ),
+            }
         }
         Err(m) => events.push(
             planet_id,
@@ -198,7 +212,8 @@ pub fn apply(
     }
 }
 
-/// 还原(net_leave / planet 停止 / 删除路径,须在 `spawn_blocking` 内调用)。
+/// 还原(net_leave / planet 停止 / 删除路径,须持 `dns_gate` 并在
+/// `spawn_blocking` 内调用)。
 /// `nwid = None` 表示整个 planet(停止/删除,任意 nwid 的记录都归它)。
 /// owner 不匹配(已被后应用者覆盖)→ 不动系统。
 pub fn restore(
@@ -240,6 +255,7 @@ pub fn restore(
 
 /// 启动早期残留清理(kill -9 未走 stop 路径):无条件还原并删标记文件。
 /// 在恢复 planet 之前调用,避免恢复后的实例又被旧记录干扰。
+/// 调用方须持 `dns_gate` 并在 `spawn_blocking` 内执行。
 pub fn restore_leftover(config_dir: &Path, events: &Ring) {
     let Some(rec) = read_record(config_dir) else {
         return;
