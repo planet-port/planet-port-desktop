@@ -17,7 +17,8 @@
 //! - 所有调用方须先持 `AppState::dns_gate` 再进 `spawn_blocking`:本模块是
 //!   「读标记 → 写系统/写标记」的 check-then-act,并发执行会让标记与系统
 //!   真实状态脱节(错误还原/漏还原);
-//! - 还原用 `networksetup -setdnsservers <服务名> Empty` 回到 DHCP 下发。
+//! - 还原恢复 apply 时快照的「原手动 DNS」(`prior`,空 = 原本自动获取),
+//!   而非一律 `Empty`:用户手动配过的 DNS 不因托管一轮而丢失。
 
 use std::fs;
 use std::path::Path;
@@ -40,6 +41,10 @@ struct DnsRecord {
     nwid: u64,
     /// 已下发的 DNS 服务器
     servers: Vec<String>,
+    /// apply 前该服务的手动 DNS 快照(空 = 原本自动获取);还原时恢复它。
+    /// `#[serde(default)]` 兼容旧格式标记(缺字段按空处理)
+    #[serde(default)]
+    prior: Vec<String>,
 }
 
 fn marker_path(config_dir: &Path) -> std::path::PathBuf {
@@ -108,8 +113,8 @@ fn service_of_device(device: &str) -> Result<String, String> {
         let tag = inner.0.trim();
         let rest = inner.1.trim();
         if rest.is_empty() {
-            // "(Hardware Port: Wi-Fi, Device: en0)" 行
-            if let Some(dev) = rest.split(',').map(str::trim).find_map(|p| {
+            // "(Hardware Port: Wi-Fi, Device: en0)" 行:此行无服务名,内容在 tag
+            if let Some(dev) = tag.split(',').map(str::trim).find_map(|p| {
                 p.strip_prefix("Device:").map(|d| d.trim().to_string())
             }) {
                 if dev == device {
@@ -149,6 +154,25 @@ fn set_dnsservers(service: &str, servers: &[String]) -> Result<(), String> {
     ))
 }
 
+/// `networksetup -getdnsservers`:读某服务当前的手动 DNS。
+/// 无手动配置时输出 "There aren't any DNS Servers set for <svc>...",返回空
+fn get_dnsservers(service: &str) -> Result<Vec<String>, String> {
+    let out = Command::new("networksetup")
+        .args(["-getdnsservers", service])
+        .output()
+        .map_err(|e| format!("无法执行 networksetup: {e}"))?;
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if text.contains("aren't any DNS Servers") {
+        return Ok(Vec::new());
+    }
+    Ok(text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect())
+}
+
 /// 应用系统 DNS(netconf 应用路径,须持 `dns_gate` 并在 `spawn_blocking` 内
 /// 调用)。servers 为空不动系统(调用方对空 servers 走 `restore`);目标状态
 /// 与当前一致时跳过(netconf 反复 ConfigUpdate 不应反复改写系统)。失败只记
@@ -169,19 +193,30 @@ pub fn apply(
             return;
         }
     }
+    // prior 快照:已有任何 owner 的记录时沿用其 prior(被覆盖场景不重置快照,
+    // 保住最早一次接管前的用户手动配置);否则读当前手动 DNS
+    let prior = read_record(config_dir)
+        .map(|cur| cur.prior)
+        .unwrap_or_default();
     let r = default_interface()
         .and_then(|iface| service_of_device(&iface))
-        .and_then(|service| match set_dnsservers(&service, servers) {
-            Ok(()) => Ok(service),
+        .and_then(|service| match get_dnsservers(&service) {
+            Ok(cur) if prior.is_empty() && cur != servers => Ok((service, cur)),
+            Ok(_) => Ok((service, prior)),
+            Err(e) => Err(e),
+        })
+        .and_then(|(service, prior)| match set_dnsservers(&service, servers) {
+            Ok(()) => Ok((service, prior)),
             Err(e) => Err(e),
         });
     match r {
-        Ok(service) => {
+        Ok((service, prior)) => {
             let rec = DnsRecord {
                 service,
                 planet_id: planet_id.to_string(),
                 nwid,
                 servers: servers.to_vec(),
+                prior,
             };
             match write_record(config_dir, &rec) {
                 Ok(()) => events.push(
@@ -233,16 +268,18 @@ pub fn restore(
             return;
         }
     }
-    match set_dnsservers(&rec.service, &[]) {
+    match set_dnsservers(&rec.service, &rec.prior) {
         Ok(()) => {
             let _ = fs::remove_file(marker_path(config_dir));
+            let what = if rec.prior.is_empty() {
+                "自动获取".to_string()
+            } else {
+                rec.prior.join(", ")
+            };
             events.push(
                 planet_id,
                 "dnsRestored",
-                &format!(
-                    "网络 {:016x} 系统 DNS 已恢复自动获取(服务 {})",
-                    rec.nwid, rec.service
-                ),
+                &format!("网络 {:016x} 系统 DNS 已还原为 {what}(服务 {})", rec.nwid, rec.service),
             );
         }
         Err(m) => events.push(
@@ -260,15 +297,20 @@ pub fn restore_leftover(config_dir: &Path, events: &Ring) {
     let Some(rec) = read_record(config_dir) else {
         return;
     };
-    let r = set_dnsservers(&rec.service, &[]);
+    let r = set_dnsservers(&rec.service, &rec.prior);
     match r {
         Ok(()) => {
             let _ = fs::remove_file(marker_path(config_dir));
+            let what = if rec.prior.is_empty() {
+                "自动获取".to_string()
+            } else {
+                rec.prior.join(", ")
+            };
             events.push(
                 &rec.planet_id,
                 "dnsRestored",
                 &format!(
-                    "启动检测到 dns-applied 残留,系统 DNS 已恢复自动获取(服务 {})",
+                    "启动检测到 dns-applied 残留,系统 DNS 已还原为 {what}(服务 {})",
                     rec.service
                 ),
             );
