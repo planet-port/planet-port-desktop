@@ -128,7 +128,7 @@ enum SingletonError {
     Open(std::io::Error),
     /// flock 返回 EWOULDBLOCK(即 EAGAIN):锁被其它实例持有
     Locked,
-    /// flock 的其它错误(如 EOL3NK):按锁文件故障报告
+    /// flock 的其它错误(如 EBADF/EINVAL):按锁文件故障报告
     Lock(std::io::Error),
 }
 

@@ -188,9 +188,17 @@ impl NodeSink for DaemonSink {
                         // restore 内部校验 owner(planet id + nwid),不匹配
                         // 即不动,沿用「后应用者拥有」语义;无标记/非本网络
                         // 同样静默跳过
-                        dns::restore(&app.config_dir, &events, &pid, Some(nwid));
+                        tokio::task::spawn_blocking(move || {
+                            dns::restore(&app.config_dir, &events, &pid, Some(nwid));
+                        })
+                        .await
+                        .ok();
                     } else {
-                        dns::apply(&app.config_dir, &events, &pid, nwid, &servers);
+                        tokio::task::spawn_blocking(move || {
+                            dns::apply(&app.config_dir, &events, &pid, nwid, &servers);
+                        })
+                        .await
+                        .ok();
                     }
                 });
             }
