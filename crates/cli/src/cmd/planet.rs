@@ -118,7 +118,8 @@ pub fn import(
         resp.get("planet").cloned().unwrap_or(Value::Null),
     )
     .map_err(|e| CliError::Io(e.to_string()))?;
-    println!("added planet \"{}\" (id {}) → running", d.name, d.id);
+    // 导入后 daemon 自动拉起;status 如实反映(启动失败为 stopped)
+    println!("added planet \"{}\" (id {}) → {}", d.name, d.id, d.status);
     Ok(())
 }
 

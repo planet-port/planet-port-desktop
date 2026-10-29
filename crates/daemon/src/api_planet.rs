@@ -310,6 +310,9 @@ pub async fn planets_import(
     }
 
     let id = info.world_id.to_string();
+    // registry 锁只包登记判定与写盘,不跨后续 start 的 await(MutexGuard 非 Send);
+    // 块结束时一并归还,name 供事件消息使用
+    let name = {
     let mut reg = st.registry.lock().unwrap();
 
     if reg.planets.iter().any(|e| e.world_id == info.world_id) {
@@ -389,13 +392,28 @@ pub async fn planets_import(
         net_local: Default::default(),
         moons: Vec::new(),
     };
-    let detail = to_detail(&entry, None);
     reg.planets.push(entry);
     reg.save(&st.config_dir)
         .map_err(|e| internal(format!("cannot save registry: {e}")))?;
+    name
+    };
 
     st.events
         .push(&id, "planetImported", &format!("planet \"{name}\" imported"));
+    // 文档语义「导入并立即上线」:登记成功后自动拉起;启动失败不回滚登记
+    // (planetStartFailed 事件已记录),返回的 live 详情如实反映 stopped
+    let started = {
+        let reg = st.registry.lock().unwrap();
+        find_entry(&reg, &id)?.clone()
+    };
+    if let Err(m) = runtime::start_planet(&st, &started).await {
+        st.events
+            .push(&id, "importStartFailed", &format!("导入后自动上线失败: {m}"));
+    }
+    let live = live_of(&st, &id)?;
+    let reg = st.registry.lock().unwrap();
+    let e = find_entry(&reg, &id)?;
+    let detail = to_detail(e, live.as_ref());
     Ok((StatusCode::CREATED, Json(json!({ "planet": detail }))))
 }
 
