@@ -11,6 +11,8 @@
 //!   记录(服务名 + owner + servers),新的应用直接覆盖,不叠加;
 //! - owner 不匹配(已被后应用者覆盖)时还原动作不动系统,只删不了——
 //!   即谁最后写的谁负责还原;
+//! - `dnsMode` 切回 `none` 同样走 `restore`:该网络「不再托管」应立即还原,
+//!   owner 校验保证只动自己名下的记录;
 //! - 还原用 `networksetup -setdnsservers <服务名> Empty` 回到 DHCP 下发。
 
 use std::fs;

@@ -167,6 +167,8 @@ impl NodeSink for DaemonSink {
                 // dns_servers,=custom 用本地配置;servers 为空不动系统。
                 // networksetup 阻塞且可能失败,spawn_blocking 执行、失败仅记事件
                 let nl_dns = lock(&self.net_local).get(&nwid).cloned();
+                // none 分支需在 nl_dns 被 move 前判定(布尔值无借用寿命问题)
+                let none_mode = nl_dns.as_ref().is_some_and(|n| n.dns_mode == "none");
                 let servers: Vec<String> = match nl_dns.as_ref().map(|n| n.dns_mode.as_str()) {
                     Some("network") => cfg.dns_servers.iter().map(|s| s.to_string()).collect(),
                     Some("custom") => nl_dns.map(|n| n.custom_dns).unwrap_or_default(),
@@ -178,6 +180,17 @@ impl NodeSink for DaemonSink {
                     let events = Arc::clone(&self.events);
                     self.rt.spawn_blocking(move || {
                         dns::apply(&app.config_dir, &events, &pid, nwid, &servers)
+                    });
+                } else if none_mode {
+                    // dnsMode=none:本网络不再托管系统 DNS,若当前标记正归它
+                    // 所有则立即还原(此前残留会一直留到下次 leave/stop)。
+                    // restore 内部校验 owner(planet id + nwid),不匹配即不动,
+                    // 沿用「后应用者拥有」语义;无标记/非本网络同样静默跳过
+                    let app = self.app.clone();
+                    let pid = self.planet_id.clone();
+                    let events = Arc::clone(&self.events);
+                    self.rt.spawn_blocking(move || {
+                        dns::restore(&app.config_dir, &events, &pid, Some(nwid))
                     });
                 }
             }

@@ -164,7 +164,8 @@ planet 实例,按以下顺序解析:
 - `set` 的 `routeViaZeroTier` 在下一次网络配置更新(控制器下发 netconf)时生效:
   false 时清空 managed routes 后再 apply,已装上的路由不会立即回撤。
 - `set` 的校验比对 mockd 更严:`routeViaZeroTier` 仅接受 `0|1`(其它值返回 400,
-  退出码 2),`dnsMode` 仅接受 `none|network|custom`。
+  退出码 2),`dnsMode` 仅接受 `none|network|custom`;`dnsMode` 切回 `none` 时,
+  若该网络当前托管着系统 DNS 会立即还原为自动获取。
 
 ## 真实 daemon(planet-portd)
 
