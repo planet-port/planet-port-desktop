@@ -192,30 +192,30 @@ async fn shutdown(state: AppState, port_path: PathBuf) {
             None => std::future::pending().await,
         }
     });
-    tokio::select! {
-        _ = &mut term_fut =>
-            eprintln!("[shutdown] 收到 SIGTERM,开始优雅退出"),
-        _ = &mut int_fut =>
-            eprintln!("[shutdown] 收到 SIGINT,开始优雅退出"),
-    }
+    let sig = tokio::select! {
+        _ = &mut term_fut => "SIGTERM",
+        _ = &mut int_fut => "SIGINT",
+    };
+    eprintln!("收到 {sig},正在停止服务");
     // 待停清单先克隆(短锁):id 取 registry 中标记 running 的(含上次启动
-    // 失败的残留,stop_planet 会纠正),再并入运行时 map 中可能多出的 id
-    let mut ids: Vec<String> = state
+    // 失败的残留,stop_planet 会纠正),再并入运行时 map 中可能多出的 id;
+    // name 一并带出供日志展示,运行时残留无登记名时以 id 兜底
+    let mut items: Vec<(String, String)> = state
         .registry
         .lock()
         .unwrap()
         .planets
         .iter()
         .filter(|e| e.running)
-        .map(|e| e.id.clone())
+        .map(|e| (e.id.clone(), e.name.clone().unwrap_or_else(|| e.id.clone())))
         .collect();
     for id in state.planets.lock().unwrap().keys().cloned().collect::<Vec<_>>() {
-        if !ids.contains(&id) {
-            ids.push(id);
+        if !items.iter().any(|(i, _)| i == &id) {
+            items.push((id.clone(), id.clone()));
         }
     }
-    for id in &ids {
-        eprintln!("[shutdown] 停止 planet {id}");
+    for (id, name) in &items {
+        eprintln!("正在停止行星 {name}({id})");
         runtime::stop_planet(&state, id).await;
     }
     // registry 在每次变更/停止时均已落盘,此处兜底再存一次
@@ -224,10 +224,10 @@ async fn shutdown(state: AppState, port_path: PathBuf) {
     }
     if let Err(e) = fs::remove_file(&port_path) {
         if e.kind() != ErrorKind::NotFound {
-            eprintln!("[shutdown] 删除 port 文件失败: {e}");
+            eprintln!("删除 port 文件失败: {e}");
         }
     }
-    eprintln!("[shutdown] 完成");
+    eprintln!("服务已停止");
 }
 
 #[tokio::main]
