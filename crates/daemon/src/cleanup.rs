@@ -42,19 +42,25 @@ fn probe_iface(name: &str) -> Option<String> {
     Some(String::new())
 }
 
-/// `ifconfig <name> destroy`。失败只打日志(接口已被别人销毁等,忽略)。
-fn destroy_iface(name: &str) {
+/// `ifconfig <name> destroy`。失败只打日志并返回 false:名字留在
+/// registry 里,下次启动重试——清掉登记会让孤儿永久失去清扫依据。
+fn destroy_iface(name: &str) -> bool {
     match Command::new("ifconfig").args([name, "destroy"]).output() {
         Ok(o) if o.status.success() => {
             eprintln!("[cleanup] 销毁孤儿 feth {name}");
+            true
         }
         Ok(o) => {
             eprintln!(
-                "[cleanup] 销毁 {name} 失败(忽略): {}",
+                "[cleanup] 销毁 {name} 失败(下次启动重试): {}",
                 String::from_utf8_lossy(&o.stderr).trim()
             );
+            false
         }
-        Err(e) => eprintln!("[cleanup] 销毁 {name} 失败(忽略): {e}"),
+        Err(e) => {
+            eprintln!("[cleanup] 销毁 {name} 失败(下次启动重试): {e}");
+            false
+        }
     }
 }
 
@@ -77,24 +83,28 @@ pub fn destroy_leftover(state: &AppState) {
     if names.is_empty() {
         return;
     }
+    // 销毁失败的名字:保留在登记里下次重试,否则该孤儿永久失去清扫依据
+    let mut failed: Vec<String> = Vec::new();
     for name in &names {
         // 接口不存在(上次已正常销毁 / 名字失效)→ 跳过
         let Some(peer) = probe_iface(name) else { continue };
-        destroy_iface(name);
+        if !destroy_iface(name) {
+            failed.push(name.clone());
+        }
         // feth 对的 peer 端是独立的内核接口,须一并销毁;此刻 peer 可能已
-        // 随 dev 端销毁,存在才动手
-        if !peer.is_empty() && probe_iface(&peer).is_some() {
-            destroy_iface(&peer);
+        // 随 dev 端销毁,存在才动手。peer 不在登记之列,失败时也一并记下,
+        // 下轮探测它会因 dev 端销毁成功而自然消失
+        if !peer.is_empty() && probe_iface(&peer).is_some() && !destroy_iface(&peer) {
+            failed.push(peer);
         }
     }
-    // 全部处理完后清空登记并落盘:这批名字要么已销毁、要么本就不存在,
-    // 留着只会让下次启动重复探测
+    // 处理完后收缩登记:确认不存在或销毁成功的移除,失败的保留
     let mut reg = state
         .registry
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     for e in reg.planets.iter_mut() {
-        e.ifaces.clear();
+        e.ifaces.retain(|n| failed.contains(n));
     }
     if let Err(e) = reg.save(&state.config_dir) {
         eprintln!("[cleanup] registry 写盘失败: {e}");
