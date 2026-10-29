@@ -13,3 +13,4 @@ serde_json.workspace = true
 planet-port-api = { path = "../api" }
 # geteuid(service 子命令 root 判定);workspace 已有同版本依赖,MIT/Apache-2.0
 libc = "0.2"
+inquire = "0.7"

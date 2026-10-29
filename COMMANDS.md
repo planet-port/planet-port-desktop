@@ -9,15 +9,26 @@
 
 | 选项 | 说明 |
 |---|---|
-| `--planet <name\|id>` | 定位 planet:变更类命令的目标选择器,查询类命令的过滤器;省略时取环境变量 `PLANET_PORT_PLANET`,再省略由 daemon 按「单 running 自动选择 / 多 running 报歧义」处理 |
+| `--planet <name\|id>` | 定位 planet:变更类命令的目标选择器,查询类命令的过滤器;省略时取环境变量 `PLANET_PORT_PLANET`,再省略走交互选择(见下)或由 daemon 按「单 running 自动选择 / 多 running 报歧义」处理 |
 | `-j, --json` | JSON 输出(stdout 仅 JSON,人话提示走 stderr) |
 | `--api-url <URL>` | 覆写 daemon API 地址;省略时读配置目录 port 文件,再回退 `127.0.0.1:9998`。也可用环境变量 `PLANET_PORT_URL` |
+
+## 交互式 planet 选择
+
+交互式终端且未显式指定 planet 时,多 planet 场景弹选择列表:
+
+- **变更类命令**(join / leave / set / orbit / deorbit / dump / moon import)单选:
+  ↑↓ 移动,回车确认;
+- **可批量查询命令**(info / list / listnetworks / listpeers / listmoons / events)多选:
+  含「<全部>」首项,空格勾选,回车确认;空选或勾「全部」= 聚合全部,子集 = 按选中过滤;
+- Esc / Ctrl+C 取消,退出码 130;非 TTY(管道/脚本)或 `-j` 模式不弹列表。
 
 ## 状态查询
 
 | 命令 | 说明 |
 |---|---|
 | `info` | 所有 planet 的聚合状态 |
+| `list [--planet]` | 按行星分组列出网络;指定 planet 时只列该行星 |
 | `listnetworks [--planet]` | 跨 planet 网络列表(含 PLANET 列) |
 | `listpeers [--planet]` | peer 列表,按 planet 分组 |
 | `dump [--planet]` | 单一 planet 状态 dump(networks/peers/events);歧义时报候选 |
@@ -47,7 +58,7 @@
 | `add <file> [--name <别名>] [--data-dir <绝对路径>] [--port <UDP端口>]` | 导入 planet 文件并立即上线;`--data-dir`/`--port` 为开发验证覆写(如复用既有 dataDir),日常省略 |
 | `start <name\|id>` | 上线实例;按登记的本地网络配置自动 re-join |
 | `stop <name\|id>` | 下线实例(feth 设备与路由清理),保留登记 |
-| `remove <name\|id> [--yes]` | 删除登记;有活跃网络时拒绝(先 leave);交互确认走 stderr,`--yes` 供脚本跳过,`-j` 下必须配 `--yes` |
+| `remove <name\|id> [--yes]` | 删除登记;自动批量 leave 全部已加入网络并停止实例后再删除;交互确认走 stderr,`--yes` 供脚本跳过,`-j` 下必须配 `--yes` |
 
 ## planet 管理
 
@@ -75,6 +86,7 @@
 |---|---|
 | 0 | 成功 |
 | 1 | daemon 返回错误(4xx/5xx,stderr 带 error 码与候选列表) |
-| 2 | CLI 用法错误(未知 key、参数缺失、`use` 目标不存在等) |
+| 2 | CLI 用法错误(未知 key、参数缺失、`use` 目标不存在等)、planet 歧义(仅非交互路径) |
+| 130 | 交互式 planet 选择被取消(Esc / Ctrl+C) |
 
 详细行为说明与验证清单见 [README.md](README.md) 。

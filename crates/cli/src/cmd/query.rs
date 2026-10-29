@@ -2,14 +2,53 @@ use crate::client::{CliError, Client};
 use crate::output::{new_table, print_json};
 use planet_port_api::endpoints;
 use planet_port_api::types::{MoonEntry, NetworkEntry, PeerEntry, PlanetStatus};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 fn dash<T: ToString>(v: Option<T>) -> String {
     v.map(|x| x.to_string()).unwrap_or_else(|| "—".into())
 }
 
-pub fn info(client: &Client, json: bool) -> Result<(), CliError> {
-    let v = client.get_json(endpoints::status())?;
+/// 列表型查询的统一取数:过滤集为 None → 全量;单成员 → ?planet= 过滤;
+/// 多成员 → 逐 planet 请求合并数组
+fn fetch_list(
+    client: &Client,
+    endpoint: fn(Option<&str>) -> String,
+    key: &str,
+    filter: &Option<Vec<String>>,
+) -> Result<Value, CliError> {
+    match filter {
+        None => client.get_json(&endpoint(None)),
+        Some(ids) if ids.len() == 1 => client.get_json(&endpoint(Some(&ids[0]))),
+        Some(ids) => {
+            let mut merged: Vec<Value> = Vec::new();
+            for id in ids {
+                let v = client.get_json(&endpoint(Some(id)))?;
+                merged.extend(
+                    v.get(key)
+                        .and_then(|x| x.as_array())
+                        .cloned()
+                        .unwrap_or_default(),
+                );
+            }
+            Ok(json!({ key: merged }))
+        }
+    }
+}
+
+pub fn info(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
+    let mut v = client.get_json(endpoints::status())?;
+    // 多选子集:客户端侧过滤 /status 的 planets 数组(选择器返回 canonical id,
+    // 但显式 --planet 可能是 name,双匹配兼容两者)
+    if let Some(ids) = filter {
+        if let Some(arr) = v.get_mut("planets").and_then(|p| p.as_array_mut()) {
+            arr.retain(|p| {
+                ids.iter().any(|id| {
+                    p.get("id").and_then(Value::as_str) == Some(id.as_str())
+                        || p.get("name").and_then(Value::as_str) == Some(id.as_str())
+                })
+            });
+        }
+    }
     if json {
         print_json(&v);
         return Ok(());
@@ -37,8 +76,46 @@ pub fn info(client: &Client, json: bool) -> Result<(), CliError> {
     Ok(())
 }
 
-pub fn listnetworks(client: &Client, planet: &Option<String>, json: bool) -> Result<(), CliError> {
-    let v = client.get_json(&endpoints::networks(planet.as_deref()))?;
+/// 按行星分组列出网络(listpeers 同款分组样式)
+pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
+    let v = fetch_list(client, endpoints::networks, "networks", filter)?;
+    if json {
+        print_json(&v);
+        return Ok(());
+    }
+    let rows: Vec<NetworkEntry> = serde_json::from_value(
+        v.get("networks").cloned().unwrap_or(Value::Null),
+    )
+    .unwrap_or_default();
+    let mut order: Vec<String> = Vec::new();
+    for n in &rows {
+        if !order.contains(&n.planet) {
+            order.push(n.planet.clone());
+        }
+    }
+    for pid in order {
+        println!("planet: {pid}");
+        let mut t = new_table(&["NETWORK", "NAME", "STATUS", "TYPE", "MANAGED-IPS"]);
+        for n in rows.iter().filter(|n| n.planet == pid) {
+            let mut ips = n.assigned_addrs.iter().take(2).cloned().collect::<Vec<_>>();
+            if n.assigned_addrs.len() > 2 {
+                ips.push("…".into());
+            }
+            t.add_row(vec![
+                n.nwid.clone(),
+                n.name.clone().unwrap_or_else(|| "—".into()),
+                n.status.clone(),
+                n.kind.clone(),
+                ips.join(", "),
+            ]);
+        }
+        println!("{t}\n");
+    }
+    Ok(())
+}
+
+pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
+    let v = fetch_list(client, endpoints::networks, "networks", filter)?;
     if json {
         print_json(&v);
         return Ok(());
@@ -66,8 +143,8 @@ pub fn listnetworks(client: &Client, planet: &Option<String>, json: bool) -> Res
     Ok(())
 }
 
-pub fn listpeers(client: &Client, planet: &Option<String>, json: bool) -> Result<(), CliError> {
-    let v = client.get_json(&endpoints::peers(planet.as_deref()))?;
+pub fn listpeers(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
+    let v = fetch_list(client, endpoints::peers, "peers", filter)?;
     if json {
         print_json(&v);
         return Ok(());
@@ -104,8 +181,8 @@ pub fn listpeers(client: &Client, planet: &Option<String>, json: bool) -> Result
     Ok(())
 }
 
-pub fn listmoons(client: &Client, planet: &Option<String>, json: bool) -> Result<(), CliError> {
-    let v = client.get_json(&endpoints::moons(planet.as_deref()))?;
+pub fn listmoons(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
+    let v = fetch_list(client, endpoints::moons, "moons", filter)?;
     if json {
         print_json(&v);
         return Ok(());

@@ -2,9 +2,11 @@ mod client;
 mod cmd;
 mod emoji;
 mod output;
+mod picker;
 
 use clap::{Parser, Subcommand};
 use client::{CliError, Client};
+use std::io::IsTerminal;
 
 #[derive(Parser)]
 #[command(
@@ -30,6 +32,8 @@ struct Cli {
 enum Command {
     /// Aggregate status of all planets
     Info,
+    /// List networks grouped by planet
+    List,
     /// List networks across planets
     Listnetworks,
     /// List peers, grouped by planet
@@ -104,7 +108,8 @@ fn main() {
     let cli = Cli::parse();
     let json = cli.json;
     // 定位链 ①>②:--planet 显式指定,否则取 PLANET_PORT_PLANET 环境变量;
-    // ③(单 running 自动选)与 ④(歧义 409)由 daemon 执行
+    // ③(单 running 自动选)与 ④(歧义)默认由 daemon 执行;交互式 TTY 下由
+    // CLI 弹选择列表代替 ④(见 resolve_planets)
     let planet_flag = cli
         .planet
         .clone()
@@ -118,7 +123,8 @@ fn main() {
                 Ok(c) => c,
                 Err(e) => die(&e),
             };
-            dispatch(&client, other, &planet_flag, json)
+            let (planet_flag, query_filter) = resolve_planets(&client, other, planet_flag, json);
+            dispatch(&client, other, &planet_flag, &query_filter, json)
         }
     };
     if let Err(e) = result {
@@ -126,18 +132,133 @@ fn main() {
     }
 }
 
+// ---- 交互式 planet 选择 ----
+
+/// 命令对 planet 的依赖形态:变更类单选,可批量查询类多选(含「全部」)
+enum PlanetNeed {
+    None,
+    Single,
+    Multi,
+}
+
+fn planet_need(cmd: &Command) -> PlanetNeed {
+    match cmd {
+        Command::Info
+        | Command::List
+        | Command::Listnetworks
+        | Command::Listpeers
+        | Command::Listmoons
+        | Command::Events { .. } => PlanetNeed::Multi,
+        Command::Join { .. }
+        | Command::Leave { .. }
+        | Command::Set { .. }
+        | Command::Orbit { .. }
+        | Command::Deorbit { .. }
+        | Command::Dump
+        | Command::Moon { .. } => PlanetNeed::Single,
+        _ => PlanetNeed::None,
+    }
+}
+
+/// 命令的短标签(选择器提示用)
+fn planet_verb(cmd: &Command) -> &'static str {
+    match cmd {
+        Command::Info => "info",
+        Command::List => "list",
+        Command::Listnetworks => "listnetworks",
+        Command::Listpeers => "listpeers",
+        Command::Listmoons => "listmoons",
+        Command::Events { .. } => "events",
+        Command::Join { .. } => "join",
+        Command::Leave { .. } => "leave",
+        Command::Set { .. } => "set",
+        Command::Orbit { .. } => "orbit",
+        Command::Deorbit { .. } => "deorbit",
+        Command::Dump => "dump",
+        Command::Moon { .. } => "moon import",
+        _ => "",
+    }
+}
+
+/// 取 planet 清单(/status);daemon 不可达等失败返回 None(跳过选择器,
+/// 让后续请求自身报错,行为与非交互路径一致)
+fn fetch_options(client: &Client, running_only: bool) -> Option<Vec<picker::PlanetOption>> {
+    let v = client.get_json(planet_port_api::endpoints::status()).ok()?;
+    let rows: Vec<planet_port_api::types::PlanetStatus> = serde_json::from_value(
+        v.get("planets").cloned().unwrap_or(serde_json::Value::Null),
+    )
+    .unwrap_or_default();
+    let out: Vec<picker::PlanetOption> = rows
+        .into_iter()
+        .filter(|p| !running_only || p.status == "running")
+        .map(|p| picker::PlanetOption {
+            label: format!("{} ({}) · {}", p.name, p.id, p.status),
+            id: p.id,
+        })
+        .collect();
+    Some(out)
+}
+
+/// 未显式指定 planet 且交互式 TTY 时弹选择列表;返回(单选 planet, 查询过滤集)。
+/// 单选结果回填 planet_flag(等价 --planet);多选子集作为查询过滤集(None = 全部)。
+/// 取消(Esc/Ctrl+C)退出码 130
+fn resolve_planets(
+    client: &Client,
+    command: &Command,
+    planet_flag: Option<String>,
+    json: bool,
+) -> (Option<String>, Option<Vec<String>>) {
+    match planet_need(command) {
+        PlanetNeed::None => (planet_flag, None),
+        PlanetNeed::Single => {
+            if planet_flag.is_none() && !json && std::io::stdin().is_terminal() {
+                if let Some(opts) = fetch_options(client, true) {
+                    // 多 running 才需要选;单个/零个沿用 daemon 自动选/报错
+                    if opts.len() > 1 {
+                        return match picker::pick_single(&opts, planet_verb(command)) {
+                            Ok(id) => (Some(id), None),
+                            Err(()) => std::process::exit(130),
+                        };
+                    }
+                }
+            }
+            (planet_flag, None)
+        }
+        PlanetNeed::Multi => {
+            if let Some(p) = planet_flag {
+                // 显式 --planet / 环境变量:等价单成员过滤集
+                return (None, Some(vec![p]));
+            }
+            if !json && std::io::stdin().is_terminal() {
+                if let Some(opts) = fetch_options(client, false) {
+                    if opts.len() > 1 {
+                        return match picker::pick_multi(&opts, planet_verb(command)) {
+                            Ok(picker::MultiPick::All) => (None, None),
+                            Ok(picker::MultiPick::Subset(ids)) => (None, Some(ids)),
+                            Err(()) => std::process::exit(130),
+                        };
+                    }
+                }
+            }
+            (None, None)
+        }
+    }
+}
+
 fn dispatch(
     client: &Client,
     command: &Command,
     planet_flag: &Option<String>,
+    query_filter: &Option<Vec<String>>,
     json: bool,
 ) -> Result<(), CliError> {
     match command {
         Command::Service { .. } => unreachable!("service 在 main 中单独分流"),
-        Command::Info => cmd::query::info(client, json),
-        Command::Listnetworks => cmd::query::listnetworks(client, planet_flag, json),
-        Command::Listpeers => cmd::query::listpeers(client, planet_flag, json),
-        Command::Listmoons => cmd::query::listmoons(client, planet_flag, json),
+        Command::Info => cmd::query::info(client, query_filter, json),
+        Command::List => cmd::query::list(client, query_filter, json),
+        Command::Listnetworks => cmd::query::listnetworks(client, query_filter, json),
+        Command::Listpeers => cmd::query::listpeers(client, query_filter, json),
+        Command::Listmoons => cmd::query::listmoons(client, query_filter, json),
         Command::Join { nwid } => cmd::mutate::join(client, nwid, planet_flag, json),
         Command::Leave { nwid } => cmd::mutate::leave(client, nwid, planet_flag, json),
         Command::Set { nwid, values } => cmd::mutate::set(client, nwid, values, planet_flag, json),
@@ -158,7 +279,7 @@ fn dispatch(
         Command::Planet { cmd } => cmd::planet::run(client, cmd, json),
         Command::Moon { cmd } => cmd::mutate::run_moon(client, cmd, planet_flag, json),
         Command::Use { planet } => cmd::misc::use_planet(client, planet),
-        Command::Events { limit, follow } => cmd::misc::events(client, planet_flag, *limit, *follow, json),
+        Command::Events { limit, follow } => cmd::misc::events(client, query_filter, *limit, *follow, json),
     }
 }
 

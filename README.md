@@ -56,10 +56,23 @@ planet 实例,按以下顺序解析:
 | ① | `--planet <name\|id>` | 显式指定,优先级最高 |
 | ② | 环境变量 `PLANET_PORT_PLANET` | 由 `eval $(planet-port use <x>)` 设置 |
 | ③ | 唯一 running planet 自动选中 | 仅有一个激活 planet 时自动落到它 |
-| ④ | 多个 running planet | 报 `409` 并列出候选,**退出码 2,不猜** |
+| ④ | 多个 running planet | **交互式 TTY**:弹 planet 选择列表(见下);非交互(管道/脚本/`-j`):报 `409` 并列出候选,退出码 2,不猜 |
 
-查询类命令(info / listnetworks / listpeers / listmoons / events)**永远聚合展示**,
+查询类命令(info / list / listnetworks / listpeers / listmoons / events)**默认聚合展示**,
 `--planet` 与环境变量在其上的语义是**过滤**,不受上述链约束。
+
+### 交互式 planet 选择
+
+交互式终端(stdin 为 TTY)且未显式指定 planet 时,多 planet 场景弹选择列表
+代替 ④ 的 409 报错:
+
+- **变更类命令**(join / leave / set / orbit / deorbit / dump / moon import)单选:
+  候选为全部 running planet,↑↓ 移动,回车确认;
+- **可批量查询命令**(info / list / listnetworks / listpeers / listmoons / events)多选:
+  候选含「<全部>」首项,空格勾选,回车确认;勾选「全部」或空选 = 聚合全部,
+  勾选子集则按选中集合过滤(多成员时逐 planet 请求合并);
+- Esc / Ctrl+C 取消,**退出码 130**;
+- 非 TTY(管道/脚本)或 `-j` 模式不弹列表,保持原聚合 / 409 行为。
 
 `--planet` 同时接受别名(name)与 worldId;服务端解析,命中即返回 canonical id
 (表格 PLANET 列显示的是 canonical id,如 company 显示 `2187945993`)。
@@ -70,8 +83,9 @@ planet 实例,按以下顺序解析:
 |---|---|
 | 0 | 成功 |
 | 1 | 运行错误(API 4xx/5xx、IO 错误) |
-| 2 | 用法错误(非法参数、未知 set key)、planet 歧义(409 + 候选列表)、service 组需 root(install/uninstall/start/stop 未以 root 运行) |
+| 2 | 用法错误(非法参数、未知 set key)、planet 歧义(409 + 候选列表,仅非交互路径)、service 组需 root(install/uninstall/start/stop 未以 root 运行) |
 | 3 | daemon 不在线,提示 `planet-portd is not running (try: planet-port service start)` |
+| 130 | 交互式 planet 选择被取消(Esc / Ctrl+C) |
 
 ## 命令参考
 
@@ -82,6 +96,7 @@ planet 实例,按以下顺序解析:
 | 命令 | 说明 |
 |---|---|
 | `info` | 所有 planet 聚合状态表(PLANET/STATUS/ADDRESS/VERSION/LATENCY) |
+| `list` | 按行星分组列出网络(listpeers 同款分组样式);`--planet` 只列指定行星 |
 | `listnetworks` | 跨 planet 网络列表,带 PLANET 列;`--planet` 过滤 |
 | `listpeers` | peers 按 planet 分组展示 |
 | `listmoons` | moons 聚合表;`--planet` 过滤 |
@@ -104,7 +119,7 @@ planet 实例,按以下顺序解析:
 | 命令 | 说明 |
 |---|---|
 | `add <file\|URL> [--name <别名>] [--data-dir <绝对路径>] [--port <UDP端口>]` | 导入 planet 文件并立即上线;`--data-dir`/`--port` 为开发验证覆写(复用既有 dataDir/指定 UDP 端口),日常省略 |
-| `remove <name\|id> [--yes]` | 删除登记;有活跃网络时拒绝;交互确认提示走 stderr(stdout 纯净),`--yes` 供脚本跳过;`-j` 下必须配 `--yes`,否则退出码 2 |
+| `remove <name\|id> [--yes]` | 删除登记;**自动批量 leave 全部已加入网络并停止实例**后再删除(单个 leave 失败记录事件不阻断);交互确认提示走 stderr(stdout 纯净),`--yes` 供脚本跳过;`-j` 下必须配 `--yes`,否则退出码 2 |
 | `start <name\|id>` / `stop <name\|id>` | 上线 / 下线(保留登记);start 会按登记的本地网络配置自动 re-join |
 
 ### planet 管理
@@ -218,7 +233,7 @@ URL 源不支持、container 501):
 | `set ... bogus=1` | exit=2 | `error: unknown key "bogus"; valid: ...`,exit=2 | 通过 |
 | `orbit` / `deorbit` / `moon import` | 200/201 OK;listmoons 复查 | orbit/deorbit `200 ... OK`,moon import `201`;listmoons 增删一致 | 通过 |
 | `dump --planet official` | 单 planet 文本 | 输出 networks/peers/events 概要;不带 `--planet` 时报候选 | 通过 |
-| `planet list/show/rename/export/share` + 顶层 `add/remove/start/stop` | 各自预期 | 全部通过;remove 有活跃网络时 409 拒绝(exit=1),交互确认拒绝时 exit=0;export stdout/`-o` 均可 | 通过 |
+| `planet list/show/rename/export/share` + 顶层 `add/remove/start/stop` | 各自预期 | 全部通过;交互确认拒绝时 exit=0;export stdout/`-o` 均可(mockd 的 remove 仍为旧语义 409 planetRunning,真实现已改为自动 leave + 删除) | 通过 |
 | `use company` + eval 后 `join` | 定位链② 生效 | `PLANET_PORT_PLANET=company join` 直接落到 company,无歧义报错 | 通过 |
 | `use 不存在` | exit=2,stdout 无输出 | `error: planet "nosuchplanet" not found`,stdout 0 字节,exit=2 | 通过 |
 | `events [--planet] [--follow]` | 表格/增量输出 | 过滤生效;`--follow` 每 2s 增量输出新事件 | 通过 |

@@ -152,7 +152,7 @@ GET    /planets/{id}                    # 详情:worldId、type、roots、fileSi
                                         #   lastNodeId、source、networkCount、port、status
 POST   /planets/{id}/start
 POST   /planets/{id}/stop
-DELETE /planets/{id}                    # 有活跃网络时 409
+DELETE /planets/{id}                    # 自动批量 leave 全部网络并停止后删除(2026-10-29 语义更新,原为 409 planetRunning)
 GET    /planets/{id}/export             # planet 二进制(文件下载 / GUI 二维码展示的数据源)
 POST   /planets/{id}/share              # {ttlSeconds?} → {url, expiresAt} 局域网临时下载链接
                                         #   一次性 token,默认 300s,仅服务该 planet 二进制

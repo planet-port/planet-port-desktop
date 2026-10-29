@@ -6,6 +6,7 @@ use std::fs;
 use std::io::Read;
 use std::net::{Ipv4Addr, UdpSocket};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
@@ -449,41 +450,73 @@ pub async fn planets_delete(
     // 拿到门闩后 running 判定即不含并发 start 的半途态,杜绝「delete 读到
     // running=false 却把刚插入的运行时整条 remove → NodeHandle 走 Drop 兜底」
     let _gate = st.runtime_gate.lock().await;
-    // registry 锁收在内层块:块结束即放锁,await 期间不持有(registry 锁纪律)
-    let removed = {
-        let mut reg = st.registry.lock().unwrap();
-        let i = find_entry_mut(&mut reg, &id)?;
-        if reg.planets[i].running {
-            return Err(err(
-                StatusCode::CONFLICT,
-                "planetRunning",
-                &format!(
-                    "planet \"{}\" is running; stop it before deleting",
-                    name_of(&reg.planets[i])
+    // 定位 + 克隆基本信息(随后的 leave/teardown 会写 registry,不能长期持锁)
+    let (pid, name, data_dir) = {
+        let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let e = find_entry(&reg, &id)?;
+        (e.id.clone(), name_of(e), e.data_dir.clone())
+    };
+
+    // 自动批量 leave:以核心快照为准逐网络退出(阻塞应答,spawn_blocking 顺序执行)。
+    // 单个 leave 失败不阻断删除:记录事件后继续,随后的实例级 teardown 兜底收尾
+    let mut left = 0usize;
+    if let Some(rt) = crate::state::runtime_of(&st, &pid) {
+        let nwids: Vec<u64> = rt.networks().iter().map(|c| c.nwid).collect();
+        for nwid in nwids {
+            let rt2 = Arc::clone(&rt);
+            let res = tokio::task::spawn_blocking(move || rt2.node_leave(nwid)).await;
+            match res {
+                Ok(Ok(())) => {
+                    left += 1;
+                    st.events
+                        .push(&pid, "leave", &format!("left {:016x} (planet removing)", nwid));
+                }
+                Ok(Err(e)) => st.events.push(
+                    &pid,
+                    "leaveFailed",
+                    &format!("leave {:016x} failed during removal: {e}", nwid),
                 ),
-                None,
-            ));
+                Err(e) => st.events.push(
+                    &pid,
+                    "leaveFailed",
+                    &format!("leave task {:016x} panicked: {e}", nwid),
+                ),
+            }
+            // 设备拆除 + 快照/冲突清理(leave 失败同样执行;实例级 teardown 兜底)
+            rt.plane
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .teardown(nwid);
+            st.net_cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&(pid.clone(), nwid));
+            rt.conflicts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&nwid);
         }
-        let removed = reg.planets.remove(i);
+    }
+
+    // 运行中/异常残留一并红线收尾(gate 已持,teardown_leftover 直接可用,
+    // 不可调 stop_planet —— 它会再次取 gate 死锁)
+    runtime::teardown_leftover(&st, &pid).await;
+
+    // 摘记录(teardown_runtime 已把 running 置 false 并落盘,此处直接移除)
+    {
+        let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let i = find_entry_mut(&mut reg, &id)?;
+        reg.planets.remove(i);
         reg.save(&st.config_dir)
             .map_err(|e| internal(format!("cannot save registry: {e}")))?;
-        removed
-    };
-    let pid = removed.id.clone();
-
-    // 异常残留(running=false 但 map 仍有运行时)按红线收尾,不让 Drop 兜底;
-    // 正常路径此处无运行时,等于一次空移除
-    runtime::teardown_leftover(&st, &pid).await;
+    }
 
     // planet 文件必删;data 目录只在「canonicalize 后严格位于 config_dir 内」才整目录删除。
     // 两侧都 canonicalize(macOS 下 /var → /private/var),并把 data_dir == config_dir
     // 视为非法配置:此时只摘记录、绝不动 config 目录本身(registry.json/token 都在里面)。
     // canonicalize 已解析符号链接与 `..`,之后 Path::starts_with 的逐组件比较即安全。
     let _ = fs::remove_file(planet_bin_path(&st, &pid));
-    if let (Ok(cfg), Ok(dd)) = (
-        fs::canonicalize(&st.config_dir),
-        fs::canonicalize(&removed.data_dir),
-    ) {
+    if let (Ok(cfg), Ok(dd)) = (fs::canonicalize(&st.config_dir), fs::canonicalize(&data_dir)) {
         if dd.starts_with(&cfg) && dd != cfg {
             let _ = fs::remove_dir_all(&dd);
         }
@@ -493,7 +526,7 @@ pub async fn planets_delete(
     st.events.push(
         &pid,
         "planetRemoved",
-        &format!("planet \"{}\" removed", name_of(&removed)),
+        &format!("planet \"{name}\" removed ({left} networks left)"),
     );
     Ok(StatusCode::NO_CONTENT)
 }
