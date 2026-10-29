@@ -12,6 +12,33 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use zt_sys as zt;
 
+// in6_addr 内层字段名与 sin_len 是 BSD/glibc 布局差异:Darwin 为
+// `__u6_addr.__u6_addr8` 且 sockaddr 带 sin_len;glibc 为 `__in6_u.__u6_addr8`
+// 且无 sin_len。收束到这两个 helper,转换逻辑不重复分叉。
+/// 读 in6_addr 的 16 字节(内存序即网络序)。union 字段访问需 unsafe。
+fn in6_bytes(a: &zt::in6_addr) -> [u8; 16] {
+    #[cfg(target_os = "macos")]
+    {
+        unsafe { a.__u6_addr.__u6_addr8 }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        unsafe { a.__in6_u.__u6_addr8 }
+    }
+}
+
+/// 写 in6_addr 的 16 字节(union 字段写入是安全操作,读取才需 unsafe)。
+fn set_in6_bytes(dst: &mut zt::in6_addr, b: [u8; 16]) {
+    #[cfg(target_os = "macos")]
+    {
+        dst.__u6_addr.__u6_addr8 = b;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        dst.__in6_u.__u6_addr8 = b;
+    }
+}
+
 /// 读取 sockaddr_storage 指向的地址;family 未知(NULL/AF_UNSPEC 等)返回 None。
 ///
 /// # Safety
@@ -34,7 +61,7 @@ pub unsafe fn from_sockaddr_storage(ss: *const zt::sockaddr_storage) -> Option<S
             zt::AF_INET6 => {
                 let a = &*(ss as *const zt::sockaddr_in6);
                 Some(SocketAddr::new(
-                    IpAddr::V6(Ipv6Addr::from(a.sin6_addr.__u6_addr.__u6_addr8)),
+                    IpAddr::V6(Ipv6Addr::from(in6_bytes(&a.sin6_addr))),
                     u16::from_be(a.sin6_port),
                 ))
             }
@@ -51,7 +78,11 @@ pub fn to_sockaddr_storage(addr: &SocketAddr, port_override: Option<u16>) -> zt:
     match addr.ip() {
         IpAddr::V4(v4) => unsafe {
             let a = &mut *(&mut ss as *mut _ as *mut zt::sockaddr_in);
-            a.sin_len = std::mem::size_of::<zt::sockaddr_in>() as u8;
+            // sin_len 仅 BSD 布局存在(glibc 无此字段)
+            #[cfg(target_os = "macos")]
+            {
+                a.sin_len = std::mem::size_of::<zt::sockaddr_in>() as u8;
+            }
             a.sin_family = zt::AF_INET as _;
             a.sin_port = port;
             // octets 即目标内存字节序(网络序);from_ne_bytes 保证存回去不变
@@ -59,10 +90,13 @@ pub fn to_sockaddr_storage(addr: &SocketAddr, port_override: Option<u16>) -> zt:
         },
         IpAddr::V6(v6) => unsafe {
             let a = &mut *(&mut ss as *mut _ as *mut zt::sockaddr_in6);
-            a.sin6_len = std::mem::size_of::<zt::sockaddr_in6>() as u8;
+            #[cfg(target_os = "macos")]
+            {
+                a.sin6_len = std::mem::size_of::<zt::sockaddr_in6>() as u8;
+            }
             a.sin6_family = zt::AF_INET6 as _;
             a.sin6_port = port;
-            a.sin6_addr.__u6_addr.__u6_addr8 = v6.octets();
+            set_in6_bytes(&mut a.sin6_addr, v6.octets());
         },
     }
     ss

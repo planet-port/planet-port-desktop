@@ -12,5 +12,11 @@ libc = "0.2"
 # default-features = false 关掉 address-management(Linux/Windows 用的 netconfig-rs,
 # macOS 上地址配置走 DeviceImpl 自身 ioctl + route_manager,不依赖该 feature)
 tun-rs = { version = "2", default-features = false }
-# route_manager:BSD 路由 socket 应用 managed 路由,Apache-2.0
+# route_manager:BSD 路由 socket / netlink 应用 managed 路由,Apache-2.0
 route_manager = "0.2"
+
+# Linux 无 DeviceImpl 自带地址配置,须开 tun-rs 的 address-management
+# (netconfig-rs) 提供 add_address_v4 / remove_address;目标级声明与上方合并,
+# 仅在为 Linux/Windows 构建时生效,macOS 构建不受影响
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+tun-rs = { version = "2", default-features = false, features = ["address-management"] }

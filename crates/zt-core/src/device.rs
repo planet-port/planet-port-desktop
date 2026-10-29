@@ -168,17 +168,24 @@ impl DevicePlane {
         // MAC 必须等于核心分配的虚拟网 MAC,否则内核 ARP/交换行为与核心不一致
         let mac = mac_bytes(cfg.mac);
         // 设备名不指定:内核 SIOCIFCREATE 自动取空闲 feth 单元号,与本机官方
-        // zerotier-one 的 feth194/345/1986/2527/4684 天然不冲突;Drop 自动销毁
-        let mut b = tun_rs::DeviceBuilder::new()
+        // zerotier-one 的 feth194/345/1986/2527/4684 天然不冲突;Drop 自动销毁。
+        // L2(feth)下 tun-rs 强制 associate_route=false,路由全部由本模块管理;
+        // Linux(TAP)本身不自动挂路由,无需该调用
+        #[cfg(target_os = "macos")]
+        let b = tun_rs::DeviceBuilder::new()
+            .layer(tun_rs::Layer::L2)
+            .mtu(mtu)
+            .mac_addr(mac)
+            .enable(true)
+            .with(|o| {
+                o.associate_route(false);
+            });
+        #[cfg(not(target_os = "macos"))]
+        let b = tun_rs::DeviceBuilder::new()
             .layer(tun_rs::Layer::L2)
             .mtu(mtu)
             .mac_addr(mac)
             .enable(true);
-        // L2(feth)下 tun-rs 强制 associate_route=false,路由全部由本模块管理
-        b = b.with(|o| {
-            #[cfg(target_os = "macos")]
-            o.associate_route(false);
-        });
         let dev = b.build_sync()?;
         let name = dev.name()?;
         let if_index = dev.if_index().map_err(|e| {

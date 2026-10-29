@@ -8,9 +8,9 @@ pub const DEFAULT_API_PORT: u16 = 9998;
 
 /// config 目录三级解析:
 /// ① env `PLANET_PORT_CONFIG_DIR`(开发/测试显式指定);
-/// ② `/Library/Application Support/planet-portd` 已存在则用之(service/LaunchDaemon 安装态:
-///    daemon 以 root 运行时 HOME=/var/root,dirs::config_dir() 会解析到 /var/root/Library/...,
-///    与普通用户 CLI 解析结果不一致,故复用已存在的系统目录保证两端落到同一目录);
+/// ② 系统目录已存在则用之(service 安装态:daemon 以 root 运行时 HOME 指向
+///    /var/root(macOS)或 /root(Linux),dirs::config_dir() 会与普通用户 CLI
+///    解析结果不一致,故复用已存在的系统目录保证两端落到同一目录);
 /// ③ `dirs::config_dir()/planet-portd`(用户级回退,开发期)。
 pub fn config_dir() -> PathBuf {
     // 空字符串等同未设置,避免 PathBuf("") 泄漏为相对路径
@@ -19,7 +19,11 @@ pub fn config_dir() -> PathBuf {
             return PathBuf::from(d);
         }
     }
+    // 系统目录:macOS 为 LaunchDaemon 安装路径,Linux 对齐 zerotier-one 的 /var/lib 惯例
+    #[cfg(target_os = "macos")]
     let system_dir = PathBuf::from("/Library/Application Support/planet-portd");
+    #[cfg(not(target_os = "macos"))]
+    let system_dir = PathBuf::from("/var/lib/planet-portd");
     if system_dir.is_dir() {
         return system_dir;
     }
