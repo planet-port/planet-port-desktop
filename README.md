@@ -13,6 +13,22 @@ docs/superpowers/specs/2026-10-28-cli-api-design.md。
 | planet-portd | 真实 daemon(内嵌 zt-core,管理多 planet 实例) |
 | planet-port | CLI 薄客户端 |
 
+## 安装(macOS)
+
+```bash
+# 一条命令:下载二进制 + 装软链 + 装 launchd 服务并启动
+curl -fsSL https://raw.githubusercontent.com/planet-port/planet-port-desktop/main/scripts/install.sh | sudo bash
+
+# 指定版本 / 只装二进制不装服务
+curl -fsSL https://raw.githubusercontent.com/planet-port/planet-port-desktop/main/scripts/install.sh | sudo bash -s -- v0.1.1 --no-service
+
+# 卸载(数据目录默认保留;--purge 彻底清除)
+sudo bash scripts/uninstall.sh [--purge]
+```
+
+二进制落在 `/Library/Application Support/planet-portd/bin/`,`/usr/local/bin/planet-port` 为软链;
+升级重跑安装脚本即可(停止前记录运行中的 planet,装完自动拉回)。
+
 ## 开发联调
 
 ```bash
