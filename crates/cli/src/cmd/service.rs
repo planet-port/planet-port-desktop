@@ -76,17 +76,34 @@ fn install() {
         eprintln!("无法定位当前可执行文件: {e}");
         std::process::exit(1);
     });
+    // 拷贝源是 CLI 同目录的 daemon 二进制 planet-portd,不是 CLI 自己:
+    // current_exe 直接拿会拷成 CLI,plist 以 --config-dir 调它,clap 解析
+    // 失败 exit 2,KeepAlive 反复拉起反复崩。从 daemon 自身(同名)运行
+    // install 时才用自身
+    let src = if exe.file_name().and_then(|n| n.to_str()) == Some("planet-portd") {
+        exe.clone()
+    } else {
+        let sibling = exe.parent().unwrap_or_else(|| Path::new(".")).join("planet-portd");
+        if !sibling.exists() {
+            eprintln!(
+                "在 {} 旁未找到 daemon 二进制 planet-portd,请先构建 daemon",
+                exe.parent().map(|p| p.display().to_string()).unwrap_or_default()
+            );
+            std::process::exit(1);
+        }
+        sibling
+    };
     let bin_dir = Path::new(BIN_PATH).parent().unwrap().to_path_buf();
     if let Err(e) = fs::create_dir_all(&bin_dir) {
         eprintln!("无法创建目录 {}: {e}", bin_dir.display());
         std::process::exit(1);
     }
     // 从已安装路径运行 install 时跳过自拷贝(fs::copy 同路径会失败)
-    let same = fs::canonicalize(&exe).ok().zip(fs::canonicalize(BIN_PATH).ok())
+    let same = fs::canonicalize(&src).ok().zip(fs::canonicalize(BIN_PATH).ok())
         .map(|(a, b)| a == b)
         .unwrap_or(false);
     if !same {
-        copy_exe(&exe, BIN_PATH);
+        copy_exe(&src, BIN_PATH);
     }
     if let Err(e) = fs::set_permissions(BIN_PATH, fs::Permissions::from_mode(0o755)) {
         eprintln!("设置 {BIN_PATH} 权限失败: {e}");
@@ -124,7 +141,6 @@ fn install() {
     if let Err(stderr) = launchctl_output(&["bootstrap", "system/", PLIST_PATH]) {
         if stderr.to_lowercase().contains("already bootstrapped") {
             println!("服务 {LABEL} 已被 launchd 装载,跳过 bootstrap");
-            println!("如需重新拉起: sudo planet-port service start");
             return;
         }
         eprintln!("launchctl bootstrap 失败: {}", stderr.trim());
@@ -135,8 +151,6 @@ fn install() {
     println!("  二进制: {BIN_PATH}");
     println!("  配置:   {PLIST_PATH}");
     println!("  数据:   {APP_DIR}");
-    println!("daemon 已随装载启动(RunAtLoad=true),无需再执行 start;");
-    println!("崩溃(异常退出)时 launchd 会自动重启;仅手动 stop 后需要拉起时: sudo planet-port service start");
 }
 
 /// 二进制更新用「临时文件 + rename」原子替换:直接 fs::copy 覆盖正在运行的
@@ -175,8 +189,7 @@ fn uninstall() {
         let _ = fs::remove_dir(dir);
     }
     println!("已删除 {PLIST_PATH} 与 {BIN_PATH}");
-    println!("注意:数据目录 {APP_DIR} 已保留(planet 文件、registry、token 等)。");
-    println!("如需彻底清理,请手动执行: sudo rm -rf \"{APP_DIR}\"");
+    println!("数据目录已保留:{APP_DIR}");
 }
 
 fn start() {
@@ -184,7 +197,6 @@ fn start() {
     // 只管异常退出后的自动重启,手动 stop(exit 0)不会被拉回
     launchctl(&["kickstart", "-k", &format!("system/{LABEL}")]);
     println!("已请求启动 {LABEL}");
-    println!("查看状态: planet-port service status");
 }
 
 fn stop() {
@@ -202,9 +214,45 @@ fn status(json: bool) -> Result<(), CliError> {
         Ok(v) => {
             let port = read_port_file().unwrap_or_else(|| port_of(client.base()));
             if json {
-                print_json(&serde_json::json!({ "running": true, "port": port, "version": v }));
+                let planets = client
+                    .get_json(endpoints::status())
+                    .ok()
+                    .and_then(|s| s.get("planets").cloned())
+                    .unwrap_or_else(|| serde_json::json!([]));
+                print_json(&serde_json::json!({
+                    "running": true, "port": port, "version": v, "planets": planets
+                }));
             } else {
                 println!("运行中(端口 {port})");
+                // planet 概览:名称 + 在线状态;daemon 在但无 planet 也一眼可见
+                match client.get_json(endpoints::status()) {
+                    Ok(s) => {
+                        if let Some(planets) = s.get("planets").and_then(|p| p.as_array()) {
+                            if planets.is_empty() {
+                                println!("  尚未登记任何 planet");
+                            }
+                            for p in planets {
+                                let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                                let state = if p.get("online").and_then(|v| v.as_bool()).unwrap_or(false) {
+                                    // API 序列化为 camelCase(latencyMs/networkCount)
+                                    let ms = p.get("latencyMs").and_then(|v| v.as_u64());
+                                    match ms {
+                                        Some(ms) => format!("ONLINE {ms}ms"),
+                                        None => "ONLINE".into(),
+                                    }
+                                } else if p.get("status").and_then(|v| v.as_str()) == Some("running") {
+                                    "连接中".into()
+                                } else {
+                                    "stopped".into()
+                                };
+                                let nets = p.get("networkCount").and_then(|v| v.as_u64()).unwrap_or(0);
+                                println!("  {name}: {state},网络 {nets} 个");
+                            }
+                        }
+                    }
+                    Err(CliError::Api(401, _)) => {}
+                    Err(_) => println!("  (planet 列表获取失败)"),
+                }
             }
             return Ok(());
         }
@@ -221,7 +269,6 @@ fn status(json: bool) -> Result<(), CliError> {
     // 不在线:看 plist 是否存在判断「未安装」vs「已安装未运行」
     if !Path::new(PLIST_PATH).exists() {
         println!("未安装(找不到 {PLIST_PATH})");
-        println!("安装: sudo planet-port service install");
         return Ok(());
     }
     println!("已安装但未在运行");
@@ -238,13 +285,9 @@ fn status(json: bool) -> Result<(), CliError> {
                 print!(",上次退出码 {c}");
             }
             println!();
-            if last.as_deref().map(|c| c != "0").unwrap_or(false) {
-                println!("  提示:上次异常退出,可查看日志: launchctl print system/{LABEL} | tail");
-            }
         }
-        Err(_) => println!("  未被 launchd 加载(可能尚未 bootstrap)"),
+        Err(_) => println!("  未被 launchd 加载"),
     }
-    println!("启动: sudo planet-port service start");
     Ok(())
 }
 
@@ -271,6 +314,10 @@ fn plist_content(bin: &str) -> String {
         <key>SuccessfulExit</key>
         <false/>
     </dict>
+    <key>StandardOutPath</key>
+    <string>{APP_DIR}/daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>{APP_DIR}/daemon.log</string>
 </dict>
 </plist>
 "#
