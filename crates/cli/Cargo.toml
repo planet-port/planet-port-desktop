@@ -7,7 +7,8 @@ license.workspace = true
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
 ureq = "3"
-comfy-table = "7"
+# 表格列宽按显示宽度对齐(CJK 全角占 2);树内已有该依赖
+unicode-width = "0.1"
 serde.workspace = true
 serde_json.workspace = true
 planet-port-api = { path = "../api" }
