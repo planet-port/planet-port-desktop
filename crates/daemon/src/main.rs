@@ -6,6 +6,7 @@
 mod api_misc;
 mod api_net;
 mod api_planet;
+mod cleanup;
 mod dns;
 mod events;
 mod registry;
@@ -333,6 +334,18 @@ async fn main() {
         tokio::task::spawn_blocking(move || dns::restore_leftover(&dir_for_dns, &events))
             .await
             .map_err(|e| eprintln!("[boot] DNS 残留清理任务失败: {e}"))
+            .ok();
+    }
+
+    // 4.6 崩溃孤儿 feth 清扫(kill -9 未走 stop 路径):上次运行登记的
+    // feth 设备对连同其上的路由会残留,本轮新建 pair 后路由因 EEXIST 装不上。
+    // 在恢复 planet 之前销毁登记在册的孤儿;只动 registry 登记过的名字,
+    // 绝不枚举系统 feth(官方 zerotier-one 的常驻 feth 不能误伤)
+    {
+        let st = state.clone();
+        tokio::task::spawn_blocking(move || cleanup::destroy_leftover(&st))
+            .await
+            .map_err(|e| eprintln!("[boot] feth 孤儿清扫任务失败: {e}"))
             .ok();
     }
 

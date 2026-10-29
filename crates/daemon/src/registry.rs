@@ -42,6 +42,10 @@ pub struct RegistryEntry {
     pub net_local: HashMap<String, NetLocal>,
     #[serde(default)]
     pub moons: Vec<MoonRecord>,
+    /// 该 planet 当前占用的 feth 设备名(dev 端);启动清扫孤儿用,
+    /// 优雅退出/teardown 时清空
+    #[serde(default)]
+    pub ifaces: Vec<String>,
 }
 
 /// 单个网络的本地配置(route/dns 策略)

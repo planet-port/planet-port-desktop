@@ -391,6 +391,7 @@ pub async fn planets_import(
         running: false,
         net_local: Default::default(),
         moons: Vec::new(),
+        ifaces: Vec::new(),
     };
     reg.planets.push(entry);
     reg.save(&st.config_dir)

@@ -112,6 +112,9 @@ impl NodeSink for DaemonSink {
         match op {
             NetConfigOp::Down | NetConfigOp::Destroy => {
                 lock(&self.plane).teardown(nwid);
+                // 设备已拆,feth 登记随之收敛(崩溃孤儿清扫依据,见下)
+                let ifaces = lock(&self.plane).iface_names();
+                self.sync_iface_registry(&ifaces);
                 let cleared = lock(&self.net_cache).remove(&(self.planet_id.clone(), nwid)).is_some();
                 if cleared {
                     self.clear_conflict(nwid);
@@ -134,6 +137,10 @@ impl NodeSink for DaemonSink {
                     cfg.routes.clear();
                 }
                 let r = lock(&self.plane).apply(&cfg, &self.frame_tx);
+                // feth 登记落盘必须在崩溃前完成:此刻就把当前设备名快照写进
+                // registry,kill -9 后启动清扫才有依据(见 sync_iface_registry)
+                let ifaces = lock(&self.plane).iface_names();
+                self.sync_iface_registry(&ifaces);
                 // 快照先行更新,再据此扫描冲突(快照即本网络的对外网段事实)
                 let had_conflict = self.update_snapshot(nwid, &cfg);
                 let hit = self.scan_conflicts(nwid, &cfg);
@@ -220,6 +227,41 @@ impl NodeSink for DaemonSink {
 }
 
 impl DaemonSink {
+    /// 把当前 feth 设备名快照登记进 registry(崩溃孤儿清扫的依据:kill -9
+    /// 后 Drop 不执行,只有落过盘的名字才可能在下次启动被销毁)。
+    ///
+    /// 本函数在驱动线程被调:只做 plane 短锁取快照 + spawn,锁与 IO 全在
+    /// 任务内(见模块注释的 sink 红线);快照与登记值一致时跳过写盘,
+    /// netconf 反复 ConfigUpdate 不会反复落盘;entry 已不运行(并发收尾已
+    /// 置 running=false)时跳过,避免把快照写回已清空的登记。
+    fn sync_iface_registry(&self, ifaces: &[String]) {
+        // HashMap 遍历序不定,排序后比对/落盘,避免同值不同序误判变更
+        let mut names: Vec<String> = ifaces.to_vec();
+        names.sort();
+        let app = self.app.clone();
+        let pid = self.planet_id.clone();
+        let handle = self.rt.spawn(async move {
+            let _ = tokio::task::spawn_blocking(move || {
+                let mut reg = app
+                    .registry
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) else {
+                    return;
+                };
+                if !e.running || e.ifaces == names {
+                    return;
+                }
+                e.ifaces = names;
+                if let Err(err) = reg.save(&app.config_dir) {
+                    eprintln!("[runtime] registry 写盘失败: {err}");
+                }
+            })
+            .await;
+        });
+        drop(handle);
+    }
+
     /// 更新本网络快照;返回「更新前是否带冲突标记」(供冲突消除事件判定)。
     /// 仅 status=Ok 时登记(REQUESTING 等阶段 assigned/routes 无意义)。
     fn update_snapshot(&self, nwid: u64, cfg: &NetConfig) -> bool {
@@ -517,6 +559,9 @@ async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>) {
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == rt.planet_id) {
             e.running = false;
             e.last_node_id = None;
+            // 设备已随 teardown 销毁,登记清空(sink 后续的登记任务见
+            // running=false 也会自行跳过)
+            e.ifaces.clear();
         }
         if let Err(e) = reg.save(&state.config_dir) {
             eprintln!("[runtime] registry 写盘失败: {e}");

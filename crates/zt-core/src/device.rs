@@ -119,6 +119,12 @@ impl DevicePlane {
         !self.devices.is_empty()
     }
 
+    /// 当前全部网络的 feth 设备名快照(dev 端;I/O peer 端由内核配对,
+    /// 清扫时经 ifconfig 解析)
+    pub fn iface_names(&self) -> Vec<String> {
+        self.devices.values().map(|d| d.if_name.clone()).collect()
+    }
+
     /// 指定网络的设备名(未建返回 None)。
     pub fn if_name_of(&self, nwid: u64) -> Option<&str> {
         self.devices.get(&nwid).map(|d| d.if_name.as_str())
