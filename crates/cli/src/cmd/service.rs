@@ -27,6 +27,11 @@ const LEGACY_LABEL: &str = "com.planetport.daemon";
 const LEGACY_PLIST_PATH: &str = "/Library/LaunchDaemons/com.planetport.daemon.plist";
 const APP_DIR: &str = "/Library/Application Support/planet-portd";
 const BIN_PATH: &str = "/Library/Application Support/planet-portd/bin/planet-portd";
+// 日志放 /Library/Logs:路径无空格(newsyslog.conf 不支持带空格的文件名),
+// 且是 macOS 约定的系统级日志位置,Console.app 可直接浏览
+const LOG_DIR: &str = "/Library/Logs/planet-portd";
+const LOG_PATH: &str = "/Library/Logs/planet-portd/daemon.log";
+const NEWSYSLOG_CONF: &str = "/etc/newsyslog.d/planet-portd.conf";
 
 #[derive(Clone, clap::Subcommand)]
 pub enum ServiceCmd {
@@ -126,6 +131,25 @@ fn install() {
         std::process::exit(1);
     }
 
+    // 2.5 日志目录 + newsyslog 轮转:launchd 不轮转 StandardErrorPath,
+    // 无界增长;注册系统级 newsyslog(超 5MB 压缩滚动,保留 3 份)。
+    // 失败只警告不阻断——轮转缺失不该挡住安装
+    if let Err(e) = fs::create_dir_all(LOG_DIR) {
+        eprintln!("创建 {LOG_DIR} 失败(日志仍写到该路径,由 daemon 自行创建): {e}");
+    }
+    let rotation = format!(
+        "# logfilename          owner:group mode count size when  flags\n\
+         {LOG_PATH}           root:admin  644  3     5120 *     J\n"
+    );
+    if let Err(e) = fs::write(NEWSYSLOG_CONF, rotation) {
+        eprintln!("写入 {NEWSYSLOG_CONF} 失败(daemon.log 不会被系统轮转): {e}");
+    }
+    // 旧版日志曾落数据目录,搬过来保留历史
+    let legacy_log = format!("{APP_DIR}/daemon.log");
+    if Path::new(&legacy_log).exists() && !Path::new(LOG_PATH).exists() {
+        let _ = fs::rename(&legacy_log, LOG_PATH);
+    }
+
     // 3. 清理旧版标识(com.planetport.daemon):bootout + 删 plist,
     //    残留的旧 plist 会在开机时把旧服务再拉起来,与新版并存
     if Path::new(LEGACY_PLIST_PATH).exists() {
@@ -207,6 +231,13 @@ fn uninstall() {
     if let Some(dir) = Path::new(BIN_PATH).parent() {
         let _ = fs::remove_dir(dir);
     }
+    // 轮转配置与日志目录一并清理;日志文件留给用户查阅,不替用户删
+    let _ = fs::remove_file(NEWSYSLOG_CONF);
+    if let Ok(mut entries) = fs::read_dir(LOG_DIR) {
+        if entries.next().is_none() {
+            let _ = fs::remove_dir(LOG_DIR);
+        }
+    }
     println!("已删除 {PLIST_PATH} 与 {BIN_PATH}");
     println!("数据目录已保留:{APP_DIR}");
 }
@@ -222,13 +253,18 @@ fn probe_online() -> Option<u16> {
     }
 }
 
-/// 轮询等待 daemon 到达期望状态(online=true 等上线,false 等退出),
-/// 达成返回 true,超时返回 false。每次探测都按新 port 文件构造:
-/// 启动可能绑定新端口,旧值会失效
-fn wait_daemon_state(online: bool, timeout: std::time::Duration) -> bool {
+/// 读取 launchd 记录的服务 pid(pid = 0 或无此键 = 未在运行)
+fn service_pid() -> Option<u32> {
+    let out = launchctl_output_quiet(&["print", &format!("system/{LABEL}")]).ok()?;
+    kv(&out, "pid").and_then(|p| p.parse().ok()).filter(|p| *p != 0)
+}
+
+/// 轮询等待 daemon HTTP 接口应答(在线),达成返回 true,超时返回 false。
+/// 每次探测都按新 port 文件构造:启动可能绑定新端口,旧值会失效
+fn wait_online(timeout: std::time::Duration) -> bool {
     let deadline = std::time::Instant::now() + timeout;
     loop {
-        if probe_online().is_some() == online {
+        if probe_online().is_some() {
             return true;
         }
         if std::time::Instant::now() >= deadline {
@@ -241,15 +277,23 @@ fn wait_daemon_state(online: bool, timeout: std::time::Duration) -> bool {
 fn start() {
     // -k:已在运行则先杀再拉(幂等重启);KeepAlive={SuccessfulExit=false}
     // 只管异常退出后的自动重启,手动 stop(exit 0)不会被拉回
+    let old_pid = service_pid();
     launchctl(&["kickstart", "-k", &format!("system/{LABEL}")]);
-    // 等到 HTTP 接口应答才算启动完成:拉起失败(二进制损坏/崩溃循环)时
-    // 在此暴露,而不是让用户自己去查 launchctl
-    match wait_daemon_state(true, std::time::Duration::from_secs(15)) {
+    // 重启场景先等旧 pid 消失再等新实例应答:kickstart 返回时旧实例可能
+    // 仍在优雅退出并应答 HTTP,首轮探测会命中它误报成功(端口还可能是
+    // 旧值,新实例若在崩溃循环则完全未被验证)
+    if old_pid.is_some() {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while service_pid() == old_pid && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+    }
+    match wait_online(std::time::Duration::from_secs(15)) {
         true => {
             let port = probe_online().unwrap_or(0);
             println!("已启动(端口 {port})");
         }
-        false => println!("启动超时(15s),日志: {APP_DIR}/daemon.log"),
+        false => println!("启动超时(15s),日志: {LOG_PATH}"),
     }
 }
 
@@ -257,10 +301,23 @@ fn stop() {
     // TERM 命中 daemon 的信号优雅退出路径:逐 planet 红线收尾后删 port 文件;
     // 退出码 0,KeepAlive 不会把它重新拉起
     launchctl(&["kill", "TERM", &format!("system/{LABEL}")]);
-    // 等优雅退出真正完成(planet 收尾有界但非瞬时),而非只确认信号已发出
-    match wait_daemon_state(false, std::time::Duration::from_secs(15)) {
-        true => println!("已停止"),
-        false => println!("停止超时(15s),日志: {APP_DIR}/daemon.log"),
+    // 以 launchd 的 pid 消失为准:HTTP 探测在 daemon 收尾卡住(假死)时
+    // 会把「超时无应答」误判为已停止;pid 是进程存活的事实
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while service_pid().is_some() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    if service_pid().is_some() {
+        println!("停止超时(15s),进程仍在收尾,日志: {LOG_PATH}");
+        return;
+    }
+    // pid 已消失:优雅退出本不会被 KeepAlive 拉回;若短暂窗口内又上线,
+    // 说明它以非零码退出触发了自动重启,如实报告
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    if probe_online().is_some() {
+        println!("进程已退出,但触发 KeepAlive 自动重启(异常退出码)");
+    } else {
+        println!("已停止");
     }
 }
 
@@ -373,9 +430,9 @@ fn plist_content(bin: &str) -> String {
         <false/>
     </dict>
     <key>StandardOutPath</key>
-    <string>{APP_DIR}/daemon.log</string>
+    <string>{LOG_PATH}</string>
     <key>StandardErrorPath</key>
-    <string>{APP_DIR}/daemon.log</string>
+    <string>{LOG_PATH}</string>
 </dict>
 </plist>
 "#
