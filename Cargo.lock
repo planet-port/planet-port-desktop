@@ -356,6 +356,7 @@ name = "daemon"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "libc",
  "planet-port-api",
  "serde",
  "serde_json",

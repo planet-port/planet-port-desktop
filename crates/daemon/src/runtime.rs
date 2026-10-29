@@ -6,6 +6,8 @@
 //! - DaemonSink 的全部方法在 zt-core 驱动线程被调:只做短临界区 Mutex
 //!   (plane/net_local/net_cache/conflicts/Ring)+ 设备操作,绝不调用
 //!   node.join/leave/orbit(阻塞应答 = 自等自死锁),绝不取 registry 锁;
+//!   需要异步收尾的动作(Fatal 自动 stop、DNS 写系统 resolver)只经构造时
+//!   存入的 `tokio::runtime::Handle` spawn 出去,sink 内绝不等待;
 //! - start 在 `spawn_blocking` 执行(NodeHandle::start 含首次
 //!   processBackgroundTasks 与 identity 生成/装载,毫秒级阻塞);成功后按
 //!   registry net_local 逐网络 re-join(核心不持久化成员关系,
@@ -48,6 +50,15 @@ pub struct DaemonSink {
     conflicts: Arc<Mutex<HashMap<u64, String>>>,
     /// 全部 planet 的网段快照(冲突扫描数据源)
     net_cache: NetCache,
+    /// 构造时的 tokio runtime 句柄:sink 在驱动线程,异步收尾(Fatal 自动
+    /// stop、DNS 写系统)全靠它 spawn,自身绝不阻塞等待
+    rt: tokio::runtime::Handle,
+    /// 共享状态的克隆(AppState 全为 Arc):Fatal 自动 stop 与 DNS 路径需要
+    /// config_dir / events / runtime_gate。与 planets map 存在临时引用环,
+    /// stop 摘除 NodeHandle 后即断开,不会泄漏
+    app: AppState,
+    /// Fatal 已触发自动收尾标记(防重入:Fatal 只触发一次 stop_planet)
+    fatal_done: AtomicBool,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -65,10 +76,29 @@ impl NodeSink for DaemonSink {
             NodeEvent::IdentityCollision => ("身份冲突:与本 planet 已有节点地址相同".to_string(), true),
             NodeEvent::Fatal(m) => (format!("致命错误: {m}"), true),
         };
+        // 先记 status 事件,再触发自动收尾:保证 events 里 Fatal 在 autoStopped 之前
+        self.events.push(&self.planet_id, "status", &msg);
         if fatal {
             self.stopping.store(true, Ordering::SeqCst);
+            // Fatal 后核心已不可用,只记事件会留下僵尸实例(占端口/数据目录):
+            // spawn 一次异步收尾(走 stop_planet 正常路径取 runtime_gate),
+            // sink 不等待 —— 收尾任务里 node.shutdown 会 join 本驱动线程,
+            // 若在此同步等待即自等自死锁
+            if !self.fatal_done.swap(true, Ordering::SeqCst) {
+                let app = self.app.clone();
+                let pid = self.planet_id.clone();
+                // daemon 退出中 spawn 会失败:收尾已由 shutdown 路径负责,忽略即可
+                let handle = self.rt.spawn(async move {
+                    app.events.push(
+                        &pid,
+                        "autoStopped",
+                        "因致命错误自动收尾:实例已停止",
+                    );
+                    stop_planet(&app, &pid).await;
+                });
+                drop(handle);
+            }
         }
-        self.events.push(&self.planet_id, "status", &msg);
     }
 
     fn on_net_config(&mut self, nwid: u64, op: NetConfigOp, cfg: NetConfig) {
@@ -300,6 +330,11 @@ pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(),
         net_local: Arc::clone(&net_local),
         conflicts: Arc::clone(&conflicts),
         net_cache: Arc::clone(&state.net_cache),
+        // 当前异步上下文的 runtime 句柄与共享状态:供 sink 在驱动线程发起
+        // Fatal 自动收尾与 DNS 应用(见 DaemonSink 字段注释)
+        rt: tokio::runtime::Handle::current(),
+        app: state.clone(),
+        fatal_done: AtomicBool::new(false),
     };
     let params = NodeParams {
         data_dir: entry.data_dir.clone(),
@@ -436,15 +471,18 @@ async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>) {
         .lock()
         .unwrap()
         .retain(|(p, _), _| *p != rt.planet_id);
-    let mut reg = state.registry.lock().unwrap();
-    if let Some(e) = reg.planets.iter_mut().find(|e| e.id == rt.planet_id) {
-        e.running = false;
-        e.last_node_id = None;
+    // registry 锁放进独立作用域:MutexGuard 非 Send,async fn 的 generator
+    // 按变量作用域判定跨 await 持有,显式 drop 不影响该判定
+    {
+        let mut reg = state.registry.lock().unwrap();
+        if let Some(e) = reg.planets.iter_mut().find(|e| e.id == rt.planet_id) {
+            e.running = false;
+            e.last_node_id = None;
+        }
+        if let Err(e) = reg.save(&state.config_dir) {
+            eprintln!("[runtime] registry 写盘失败: {e}");
+        }
     }
-    if let Err(e) = reg.save(&state.config_dir) {
-        eprintln!("[runtime] registry 写盘失败: {e}");
-    }
-    drop(reg);
     state.events.push(&rt.planet_id, "planetStopped", "planet stopped");
 }
 

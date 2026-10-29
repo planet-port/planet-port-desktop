@@ -120,6 +120,26 @@ fn parse_args() -> Option<PathBuf> {
     config_dir
 }
 
+/// 单实例守卫:对 `<config>/daemon.lock` 取 `flock(LOCK_EX | LOCK_NB)`。
+/// 第二个实例加锁失败即退出,杜绝两个 daemon 共用同一 config 目录互相
+/// 覆写 registry/token/port。锁文件不删除、内容不复用;返回的 File 须存活
+/// 至进程结束(锁随进程退出由内核释放,显式删文件反而会引入竞态)。
+fn acquire_singleton(dir: &Path) -> std::io::Result<fs::File> {
+    use std::os::unix::io::AsRawFd;
+    let path = dir.join("daemon.lock");
+    let f = fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)?;
+    let rc = unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(f)
+}
+
 /// 优雅退出:SIGINT/SIGTERM → 逐 planet 走 stop_planet 红线收尾 → registry
 /// 兜底落盘 → 最后删 port 文件(存在即活性信号,CLI 据此快速判断)。
 /// 作为 `with_graceful_shutdown` 的 future 传入:收尾在服务停止前完成,
@@ -211,6 +231,19 @@ async fn main() {
     let token_path = dir.join("authtoken.secret");
     let port_path = dir.join("port");
 
+    // 1.5 单实例守卫:在任何副作用(写 token/port、起 planet)之前;持锁失败
+    // 即有另一实例在同一 config 目录运行
+    let _singleton = match acquire_singleton(&dir) {
+        Ok(f) => f,
+        Err(_) => {
+            eprintln!(
+                "another planet-portd instance is running (lock: {})",
+                dir.join("daemon.lock").display()
+            );
+            std::process::exit(1);
+        }
+    };
+
     // 2. token:存在则读入,不存在则生成并写 0644
     let token = match fs::read_to_string(&token_path) {
         Ok(t) => {
@@ -261,6 +294,7 @@ async fn main() {
         shares: Arc::new(Mutex::new(HashMap::new())),
         token: Arc::new(token),
     };
+
 
     // 5. 恢复:上次运行时标记 running=true 的逐个重启拉起;
     //    失败(start_planet 内部已登记 planetStartFailed + running=false)则继续

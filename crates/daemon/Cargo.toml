@@ -17,3 +17,5 @@ serde_json.workspace = true
 planet-port-api = { path = "../api" }
 # Task 4 接入 NodeRuntime 时使用,先引入
 zt-core = { path = "../zt-core" }
+# daemon.lock 单实例守卫的 flock(与 cli/zt-core 同版本);MIT/Apache-2.0
+libc = "0.2"
