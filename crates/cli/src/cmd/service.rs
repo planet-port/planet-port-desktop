@@ -2,7 +2,7 @@
 //!
 //! install 把当前 CLI 同目录的 daemon 二进制(current_exe 上溯定位)拷到
 //! `/Library/Application Support/planet-portd/bin/planet-portd` 并写
-//! `/Library/LaunchDaemons/com.planetport.daemon.plist`,之后经 launchctl
+//! `/Library/LaunchDaemons/cn.imgozi.d.planetport.daemon.plist`,之后经 launchctl
 //! bootstrap 装载。plist 指向拷贝而非 target/debug 原路径:构建产物路径不稳定。
 //! KeepAlive={SuccessfulExit=false}:崩溃/被强杀等异常退出由 launchd 自动
 //! 重启,SIGTERM 优雅退出(exit 0)不重启。
@@ -18,8 +18,13 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
-const LABEL: &str = "com.planetport.daemon";
-const PLIST_PATH: &str = "/Library/LaunchDaemons/com.planetport.daemon.plist";
+// 服务标识对齐 iOS 反向域名命名规则(cn.imgozi.d 前缀);plist 文件名与
+// label 保持一致。旧版曾用 com.planetport.daemon,install/uninstall 时
+// 一并清理,避免开机时旧服务被重复拉起
+const LABEL: &str = "cn.imgozi.d.planetport.daemon";
+const PLIST_PATH: &str = "/Library/LaunchDaemons/cn.imgozi.d.planetport.daemon.plist";
+const LEGACY_LABEL: &str = "com.planetport.daemon";
+const LEGACY_PLIST_PATH: &str = "/Library/LaunchDaemons/com.planetport.daemon.plist";
 const APP_DIR: &str = "/Library/Application Support/planet-portd";
 const BIN_PATH: &str = "/Library/Application Support/planet-portd/bin/planet-portd";
 
@@ -121,7 +126,15 @@ fn install() {
         std::process::exit(1);
     }
 
-    // 3. 装载(RunAtLoad=true:bootstrap 装载即拉起一次,随开机自动启动;
+    // 3. 清理旧版标识(com.planetport.daemon):bootout + 删 plist,
+    //    残留的旧 plist 会在开机时把旧服务再拉起来,与新版并存
+    if Path::new(LEGACY_PLIST_PATH).exists() {
+        let _ = launchctl_output(&["bootout", &format!("system/{LEGACY_LABEL}")]);
+        let _ = fs::remove_file(LEGACY_PLIST_PATH);
+        println!("已清理旧版服务标识 {LEGACY_LABEL}");
+    }
+
+    // 4. 装载(RunAtLoad=true:bootstrap 装载即拉起一次,随开机自动启动;
     //    KeepAlive={SuccessfulExit=false}:仅异常退出(非零码/信号)时
     //    launchd 自动重启,SIGTERM 优雅退出(exit 0)不重启)。
     //    重复安装幂等:先 bootout 卸掉已加载的旧服务(未加载属预期),
@@ -183,6 +196,12 @@ fn uninstall() {
         }
     }
     let _ = fs::remove_file(PLIST_PATH);
+    // 旧版标识一并清理(可能同时存在)
+    if Path::new(LEGACY_PLIST_PATH).exists() {
+        let _ = launchctl_output(&["bootout", &format!("system/{LEGACY_LABEL}")]);
+        let _ = fs::remove_file(LEGACY_PLIST_PATH);
+        println!("已清理旧版服务标识 {LEGACY_LABEL}");
+    }
     let _ = fs::remove_file(BIN_PATH);
     // bin 目录若已空则一并移除(数据目录保留)
     if let Some(dir) = Path::new(BIN_PATH).parent() {
@@ -192,18 +211,57 @@ fn uninstall() {
     println!("数据目录已保留:{APP_DIR}");
 }
 
+/// 探测 daemon 是否在线:HTTP 有应答(含 401)即在线,返回端口
+fn probe_online() -> Option<u16> {
+    let client = Client::new_lenient(None);
+    match client.get_json(endpoints::version()) {
+        Ok(_) | Err(CliError::Api(..)) => {
+            Some(read_port_file().unwrap_or_else(|| port_of(client.base())))
+        }
+        Err(_) => None,
+    }
+}
+
+/// 轮询等待 daemon 到达期望状态(online=true 等上线,false 等退出),
+/// 达成返回 true,超时返回 false。每次探测都按新 port 文件构造:
+/// 启动可能绑定新端口,旧值会失效
+fn wait_daemon_state(online: bool, timeout: std::time::Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if probe_online().is_some() == online {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(400));
+    }
+}
+
 fn start() {
     // -k:已在运行则先杀再拉(幂等重启);KeepAlive={SuccessfulExit=false}
     // 只管异常退出后的自动重启,手动 stop(exit 0)不会被拉回
     launchctl(&["kickstart", "-k", &format!("system/{LABEL}")]);
-    println!("已请求启动 {LABEL}");
+    // 等到 HTTP 接口应答才算启动完成:拉起失败(二进制损坏/崩溃循环)时
+    // 在此暴露,而不是让用户自己去查 launchctl
+    match wait_daemon_state(true, std::time::Duration::from_secs(15)) {
+        true => {
+            let port = probe_online().unwrap_or(0);
+            println!("已启动(端口 {port})");
+        }
+        false => println!("启动超时(15s),日志: {APP_DIR}/daemon.log"),
+    }
 }
 
 fn stop() {
     // TERM 命中 daemon 的信号优雅退出路径:逐 planet 红线收尾后删 port 文件;
     // 退出码 0,KeepAlive 不会把它重新拉起
     launchctl(&["kill", "TERM", &format!("system/{LABEL}")]);
-    println!("已发送 SIGTERM,{LABEL} 将优雅退出");
+    // 等优雅退出真正完成(planet 收尾有界但非瞬时),而非只确认信号已发出
+    match wait_daemon_state(false, std::time::Duration::from_secs(15)) {
+        true => println!("已停止"),
+        false => println!("停止超时(15s),日志: {APP_DIR}/daemon.log"),
+    }
 }
 
 fn status(json: bool) -> Result<(), CliError> {

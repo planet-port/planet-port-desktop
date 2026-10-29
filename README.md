@@ -149,9 +149,9 @@ planet 实例,按以下顺序解析:
 
 | 命令 | 说明 |
 |---|---|
-| `service install` | 需 root:拷贝二进制到 `/Library/Application Support/planet-portd/bin/planet-portd`,写 `/Library/LaunchDaemons/com.planetport.daemon.plist` 并 `launchctl bootstrap system/`;RunAtLoad=true(装载即随开机启动)、KeepAlive={SuccessfulExit=false}(崩溃等异常退出自动拉起,SIGTERM 优雅退出不拉起) |
+| `service install` | 需 root:拷贝二进制到 `/Library/Application Support/planet-portd/bin/planet-portd`,写 `/Library/LaunchDaemons/cn.imgozi.d.planetport.daemon.plist` 并 `launchctl bootstrap system/`;RunAtLoad=true(装载即随开机启动)、KeepAlive={SuccessfulExit=false}(崩溃等异常退出自动拉起,SIGTERM 优雅退出不拉起) |
 | `service uninstall` | 需 root:`launchctl bootout` + 删 plist 与拷贝的二进制;**数据目录保留**,提示手动 `rm -rf` |
-| `service start` | 需 root:`launchctl kickstart -k system/com.planetport.daemon` |
+| `service start` | 需 root:`launchctl kickstart -k system/cn.imgozi.d.planetport.daemon` |
 | `service stop` | 需 root:`launchctl kill TERM …`,命中 daemon 的信号优雅退出路径(逐 planet 红线收尾) |
 | `service status` | 无需 root:ping `/version` 成功 → `运行中(端口 N)`(N 取自 port 文件);失败时按 plist 是否存在区分「未安装」/「已安装未运行」并给出 launchctl 状态摘要 |
 
