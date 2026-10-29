@@ -227,12 +227,12 @@ fn resolve_planets(
             (planet_flag, None)
         }
         PlanetNeed::Events => {
-            // events 必须落到具体 planet:显式指定 > 仅一个 planet 自动 > 交互单选;
-            // 非交互且多 planet → 用法错误(候选含已停止的 planet,事件是历史记录)
+            // 与 dump 同款定位:显式 > 单 running 自动 > 交互单选 / 非交互报错。
+            // daemon 的 /events 端点是过滤语义(无歧义判定),歧义由 CLI 兜住
             if planet_flag.is_some() {
                 return (planet_flag, None);
             }
-            if let Some(opts) = fetch_options(client, false) {
+            if let Some(opts) = fetch_options(client, true) {
                 match opts.len() {
                     1 => return (Some(opts[0].id.clone()), None),
                     0 => {}
@@ -243,7 +243,7 @@ fn resolve_planets(
                         };
                     }
                     n => {
-                        eprintln!("error: events 需要指定 --planet(当前 {n} 个 planet)");
+                        eprintln!("error: events 需要指定 --planet(当前 {n} 个 running planet)");
                         std::process::exit(2);
                     }
                 }

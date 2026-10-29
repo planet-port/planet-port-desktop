@@ -18,8 +18,8 @@
 交互式终端且未显式指定 planet 时,多 planet 场景弹选择列表:
 
 - **变更类命令**(join / leave / set / orbit / deorbit / dump / moon import)单选:
-  ↑↓ 移动,回车确认;**events** 同为单选但候选含已停止 planet,且仅一个 planet 时自动选中,非交互多 planet 报用法错误;
-- **可批量查询命令**(info / list / listnetworks / listpeers / listmoons / events)多选:
+  ↑↓ 移动,回车确认;**events** 同为单选且与 dump 定位一致(仅 running 候选,单 running 自动,非交互多 running 报用法错误);
+- **可批量查询命令**(info / list / listnetworks / listpeers / listmoons)多选:
   含「<全部>」首项,空格勾选,回车确认;空选或勾「全部」= 聚合全部,子集 = 按选中过滤;
 - Esc / Ctrl+C 取消,退出码 130;非 TTY(管道/脚本)或 `-j` 模式不弹列表。
 
@@ -32,7 +32,7 @@
 | `listnetworks [--planet]` | 跨 planet 网络列表(含 PLANET 列) |
 | `listpeers [--planet]` | peer 列表,按 planet 分组 |
 | `dump [--planet]` | 单一 planet 状态 dump(networks/peers/events);歧义时报候选 |
-| `events [--planet] [--limit N] [--follow]` | 事件日志;**必须指定 planet**(仅一个 planet 时自动),默认取 40 条,`--follow` 增量轮询 |
+| `events [--planet] [--limit N] [--follow]` | 事件日志;定位与 dump 同款(**必须指定 planet**,单 running 自动),默认取 40 条,`--follow` 增量轮询 |
 
 ## 网络操作(需 planet 定位)
 
