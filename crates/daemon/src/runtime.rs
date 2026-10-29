@@ -113,8 +113,7 @@ impl NodeSink for DaemonSink {
             NetConfigOp::Down | NetConfigOp::Destroy => {
                 lock(&self.plane).teardown(nwid);
                 // 设备已拆,feth 登记随之收敛(崩溃孤儿清扫依据,见下)
-                let ifaces = lock(&self.plane).iface_names();
-                self.sync_iface_registry(&ifaces);
+                self.sync_iface_registry();
                 let cleared = lock(&self.net_cache).remove(&(self.planet_id.clone(), nwid)).is_some();
                 if cleared {
                     self.clear_conflict(nwid);
@@ -139,8 +138,7 @@ impl NodeSink for DaemonSink {
                 let r = lock(&self.plane).apply(&cfg, &self.frame_tx);
                 // feth 登记落盘必须在崩溃前完成:此刻就把当前设备名快照写进
                 // registry,kill -9 后启动清扫才有依据(见 sync_iface_registry)
-                let ifaces = lock(&self.plane).iface_names();
-                self.sync_iface_registry(&ifaces);
+                self.sync_iface_registry();
                 // 快照先行更新,再据此扫描冲突(快照即本网络的对外网段事实)
                 let had_conflict = self.update_snapshot(nwid, &cfg);
                 let hit = self.scan_conflicts(nwid, &cfg);
@@ -234,14 +232,18 @@ impl DaemonSink {
     /// 任务内(见模块注释的 sink 红线);快照与登记值一致时跳过写盘,
     /// netconf 反复 ConfigUpdate 不会反复落盘;entry 已不运行(并发收尾已
     /// 置 running=false)时跳过,避免把快照写回已清空的登记。
-    fn sync_iface_registry(&self, ifaces: &[String]) {
-        // HashMap 遍历序不定,排序后比对/落盘,避免同值不同序误判变更
-        let mut names: Vec<String> = ifaces.to_vec();
-        names.sort();
+    fn sync_iface_registry(&self) {
         let app = self.app.clone();
         let pid = self.planet_id.clone();
+        let plane = Arc::clone(&self.plane);
         let handle = self.rt.spawn(async move {
             let _ = tokio::task::spawn_blocking(move || {
+                // 快照在任务内重读而非沿用 sink 时刻的旧值:netconf 触发的
+                // 多个登记任务在阻塞线程池无序执行,旧快照后落盘会覆盖新
+                // 值,崩溃清扫据此漏设备。HashMap 遍历序不定,排序后再
+                // 比对/落盘,避免同值不同序误判变更
+                let mut names = lock(&plane).iface_names();
+                names.sort();
                 let mut reg = app
                     .registry
                     .lock()
