@@ -1013,6 +1013,7 @@ dependencies = [
  "planet-port-api",
  "serde",
  "serde_json",
+ "signal-hook",
  "unicode-width",
  "ureq",
 ]

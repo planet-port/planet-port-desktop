@@ -13,6 +13,10 @@ use crossterm::{
     terminal::{self, Clear, ClearType},
 };
 use inquire::{InquireError, Select};
+use signal_hook::{
+    consts::{SIGHUP, SIGINT, SIGTERM},
+    iterator::Signals,
+};
 use std::io::Write;
 
 /// 选择器候选(id 用于回填 --planet,label 用于展示)
@@ -112,11 +116,35 @@ pub fn pick_multi(planets: &[PlanetOption], verb: &str) -> Result<MultiPick, ()>
         eprintln!("选择器渲染失败: {e}");
     })?;
 
+    // 信号防护:raw 模式的 Drop 守卫只覆盖 panic/正常返回,SIGTERM/SIGHUP
+    // 的默认处置直接终止进程,终端会残留 raw + 隐藏光标。signal-hook 把
+    // 信号转为队列在循环里轮询;收到即先恢复终端,再还原默认处置并重发
+    // 信号,进程按信号本义终止。注册失败则降级为无防护(功能不受影响)
+    let mut signals = Signals::new([SIGTERM, SIGINT, SIGHUP]).ok();
+
     let chosen = loop {
-        let ev = match event::read() {
-            Ok(ev) => ev,
+        for sig in signals.as_mut().into_iter().flat_map(|s| s.pending()) {
+            let _ = execute!(std::io::stderr(), Show);
+            let _ = terminal::disable_raw_mode();
+            // 还原默认处置后重发信号:进程以信号本义终止(正确退出码),
+            // libc 是既有依赖,避免再引 signal-hook 的低层封装
+            unsafe {
+                libc::signal(sig, libc::SIG_DFL);
+                libc::raise(sig);
+            }
+        }
+        // 事件轮询而非阻塞 read:空窗期回到信号检查
+        let ev = match event::poll(std::time::Duration::from_millis(100)) {
+            Ok(true) => match event::read() {
+                Ok(ev) => ev,
+                Err(e) => {
+                    eprintln!("\r\n选择器事件读取失败: {e}");
+                    break None;
+                }
+            },
+            Ok(false) => continue,
             Err(e) => {
-                eprintln!("\r\n选择器事件读取失败: {e}");
+                eprintln!("\r\n选择器事件轮询失败: {e}");
                 break None;
             }
         };
