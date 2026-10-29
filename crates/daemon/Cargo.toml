@@ -19,3 +19,5 @@ planet-port-api = { path = "../api" }
 zt-core = { path = "../zt-core" }
 # daemon.lock 单实例守卫的 flock(与 cli/zt-core 同版本);MIT/Apache-2.0
 libc = "0.2"
+# planet URL 导入的 HTTP 下载(MIT/Apache-2.0)
+ureq = "3"

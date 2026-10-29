@@ -4,6 +4,8 @@
 //! `/Library/Application Support/planet-portd/bin/planet-portd` 并写
 //! `/Library/LaunchDaemons/com.planetport.daemon.plist`,之后经 launchctl
 //! bootstrap 装载。plist 指向拷贝而非 target/debug 原路径:构建产物路径不稳定。
+//! KeepAlive={SuccessfulExit=false}:崩溃/被强杀等异常退出由 launchd 自动
+//! 重启,SIGTERM 优雅退出(exit 0)不重启。
 //! install/uninstall/start/stop 需 root(euid≠0 → 中文提示 + 退出码 2);
 //! status 无需特权。
 
@@ -103,7 +105,8 @@ fn install() {
     }
 
     // 3. 装载(RunAtLoad=true:bootstrap 装载即拉起一次,随开机自动启动;
-    //    KeepAlive=false:进程退出后 launchd 不自动重启)。
+    //    KeepAlive={SuccessfulExit=false}:仅异常退出(非零码/信号)时
+    //    launchd 自动重启,SIGTERM 优雅退出(exit 0)不重启)。
     //    重复安装幂等:先 bootout 卸掉已加载的旧服务(未加载属预期),
     //    bootstrap 撞上「已装载」则提示用 start,不硬退。
     match launchctl_output(&["bootout", &format!("system/{LABEL}")]) {
@@ -133,7 +136,7 @@ fn install() {
     println!("  配置:   {PLIST_PATH}");
     println!("  数据:   {APP_DIR}");
     println!("daemon 已随装载启动(RunAtLoad=true),无需再执行 start;");
-    println!("仅手动 stop 或退出后需要拉起时: sudo planet-port service start");
+    println!("崩溃(异常退出)时 launchd 会自动重启;仅手动 stop 后需要拉起时: sudo planet-port service start");
 }
 
 /// 二进制更新用「临时文件 + rename」原子替换:直接 fs::copy 覆盖正在运行的
@@ -177,14 +180,16 @@ fn uninstall() {
 }
 
 fn start() {
-    // -k:已在运行则先杀再拉(幂等重启);KeepAlive=false,需显式 start
+    // -k:已在运行则先杀再拉(幂等重启);KeepAlive={SuccessfulExit=false}
+    // 只管异常退出后的自动重启,手动 stop(exit 0)不会被拉回
     launchctl(&["kickstart", "-k", &format!("system/{LABEL}")]);
     println!("已请求启动 {LABEL}");
     println!("查看状态: planet-port service status");
 }
 
 fn stop() {
-    // TERM 命中 daemon 的信号优雅退出路径:逐 planet 红线收尾后删 port 文件
+    // TERM 命中 daemon 的信号优雅退出路径:逐 planet 红线收尾后删 port 文件;
+    // 退出码 0,KeepAlive 不会把它重新拉起
     launchctl(&["kill", "TERM", &format!("system/{LABEL}")]);
     println!("已发送 SIGTERM,{LABEL} 将优雅退出");
 }
@@ -262,7 +267,10 @@ fn plist_content(bin: &str) -> String {
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <false/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
 </dict>
 </plist>
 "#

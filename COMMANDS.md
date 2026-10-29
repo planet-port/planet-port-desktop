@@ -55,7 +55,7 @@
 
 | 命令 | 说明 |
 |---|---|
-| `add <file> [--name <别名>] [--data-dir <绝对路径>] [--port <UDP端口>]` | 导入 planet 文件并立即上线;`--data-dir`/`--port` 为开发验证覆写(如复用既有 dataDir),日常省略 |
+| `add <file\|URL> [--name <别名>] [--data-dir <绝对路径>] [--port <UDP端口>]` | 导入 planet 文件并立即上线;`source` 为本地路径或 `http(s)://` URL(URL 下载后走同一套校验,超时 30s、上限 8MB);`--data-dir`/`--port` 为开发验证覆写(如复用既有 dataDir),日常省略 |
 | `start <name\|id>` | 上线实例;按登记的本地网络配置自动 re-join |
 | `stop <name\|id>` | 下线实例(feth 设备与路由清理),保留登记 |
 | `remove <name\|id> [--yes]` | 删除登记;自动批量 leave 全部已加入网络并停止实例后再删除;交互确认走 stderr,`--yes` 供脚本跳过,`-j` 下必须配 `--yes` |
@@ -75,7 +75,7 @@
 | 命令 | 说明 |
 |---|---|
 | `use <name\|id>` | stdout 输出 `export PLANET_PORT_PLANET=<id>` 供 `eval $(planet-port use <name\|id>)` |
-| `service install` | 需 root:安装 LaunchDaemon 并拉起(幂等,重装先卸载旧服务) |
+| `service install` | 需 root:安装 LaunchDaemon 并拉起(幂等,重装先卸载旧服务);KeepAlive={SuccessfulExit=false}:崩溃等异常退出由 launchd 自动重启,SIGTERM 优雅退出不重启 |
 | `service uninstall` | 需 root:卸载服务;数据目录保留 |
 | `service start` / `service stop` | 需 root:拉起 / SIGTERM 优雅停止 |
 | `service status` | 无需 root:运行状态(端口取自 port 文件) |

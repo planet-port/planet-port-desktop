@@ -225,6 +225,47 @@ pub fn parse_world(bytes: &[u8]) -> Result<WorldInfo, String> {
     })
 }
 
+/// URL 下载的失败分类:TooLarge → 400 sourceTooLarge,Fetch → 400 sourceFetchFailed
+#[derive(Debug)]
+pub enum FetchError {
+    /// 响应体超过 MAX_WORLD_BYTES
+    TooLarge,
+    /// 网络/HTTP 失败(带原因简述)
+    Fetch(String),
+}
+
+/// 下载 URL 源的 planet 文件:整体超时 30s、跟随重定向(ureq 默认上限 10 跳)、
+/// 响应体上限 MAX_WORLD_BYTES(超限即中断,不整块吃内存)。
+/// 下载到的字节走与本地文件完全相同的 parse_world 校验(调用方负责)。
+pub fn fetch_url(url: &str) -> Result<Vec<u8>, FetchError> {
+    let agent = ureq::Agent::new_with_config(
+        ureq::config::Config::builder()
+            // 非 2xx 不抛异常,统一由下方状态码分支转 sourceFetchFailed
+            .http_status_as_error(false)
+            .timeout_global(Some(std::time::Duration::from_secs(30)))
+            .build(),
+    );
+    let mut resp = agent
+        .get(url)
+        .call()
+        .map_err(|e| FetchError::Fetch(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(FetchError::Fetch(format!("HTTP {}", resp.status())));
+    }
+    // 上限 = MAX + 1:恰好 MAX 字节可读完,再多读 1 字节即 BodyExceedsLimit
+    match resp
+        .body_mut()
+        .with_config()
+        .limit(MAX_WORLD_BYTES as u64 + 1)
+        .read_to_vec()
+    {
+        Ok(bytes) if bytes.len() > MAX_WORLD_BYTES => Err(FetchError::TooLarge),
+        Ok(bytes) => Ok(bytes),
+        Err(ureq::Error::BodyExceedsLimit(_)) => Err(FetchError::TooLarge),
+        Err(e) => Err(FetchError::Fetch(e.to_string())),
+    }
+}
+
 /// planet 定位:依次尝试 id 精确 → name 精确 → 按 u64 解析匹配 world_id
 /// (十进制,或 0x 前缀 / 含字母的纯十六进制)
 pub fn resolve_planet_id(registry: &Registry, input: &str) -> Option<String> {

@@ -149,7 +149,7 @@ planet 实例,按以下顺序解析:
 
 | 命令 | 说明 |
 |---|---|
-| `service install` | 需 root:拷贝二进制到 `/Library/Application Support/planet-portd/bin/planet-portd`,写 `/Library/LaunchDaemons/com.planetport.daemon.plist` 并 `launchctl bootstrap system/`;RunAtLoad=true、KeepAlive=false(装载即随开机启动一次,崩溃不自动拉起) |
+| `service install` | 需 root:拷贝二进制到 `/Library/Application Support/planet-portd/bin/planet-portd`,写 `/Library/LaunchDaemons/com.planetport.daemon.plist` 并 `launchctl bootstrap system/`;RunAtLoad=true(装载即随开机启动)、KeepAlive={SuccessfulExit=false}(崩溃等异常退出自动拉起,SIGTERM 优雅退出不拉起) |
 | `service uninstall` | 需 root:`launchctl bootout` + 删 plist 与拷贝的二进制;**数据目录保留**,提示手动 `rm -rf` |
 | `service start` | 需 root:`launchctl kickstart -k system/com.planetport.daemon` |
 | `service stop` | 需 root:`launchctl kill TERM …`,命中 daemon 的信号优雅退出路径(逐 planet 红线收尾) |
@@ -158,8 +158,9 @@ planet 实例,按以下顺序解析:
 ### 说明
 
 - 单操作成功输出为简式,如 `200 join OK`;`moon import` 为 `201 moon import OK`。
-- `add`(planet 导入)与 `moon import` 当前仅支持**本地文件路径**;URL 源返回
-  `400 unsupportedSource`(一期未实现,后续任务接入),容器导入返回 `501 notImplemented`。
+- `add`(planet 导入)支持**本地文件路径与 URL**(`http(s)://`,整体超时 30s、
+  响应体上限 8MB);`moon import` 当前仅支持本地文件路径;容器导入返回
+  `501 notImplemented`。
 - `set` 的 `routeViaZeroTier` 在下一次网络配置更新(控制器下发 netconf)时生效:
   false 时清空 managed routes 后再 apply,已装上的路由不会立即回撤。
 - `set` 的校验比对 mockd 更严:`routeViaZeroTier` 仅接受 `0|1`(其它值返回 400,
@@ -214,7 +215,7 @@ planet-port info                                      # 聚合状态
 ### 与 mockd 的行为差异(验证时注意)
 
 - planet 数据为实网:planet 文件解析自真实 world,实例连真实根服务器;
-- `add` 的 URL 源不支持(`400 unsupportedSource`),容器导入 `501 notImplemented`;
+- `add` 的 URL 源可用(下载后走与本地文件同一套校验),容器导入 `501 notImplemented`;
 - `dns` 模式(`set` 的 `dnsMode`/`customDns`)为 `network`/`custom` 时,netconf 应用
   阶段会用 `networksetup` 把 DNS 写进主网络服务,leave 网络 / 停止或删除 planet 时
   还原为自动获取;失败只记事件,不影响网络数据面;
@@ -227,7 +228,7 @@ planet-port info                                      # 聚合状态
 
 以下为对 mockd(种子:official running / company running / home-lab stopped)逐条实测结果,
 作为回归基准;对 planet-portd 执行时命令一致,注意上节行为差异(planet 数据为实网、
-URL 源不支持、container 501):
+URL 源可用、container 501):
 
 | 命令 | 预期 | 实测 | 结论 |
 |---|---|---|---|

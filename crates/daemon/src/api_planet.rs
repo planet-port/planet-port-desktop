@@ -219,45 +219,64 @@ pub async fn planets_import(
                 None,
             )
         })?;
-    // 一期仅支持本地路径;URL 源推迟到后续任务(README 注明)
-    if source.contains("://") {
-        return Err(err(
-            StatusCode::BAD_REQUEST,
-            "unsupportedSource",
-            "only local file paths are supported; url sources are not implemented yet",
-            None,
-        ));
-    }
-
-    // 先看大小再读入,避免为超限文件白白吃内存
-    let meta = fs::metadata(source).map_err(|e| {
-        err(
-            StatusCode::BAD_REQUEST,
-            "sourceUnreadable",
-            &format!("cannot read source file \"{source}\": {e}"),
-            None,
-        )
-    })?;
-    if meta.len() > world::MAX_WORLD_BYTES as u64 {
-        return Err(err(
-            StatusCode::BAD_REQUEST,
-            "fileTooLarge",
-            &format!(
-                "planet file is {} bytes, limit is {} bytes",
-                meta.len(),
-                world::MAX_WORLD_BYTES
-            ),
-            None,
-        ));
-    }
-    let bytes = fs::read(source).map_err(|e| {
-        err(
-            StatusCode::BAD_REQUEST,
-            "sourceUnreadable",
-            &format!("cannot read source file \"{source}\": {e}"),
-            None,
-        )
-    })?;
+    // 含 `://` 视为 URL 源:下载后走与本地文件完全相同的解析校验;
+    // 其余按本地路径读(行为不变)
+    let is_url = source.contains("://");
+    let bytes = if is_url {
+        // 下载含网络 IO,REST handler 是异步上下文,放阻塞线程池;
+        // spawn_blocking 要求 'static,source 从 body 借来,先取 owned
+        let url = source.to_string();
+        tokio::task::spawn_blocking(move || world::fetch_url(&url))
+            .await
+            .map_err(|e| internal(format!("fetch task failed: {e}")))?
+            .map_err(|e| match e {
+                world::FetchError::TooLarge => err(
+                    StatusCode::BAD_REQUEST,
+                    "sourceTooLarge",
+                    &format!(
+                        "downloaded planet file from \"{source}\" exceeds the limit of {} bytes",
+                        world::MAX_WORLD_BYTES
+                    ),
+                    None,
+                ),
+                world::FetchError::Fetch(m) => err(
+                    StatusCode::BAD_REQUEST,
+                    "sourceFetchFailed",
+                    &format!("cannot fetch \"{source}\": {m}"),
+                    None,
+                ),
+            })?
+    } else {
+        // 先看大小再读入,避免为超限文件白白吃内存
+        let meta = fs::metadata(source).map_err(|e| {
+            err(
+                StatusCode::BAD_REQUEST,
+                "sourceUnreadable",
+                &format!("cannot read source file \"{source}\": {e}"),
+                None,
+            )
+        })?;
+        if meta.len() > world::MAX_WORLD_BYTES as u64 {
+            return Err(err(
+                StatusCode::BAD_REQUEST,
+                "fileTooLarge",
+                &format!(
+                    "planet file is {} bytes, limit is {} bytes",
+                    meta.len(),
+                    world::MAX_WORLD_BYTES
+                ),
+                None,
+            ));
+        }
+        fs::read(source).map_err(|e| {
+            err(
+                StatusCode::BAD_REQUEST,
+                "sourceUnreadable",
+                &format!("cannot read source file \"{source}\": {e}"),
+                None,
+            )
+        })?
+    };
     if bytes.len() > world::MAX_WORLD_BYTES {
         return Err(err(
             StatusCode::BAD_REQUEST,
@@ -358,7 +377,7 @@ pub async fn planets_import(
             .get("color")
             .and_then(|v| v.as_str())
             .map(String::from),
-        source: "file".into(),
+        source: if is_url { "url".into() } else { "file".into() },
         roots: info.roots.clone(),
         file_size: bytes.len() as u64,
         revision_time_ms: info.revision_ms,
