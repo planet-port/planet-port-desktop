@@ -7,17 +7,6 @@
 
   cli.list.noNetworks: "(no networks)"
 
-  cli.picker.cancelEsc: Cancelled (Esc)
-  cli.picker.cancelCtrlC: Cancelled (Ctrl+C)
-  cli.picker.error: "Picker error: %{e}"
-  cli.picker.prompt: "Select planet: %{verb}"
-  cli.picker.helpSingle: "Up/Down to move, Enter to confirm, Esc/Ctrl+C to cancel"
-  cli.picker.all: <All>
-  cli.picker.helpMulti: "Space to check, Enter to confirm (no selection = highlighted item; first item <All> = everything), Esc/Ctrl+C to cancel"
-  cli.picker.rawModeFailed: "Failed to enable terminal raw mode: %{e}"
-  cli.picker.renderFailed: "Failed to render picker: %{e}"
-  cli.picker.eventReadFailed: "Failed to read picker event: %{e}"
-  cli.picker.eventPollFailed: "Failed to poll picker event: %{e}"
 
   cli.events.needPlanet: "error: events requires --planet (%{n} planets currently running)"
   cli.planet.removeConfirm: "planet \"%{id}\" will leave all its networks, stop and be removed from the registry. Continue? [y/N] "

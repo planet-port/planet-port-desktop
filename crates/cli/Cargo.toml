@@ -9,16 +9,11 @@ clap = { version = "4", features = ["derive", "env"] }
 ureq = "3"
 # 表格列宽按显示宽度对齐(CJK 全角占 2);树内已有该依赖
 unicode-width = "0.1"
-# 选择器 raw 模式的信号防护(crossterm 已传递依赖同版本)
-signal-hook = "0.3"
 serde.workspace = true
 serde_json.workspace = true
 planet-port-api = { path = "../api" }
 # geteuid(service 子命令 root 判定);workspace 已有同版本依赖,MIT/Apache-2.0
 libc = "0.2"
-inquire = "0.7"
-# 自绘多选列表(inquire 不暴露回车时刻高亮下标);树内已有 0.29,MIT
-crossterm = "0.29"
 rust-i18n = "3"
 sys-locale = "0.3.2"
 # 时间戳本地化(events TS / planet show revision / share expires_at);MIT/Apache-2.0

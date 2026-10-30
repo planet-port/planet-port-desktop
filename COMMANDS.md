@@ -10,7 +10,7 @@
 | 选项 | 说明 |
 |---|---|
 | `--planet <name\|id>` | 定位 planet:变更类命令的目标选择器,查询类命令的过滤器;省略时取环境变量 `PLANET_PORT_PLANET`,再省略走交互选择(见下)或由 daemon 按「单 running 自动选择 / 多 running 报歧义」处理 |
-| `-j, --json` | JSON 输出(stdout 仅 JSON,人话提示走 stderr);`-j` 模式不弹交互选择列表 |
+| `-j, --json` | JSON 输出(stdout 仅 JSON,人话提示走 stderr) |
 | `--api-url <URL>` | 覆写 daemon API 地址;省略时读配置目录 port 文件,再回退 `127.0.0.1:9998`。也可用环境变量 `PLANET_PORT_URL` |
 
 ## API 地址与鉴权协商
@@ -47,31 +47,16 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 | ① | `--planet <name\|id>` | 显式指定,优先级最高 |
 | ② | 环境变量 `PLANET_PORT_PLANET` | 由 `eval $(planet-port use <x>)` 设置 |
 | ③ | 唯一 running planet 自动选中 | 仅有一个激活 planet 时自动落到它 |
-| ④ | 多个 running planet | 显式 `--ui` 且 stdin 为 TTY 时弹 planet 选择列表(见下);默认非交互(管道/脚本/`-j`):报 `409` 并列出候选,退出码 2,不猜 |
+| ④ | 多个 running planet | 报 `409` 并列出候选,退出码 2,不猜 |
 
 查询类命令(info / list / listnetworks / listpeers / listmoons)**默认聚合展示**,
 `--planet` 与环境变量在其上的语义是**过滤**,不受上述链约束。
 **events 例外**:必须落到具体 planet,定位与 dump 同款——显式 `--planet` >
-仅一个 running planet 时自动;多 running 未指定时交互式终端弹单选列表,
-非交互报用法错误(退出码 2)。显式指定已停止的 planet 仍可查其历史事件。
+仅一个 running planet 时自动;多 running 未指定时报用法错误(退出码 2)。
+显式指定已停止的 planet 仍可查其历史事件。
 
 `--planet` 同时接受别名(name)与 worldId;服务端解析,命中即返回 canonical id
 (表格 PLANET 列显示的是 canonical id,如 company 显示 `2187945993`)。
-
-## 交互式 planet 选择
-
-显式传 `--ui` 且 stdin 为 TTY 时,多 planet 场景弹选择列表代替定位链 ④ 的
-409 报错(默认非交互,输出可预测,脚本/管道友好):
-
-- **变更类命令**(join / leave / set / orbit / deorbit / dump / moon import)单选:
-  候选为全部 running planet,↑↓ 移动,回车确认;
-  **events** 同为单选,候选与 dump 一致(仅 running planet);
-- **可批量查询命令**(info / list / listnetworks / listpeers / listmoons)多选:
-  候选含「<全部>」首项,空格勾选,回车确认;勾选「全部」或空选 = 聚合全部,
-  勾选子集则按选中集合过滤(多成员时逐 planet 请求合并);
-- Esc / Ctrl+C 取消,**退出码 130**;
-- 选择器生存期与终端绑定:SIGHUP/SIGTERM/SIGINT 由独立信号线程处置(收到即恢复终端再按信号本义终止),多选循环带心跳看门狗——终端会话消亡(PTY 主端关闭)时选择器立即退出,不会残留打满 CPU 的僵尸进程;
-- 未传 `--ui`、非 TTY(管道/脚本)或 `-j` 模式不弹列表,保持原聚合 / 409 行为。
 
 ## 状态查询
 
@@ -165,9 +150,9 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 |---|---|
 | 0 | 成功 |
 | 1 | 运行错误(API 4xx/5xx、IO 错误) |
-| 2 | 用法错误(非法参数、未知 set key)、planet 歧义(409 + 候选列表,仅非交互路径)、service 组需 root(install/uninstall/start/stop 未以 root 运行) |
+| 2 | 用法错误(非法参数、未知 set key)、planet 歧义(409 + 候选列表)、service 组需 root(install/uninstall/start/stop 未以 root 运行) |
 | 3 | daemon 不在线,提示 `planet-portd is not running (try: planet-port service start)` |
-| 130 | 用户中止:交互式 planet 选择被取消(Esc / Ctrl+C)、`remove` 确认拒绝 |
+| 130 | 用户中止:`remove` 确认拒绝 |
 
 ---
 

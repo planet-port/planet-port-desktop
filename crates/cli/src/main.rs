@@ -2,11 +2,9 @@ mod client;
 mod cmd;
 mod emoji;
 mod output;
-mod picker;
 
 use clap::{Parser, Subcommand};
 use client::{CliError, Client};
-use std::io::IsTerminal;
 
 // 多语言:文案在 crates/cli/locales/<locale>.yml,新增语言加文件即可。
 // 源语言 zh-Hans(与 iOS Localizable.xcstrings 一致),缺失键回退到它
@@ -25,9 +23,6 @@ struct Cli {
     /// JSON output
     #[arg(short = 'j', long = "json", global = true)]
     json: bool,
-    /// 启用交互式 planet 选择器(默认非交互;仍要求 stdin 为 TTY)
-    #[arg(long = "ui", global = true)]
-    ui: bool,
     /// Override daemon API URL (debug)
     #[arg(long, global = true, env = "PLANET_PORT_URL")]
     api_url: Option<String>,
@@ -155,8 +150,7 @@ fn main() {
     let cli = Cli::parse();
     let json = cli.json;
     // 定位链 ①>②:--planet 显式指定,否则取 PLANET_PORT_PLANET 环境变量;
-    // ③(单 running 自动选)与 ④(歧义)默认由 daemon 执行;交互式 TTY 下由
-    // CLI 弹选择列表代替 ④(见 resolve_planets)
+    // ③(单 running 自动选)与 ④(歧义报候选)由 daemon 执行
     let planet_flag = cli
         .planet
         .clone()
@@ -170,7 +164,7 @@ fn main() {
                 Ok(c) => c,
                 Err(e) => die(&e),
             };
-            let (planet_flag, query_filter) = resolve_planets(&client, other, planet_flag, json, cli.ui);
+            let (planet_flag, query_filter) = resolve_planets(&client, other, planet_flag);
             dispatch(&client, other, &planet_flag, &query_filter, json)
         }
     };
@@ -179,10 +173,10 @@ fn main() {
     }
 }
 
-// ---- 交互式 planet 选择 ----
+// ---- planet 定位 ----
 
-/// 命令对 planet 的依赖形态:变更类单选(running 候选),events 单选(全量候选,
-/// 仅一个 planet 时自动),可批量查询类多选(含「全部」)
+/// 命令对 planet 的依赖形态:变更类单目标(daemon 自动选/报歧义),events
+/// 需恰好一个目标(歧义由 CLI 兜住),可批量查询类按过滤集聚合
 enum PlanetNeed {
     None,
     Single,
@@ -211,92 +205,42 @@ fn planet_need(cmd: &Command) -> PlanetNeed {
     }
 }
 
-/// 命令的短标签(选择器提示用)
-fn planet_verb(cmd: &Command) -> &'static str {
-    match cmd {
-        Command::Info => "info",
-        Command::List => "list",
-        Command::Network { .. } => "network show",
-        Command::Listnetworks => "listnetworks",
-        Command::Listpeers => "listpeers",
-        Command::Listmoons => "listmoons",
-        Command::Events { .. } => "events",
-        Command::Join { .. } => "join",
-        Command::Leave { .. } => "leave",
-        Command::Set { .. } => "set",
-        Command::Get { .. } => "get",
-        Command::Orbit { .. } => "orbit",
-        Command::Deorbit { .. } => "deorbit",
-        Command::Dump => "dump",
-        Command::Moon { .. } => "moon import",
-        _ => "",
-    }
-}
-
-/// 取 planet 清单(/status);daemon 不可达等失败返回 None(跳过选择器,
-/// 让后续请求自身报错,行为与非交互路径一致)
-fn fetch_options(client: &Client, running_only: bool) -> Option<Vec<picker::PlanetOption>> {
+/// running planet 的 canonical id 清单(/status);daemon 不可达等失败返回
+/// None,让后续请求自身报错
+fn running_planet_ids(client: &Client) -> Option<Vec<String>> {
     let v = client.get_json(planet_port_api::endpoints::status()).ok()?;
     let rows: Vec<planet_port_api::types::PlanetStatus> = serde_json::from_value(
         v.get("planets").cloned().unwrap_or(serde_json::Value::Null),
     )
     .unwrap_or_default();
-    let out: Vec<picker::PlanetOption> = rows
-        .into_iter()
-        .filter(|p| !running_only || p.status == "running")
-        .map(|p| picker::PlanetOption {
-            label: format!("{} ({}) · {}", p.name, p.id, p.status),
-            id: p.id,
-        })
-        .collect();
-    Some(out)
+    Some(
+        rows.into_iter()
+            .filter(|p| p.status == "running")
+            .map(|p| p.id)
+            .collect(),
+    )
 }
 
-/// 未显式指定 planet 时的定位。默认非交互(多 planet 走聚合 / 报错);
-/// 仅显式传 --ui 且 stdin 为 TTY 时弹选择列表。返回(单选 planet, 查询过滤集)。
-/// 单选结果回填 planet_flag(等价 --planet);多选子集作为查询过滤集(None = 全部)。
-/// 取消(Esc/Ctrl+C)退出码 130
+/// 未显式指定 planet 时的定位。返回(单选 planet, 查询过滤集):
+/// - Single:原样透传,自动选/歧义由 daemon 判定;
+/// - Events:与 dump 同款定位,daemon 的 /events 端点是过滤语义(无歧义
+///   判定),多 running 时由 CLI 报错兜住;
+/// - Multi:显式 planet 等价单成员过滤集,未指定则全量聚合
 fn resolve_planets(
     client: &Client,
     command: &Command,
     planet_flag: Option<String>,
-    json: bool,
-    ui: bool,
 ) -> (Option<String>, Option<Vec<String>>) {
-    // 交互选择器三重前置:显式 --ui、非 --json、stdin 为 TTY
-    let interactive = ui && !json && std::io::stdin().is_terminal();
     match planet_need(command) {
-        PlanetNeed::None => (planet_flag, None),
-        PlanetNeed::Single => {
-            if planet_flag.is_none() && interactive {
-                if let Some(opts) = fetch_options(client, true) {
-                    // 多 running 才需要选;单个/零个沿用 daemon 自动选/报错
-                    if opts.len() > 1 {
-                        return match picker::pick_single(&opts, planet_verb(command)) {
-                            Ok(id) => (Some(id), None),
-                            Err(()) => std::process::exit(130),
-                        };
-                    }
-                }
-            }
-            (planet_flag, None)
-        }
+        PlanetNeed::None | PlanetNeed::Single => (planet_flag, None),
         PlanetNeed::Events => {
-            // 与 dump 同款定位:显式 > 单 running 自动 > 交互单选 / 非交互报错。
-            // daemon 的 /events 端点是过滤语义(无歧义判定),歧义由 CLI 兜住
             if planet_flag.is_some() {
                 return (planet_flag, None);
             }
-            if let Some(opts) = fetch_options(client, true) {
-                match opts.len() {
-                    1 => return (Some(opts[0].id.clone()), None),
+            if let Some(ids) = running_planet_ids(client) {
+                match ids.len() {
+                    1 => return (Some(ids[0].clone()), None),
                     0 => {}
-                    _ if interactive => {
-                        return match picker::pick_single(&opts, "events") {
-                            Ok(id) => (Some(id), None),
-                            Err(()) => std::process::exit(130),
-                        };
-                    }
                     n => {
                         eprintln!("{}", rust_i18n::t!("cli.events.needPlanet", n = n));
                         std::process::exit(2);
@@ -305,24 +249,10 @@ fn resolve_planets(
             }
             (None, None)
         }
-        PlanetNeed::Multi => {
-            if let Some(p) = planet_flag {
-                // 显式 --planet / 环境变量:等价单成员过滤集
-                return (None, Some(vec![p]));
-            }
-            if interactive {
-                if let Some(opts) = fetch_options(client, false) {
-                    if opts.len() > 1 {
-                        return match picker::pick_multi(&opts, planet_verb(command)) {
-                            Ok(picker::MultiPick::All) => (None, None),
-                            Ok(picker::MultiPick::Subset(ids)) => (None, Some(ids)),
-                            Err(()) => std::process::exit(130),
-                        };
-                    }
-                }
-            }
-            (None, None)
-        }
+        PlanetNeed::Multi => match planet_flag {
+            Some(p) => (None, Some(vec![p])),
+            None => (None, None),
+        },
     }
 }
 

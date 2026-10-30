@@ -7,17 +7,6 @@
 
   cli.list.noNetworks: "(無網路)"
 
-  cli.picker.cancelEsc: 已取消(Esc)
-  cli.picker.cancelCtrlC: 已取消(Ctrl+C)
-  cli.picker.error: "選擇器錯誤: %{e}"
-  cli.picker.prompt: "選擇 planet:%{verb}"
-  cli.picker.helpSingle: "↑↓ 移動,Enter 確認,Esc/Ctrl+C 取消"
-  cli.picker.all: <全部>
-  cli.picker.helpMulti: "空格勾選,Enter 確認(空選 = 高亮項;首項 <全部> = 全部),Esc/Ctrl+C 取消"
-  cli.picker.rawModeFailed: "終端 raw 模式失敗: %{e}"
-  cli.picker.renderFailed: "選擇器渲染失敗: %{e}"
-  cli.picker.eventReadFailed: "選擇器事件讀取失敗: %{e}"
-  cli.picker.eventPollFailed: "選擇器事件輪詢失敗: %{e}"
 
   cli.events.needPlanet: "error: events 需要指定 --planet(當前 %{n} 個 running planet)"
   cli.planet.removeConfirm: "planet \"%{id}\" 將自動退出其全部網路、停止並刪除登記,確認? [y/N] "

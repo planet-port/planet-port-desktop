@@ -10,18 +10,6 @@
   # ---- list/info ----
   cli.list.noNetworks: "(无网络)"
 
-  # ---- 交互式选择器 ----
-  cli.picker.cancelEsc: 已取消(Esc)
-  cli.picker.cancelCtrlC: 已取消(Ctrl+C)
-  cli.picker.error: "选择器错误: %{e}"
-  cli.picker.prompt: "选择 planet:%{verb}"
-  cli.picker.helpSingle: "↑↓ 移动,回车确认,Esc/Ctrl+C 取消"
-  cli.picker.all: <全部>
-  cli.picker.helpMulti: "空格勾选,回车确认(空选 = 高亮项;首项 <全部> = 全部),Esc/Ctrl+C 取消"
-  cli.picker.rawModeFailed: "终端 raw 模式失败: %{e}"
-  cli.picker.renderFailed: "选择器渲染失败: %{e}"
-  cli.picker.eventReadFailed: "选择器事件读取失败: %{e}"
-  cli.picker.eventPollFailed: "选择器事件轮询失败: %{e}"
 
   # ---- 命令反馈 ----
   cli.events.needPlanet: "error: events 需要指定 --planet(当前 %{n} 个 running planet)"
