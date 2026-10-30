@@ -68,7 +68,7 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 impl NodeSink for DaemonSink {
     fn on_event(&mut self, ev: NodeEvent) {
-        // kind 一律 "status"(mockd 同款);Fatal 额外置 stopping(节点已不可用)
+        // kind 一律 "status";Fatal 额外置 stopping(节点已不可用)
         let (msg, fatal) = match ev {
             NodeEvent::Up => ("节点已启动".to_string(), false),
             NodeEvent::Online => ("节点上线".to_string(), false),
@@ -364,7 +364,7 @@ impl ConflictHit {
     }
 }
 
-/// NetStatus → mockd 同款大写蛇形字符串
+/// NetStatus → 大写蛇形字符串(REST 契约定义)
 pub fn status_name(s: &NetStatus) -> &'static str {
     match s {
         NetStatus::RequestingConfiguration => "REQUESTING_CONFIGURATION",

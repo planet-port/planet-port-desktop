@@ -1,7 +1,7 @@
 //! 杂项端点:GET /peers、GET/POST /moons、POST /moons/{id}/orbit、
 //! DELETE /moons/{id}、GET /dump。
 //! 响应结构({"peers":[...]}、{"moons":[...]}、201 {"moon":...}、
-//! {"result":"ok"}、204、纯文本 dump)与错误码、错误体对齐 crates/mockd
+//! {"result":"ok"}、204、纯文本 dump)与错误码、错误体以 planet-port-api 契约为基准
 //! 同名 handler,保证 CLI 双端互通。
 //!
 //! # moon 落盘真源
@@ -94,7 +94,7 @@ fn moon_file(data_dir: &std::path::Path, world_id: u64, moon_id: u64) -> PathBuf
         .join(format!("{moon_id:016x}.moon"))
 }
 
-/// MoonRecord → mockd 同款 MoonEntry(cached 即时探测 moons.d 文件,seed 16 位 hex)
+/// MoonRecord → MoonEntry(cached 即时探测 moons.d 文件,seed 16 位 hex)
 fn to_moon_entry(planet_id: &str, entry: &crate::registry::RegistryEntry, r: &MoonRecord) -> MoonEntry {
     let cached = u64::from_str_radix(&r.moon_id, 16)
         .map(|mid| moon_file(&entry.data_dir, entry.world_id, mid).exists())
@@ -308,7 +308,7 @@ pub async fn moon_orbit(
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiErr> {
     let mid = parse_moon_id(&moon_id)?;
-    // seed 可省(=0);mockd 用字符串,这里同时容忍 JSON 数字
+    // seed 可省(=0);契约用字符串,这里同时容忍 JSON 数字
     let seed = match body.get("seed") {
         None | Some(Value::Null) => 0,
         Some(Value::String(s)) => parse_seed(s).ok_or_else(|| {
@@ -431,7 +431,7 @@ pub async fn dump(
     State(st): State<AppState>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<String, ApiErr> {
-    // 单 planet 定位链(mockd dump 同款:running 校验)
+    // 单 planet 定位链(running 校验)
     let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
     let entry = {
         let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);

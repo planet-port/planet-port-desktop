@@ -1,6 +1,6 @@
 //! planet 生命周期端点:import / show / patch / delete / start / stop / export / share。
 //! 错误码、错误体(`{"error","message","candidates"}`)与响应结构(`{"planet": PlanetDetail}`、
-//! 201 CREATED 等)对齐 crates/mockd 的同名 handler,保证 CLI 双端互通。
+//! 201 CREATED 等)以 planet-port-api 契约为基准,CLI 按同一契约消费。
 
 use std::fs;
 use std::io::Read;
@@ -17,7 +17,7 @@ use axum::{
     Json, Router,
 };
 
-/// handlers 统一的错误类型(与 mockd 一致,体积小,避免 clippy result_large_err)
+/// handlers 统一的错误类型(体积小,避免 clippy result_large_err)
 type ApiErr = (StatusCode, Json<planet_port_api::types::ApiError>);
 use planet_port_api::types::{PlanetDetail, PlanetKind, PlanetStatus, ShareLink};
 use serde_json::{json, Value};
@@ -53,7 +53,7 @@ fn not_found(id: &str) -> ApiErr {
 // ---- 投影 ----
 
 /// 列表项投影:online/core_version/latency/node_id 取自运行时实时数据
-/// (无运行时一律 false/None,与 mockd 的 offline 分支形态一致);
+/// (无运行时一律 false/None,offline 分支同样形态);
 /// source=builtin 视为官方 planet
 pub(crate) fn to_status(e: &RegistryEntry, live: Option<&LiveInfo>) -> PlanetStatus {
     let online = live.map(|l| l.online).unwrap_or(false);
@@ -199,7 +199,7 @@ pub async fn planets_import(
     State(st): State<AppState>,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiErr> {
-    // 一期不支持容器导入(README 注明);container 为字符串即明确拒绝(与 mockd 判定一致)
+    // 一期不支持容器导入(README 注明);container 为字符串即明确拒绝
     if body.get("container").and_then(|v| v.as_str()).is_some() {
         return Err(err(
             StatusCode::NOT_IMPLEMENTED,

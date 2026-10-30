@@ -159,7 +159,7 @@ pub struct AppState {
     pub token: Arc<String>,
 }
 
-/// 统一错误响应体 `{"error","message","candidates"}`(形态与 mockd 完全一致)
+/// 统一错误响应体 `{"error","message","candidates"}`(REST 契约定义的形态)
 pub fn err(
     code: StatusCode,
     error: &str,

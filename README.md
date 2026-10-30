@@ -119,7 +119,6 @@ flowchart LR
 | `crates/daemon`(planet-portd) | 真实 daemon:内嵌 zt-core,管理多 planet 实例 |
 | `crates/cli`(planet-port) | CLI 薄客户端 |
 | `crates/api`(planet-port-api) | REST 契约类型与端点构造(CLI 与 daemon 共用) |
-| `crates/mockd` | 契约 mock daemon(联调/契约验证,GUI 开发复用) |
 | `crates/zt-sys` / `crates/zt-core` | ZeroTier 1.16.2 核心 FFI(-sys 绑定 + safe wrapper) |
 | `crates/pocs` | 可行性验证代码 |
 
@@ -135,23 +134,13 @@ sudo ./target/debug/planet-portd --config-dir "$HOME/Library/Application Support
 
 `--config-dir` 缺省时按三级解析：env `PLANET_PORT_CONFIG_DIR` → `/Library/Application Support/planet-portd`（已存在时）→ `~/Library/Application Support/planet-portd`。同一 config 目录内有 flock 单实例守卫（`daemon.lock`）。
 
-### mockd 联调
-
-```bash
-cargo run -p mockd &
-export PLANET_PORT_URL=http://127.0.0.1:9998 PLANET_PORT_TOKEN=dev
-cargo run -p planet-port -- info
-```
-
-mockd 接受任意非空 token；注意 mockd **不写** port 文件，若机器上残留 planet-portd 的 port 文件，联调 mockd 需显式设 `PLANET_PORT_URL`（或删掉该文件）。多实例并行时用 `MOCKD_PORT` 指定监听端口（默认 9998）。
-
 ### 环境变量与请求行为
 
 CLI 侧环境变量（`PLANET_PORT_URL` / `PLANET_PORT_TOKEN` / `PLANET_PORT_CONFIG_DIR` / `PLANET_PORT_PLANET`）、API 地址与鉴权协商、请求超时说明见 [COMMANDS.md](COMMANDS.md) 。
 
 ### 回归验证
 
-CLI 手工回归清单（对 mockd 实测的基准，planet-portd 按同一清单回归）见 [docs/2026-10-29-cli-regression-checklist.md](docs/2026-10-29-cli-regression-checklist.md) 。
+CLI 手工回归清单（对 planet-portd 实测的基准）见 [docs/2026-10-29-cli-regression-checklist.md](docs/2026-10-29-cli-regression-checklist.md) 。
 
 ## 致谢
 

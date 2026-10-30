@@ -1,5 +1,5 @@
 //! 进程内事件环形缓冲(容量 1024,满则丢弃最旧)。
-//! 查询语义与 mockd 的 events handler 一致:按 planet 过滤(可省)、ts > after(可省)、
+//! 查询语义(REST 契约):按 planet 过滤(可省)、ts > after(可省)、
 //! 最新在前取 limit(默认 40 由 handler 决定)。
 
 use std::collections::VecDeque;
