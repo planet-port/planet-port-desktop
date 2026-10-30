@@ -1,10 +1,8 @@
 //! 顶层 `planet-port install`:一键自安装(离线安装主入口)。
 //!
 //! 把 CLI 同目录的二进制套装(planet-port + planet-portd)装到系统预设路径,
-//! 建 PATH 软链,并装载 launchd 服务:
-//!   /Library/Application Support/planet-portd/bin/planet-port    ← CLI
-//!   /Library/Application Support/planet-portd/bin/planet-portd   ← daemon
-//!   /usr/local/bin/planet-port → CLI(软链)
+//! 建 PATH 入口,并装载系统服务(macOS: launchd;Linux: systemd)。具体落点
+//! 与软链层随平台不同,收敛在 `cmd::service` 平台模块(macos.rs/linux.rs)。
 //!
 //! 与 install.sh 的分工:install.sh 只负责在线场景的「下载 + 解压」,落盘后
 //! 同样走本命令;解压后的发布包里直接 `sudo ./planet-port install` 即完成
@@ -15,7 +13,6 @@
 //! start 直接成功。
 
 use std::fs;
-use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -23,9 +20,6 @@ use crate::client::{CliError, Client};
 use planet_port_api::endpoints;
 
 use super::service;
-
-const CLI_BIN: &str = "/Library/Application Support/planet-portd/bin/planet-port";
-const LINK: &str = "/usr/local/bin/planet-port";
 
 pub fn run(yes: bool, json: bool) {
     service::require_root();
@@ -82,19 +76,10 @@ pub fn run(yes: bool, json: bool) {
     }
     // 从已安装路径运行 install:跳过自拷贝(rename 同路径会自删)
     let installed = fs::canonicalize(&cli_src).ok()
-        == fs::canonicalize(CLI_BIN).ok();
+        == fs::canonicalize(service::CLI_BIN).ok();
 
-    // 3. 落盘(临时文件 + rename 原子替换,正在运行的二进制也可换)
-    if !installed {
-        service::copy_exe(&cli_src, CLI_BIN);
-        service::copy_exe(&daemon_src, service::BIN_PATH);
-    }
-    // PATH 软链:已存在(软链或普通文件)一律替换;指回我们自己的 CLI_BIN
-    if let Err(e) = replace_symlink(CLI_BIN, LINK) {
-        eprintln!("{}", rust_i18n::t!("cli.install.linkFailed", link = LINK, e = e));
-        std::process::exit(1);
-    }
-    service::progress(json, rust_i18n::t!("cli.install.linked", link = LINK, bin = CLI_BIN).to_string());
+    // 3. 落盘 + PATH 入口(macOS:App Support+软链;Linux:直接 /usr/local/bin)
+    service::install_cli(&cli_src, &daemon_src, installed, json);
 
     // 4. 服务安装(拷 daemon 已在上方完成,函数内的同路径自拷会跳过;
     //    写 plist + bootstrap,RunAtLoad 随装载拉起)
@@ -121,10 +106,10 @@ pub fn run(yes: bool, json: bool) {
 /// 已装 CLI 的版本号(执行 `--version` 取末段);未安装/执行失败返回 None
 /// (失败视作版本未知,按"有旧版"处理走确认)
 fn installed_version() -> Option<String> {
-    if !Path::new(CLI_BIN).is_file() {
+    if !Path::new(service::CLI_BIN).is_file() {
         return None;
     }
-    let out = Command::new(CLI_BIN)
+    let out = Command::new(service::CLI_BIN)
         .arg("--version")
         .output()
         .ok()
@@ -139,18 +124,6 @@ fn sibling_daemon(exe: &Path) -> PathBuf {
         return exe.to_path_buf();
     }
     exe.parent().map(|p| p.to_path_buf()).unwrap_or_default().join("planet-portd")
-}
-
-/// 建软链,目标位置已有任何东西(旧软链/普通文件)先移除
-fn replace_symlink(target: &str, link: &str) -> std::io::Result<()> {
-    match std::fs::symlink_metadata(link) {
-        Ok(_) => std::fs::remove_file(link)?,
-        Err(_) => {}
-    }
-    if let Some(dir) = Path::new(link).parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    symlink(target, link)
 }
 
 /// 安装前 running 的 planet id 清单;daemon 不在线/查询失败返回空

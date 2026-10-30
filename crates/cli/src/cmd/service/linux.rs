@@ -21,12 +21,9 @@ use std::process::Command;
 const UNIT: &str = "planet-portd";
 const UNIT_PATH: &str = "/etc/systemd/system/planet-portd.service";
 /// 数据目录:install 命令落盘 CLI/daemon 的根;--config-dir 亦指向此处
-/// Task 3 接线 install.rs 后经由 super 供外部使用,故 pub(crate)
-pub(crate) const DATA_DIR: &str = "/var/lib/planet-portd";
+const DATA_DIR: &str = "/var/lib/planet-portd";
+/// CLI 落点:直接落 PATH 规范位,无软链层(mod.rs 经此对外提供已装路径)
 pub(crate) const CLI_BIN: &str = "/usr/local/bin/planet-port";
-/// Linux 直接落 PATH,无软链层;install.rs(Task 3)接线后经 super 供外部使用
-#[allow(dead_code)]
-pub(crate) const LINK: &str = CLI_BIN;
 pub(crate) const BIN_PATH: &str = "/usr/local/bin/planet-portd";
 
 pub(crate) fn install(json: bool) {
@@ -73,10 +70,9 @@ pub(crate) fn install(json: bool) {
     json_done(json, serde_json::json!({"result": "ok"}));
 }
 
-/// install.rs 步骤 3:CLI/daemon 落盘。Task 3 接线 install.rs 后移除放行
+/// install.rs 步骤 3:CLI/daemon 落盘。
 /// installed 参数:从已安装路径运行时跳过自拷(rename 同路径会自删);
 /// json 参数与 macos 签名对齐(预留结果回执,Linux 无软链层暂无输出)
-#[allow(dead_code)]
 pub(crate) fn install_cli(cli_src: &Path, daemon_src: &Path, installed: bool, _json: bool) {
     // Linux 无软链层:CLI/daemon 直接落 /usr/local/bin(PATH 规范位,
     // zerotier-one 落 /usr/sbin 同理)
@@ -129,7 +125,8 @@ pub(crate) fn stop(json: bool) {
 }
 
 /// 读取 systemd 记录的服务 pid(pid = 0 = 未在运行)
-/// Task 3 接线 status 后启用,先临时放行 dead_code
+/// 仅保留备用:Linux 侧 stop 靠 systemd 自身等退出、start 靠 HTTP 探测,
+/// 均不需要轮询 pid;后续需精细化时再接入
 #[allow(dead_code)]
 pub(crate) fn service_pid() -> Option<u32> {
     systemctl_output(&["show", UNIT, "-p", "MainPID", "--value"])

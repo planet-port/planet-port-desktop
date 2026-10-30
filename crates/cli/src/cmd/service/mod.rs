@@ -14,10 +14,8 @@ use macos as platform;
 #[cfg(target_os = "linux")]
 use linux as platform;
 
-// 统一接口面:install.rs(Task 3 改造)与平台模块共同依赖的常量与 CLI/daemon
-// 落盘入口;暂未全被引用,Task 3 接线后移除 allow
-#[allow(unused_imports)]
-pub(crate) use platform::{install_cli, BIN_PATH, CLI_BIN, DATA_DIR, LINK};
+// install.rs 依赖的平台落盘入口与 CLI 安装路径(其余常量仅平台内部使用)
+pub(crate) use platform::{install_cli, CLI_BIN};
 
 use crate::client::{CliError, Client};
 use crate::output::print_json;
@@ -99,7 +97,7 @@ pub(crate) fn require_root() {
     }
 }
 
-/// install.rs 步骤 4 转发:服务安装留给平台实现,Task 3 后 install.rs 直调
+/// install.rs 步骤 4 转发:服务安装(装载/拉起)交给平台实现
 pub(crate) fn install(json: bool) {
     platform::install(json);
 }

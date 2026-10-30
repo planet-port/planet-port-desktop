@@ -27,10 +27,6 @@ pub(crate) const BIN_PATH: &str = "/Library/Application Support/planet-portd/bin
 // install.rs 步骤 3 落盘的 CLI 与 PATH 软链(uninstall 一并清理)
 pub(crate) const CLI_BIN: &str = "/Library/Application Support/planet-portd/bin/planet-port";
 pub(crate) const LINK: &str = "/usr/local/bin/planet-port";
-/// 数据目录(install 命令落盘 CLI/daemon 的根;--config-dir 亦指向此处)
-/// Task 3 接线 install.rs 后经由 super 供外部使用,先临时放行 dead_code
-#[allow(dead_code)]
-pub(crate) const DATA_DIR: &str = APP_DIR;
 // 日志放 /Library/Logs:路径无空格(newsyslog.conf 不支持带空格的文件名),
 // 且是 macOS 约定的系统级日志位置,Console.app 可直接浏览
 const LOG_DIR: &str = "/Library/Logs/planet-portd";
@@ -139,7 +135,6 @@ pub(crate) fn install(json: bool) {
 
 /// install.rs 步骤 3:CLI/daemon 落盘 + PATH 软链。
 /// installed 参数:从已安装路径运行时跳过自拷(rename 同路径会自删)
-#[allow(dead_code)]
 pub(crate) fn install_cli(cli_src: &Path, daemon_src: &Path, installed: bool, json: bool) {
     if !installed {
         super::copy_exe(cli_src, CLI_BIN);
