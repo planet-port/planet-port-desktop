@@ -97,18 +97,9 @@ planet-port info             # planet 聚合状态
 
 ---
 
-## 附:图形安装程序(.pkg / .dmg)可行性评估
+## 附:安装程序(.pkg)说明
 
-**结论:可行且成本低,建议在面向普通用户分发时做 .pkg;.dmg 无必要。**
-
-| 方案 | 可行性 | 说明 |
-|---|---|---|
-| **.pkg(pkgbuild/productbuild)** | ✅ 推荐 | macOS 原生,双击安装;payload 就是现有 tarball 内容 + 三个 postinstall 脚本行(拷贝/软链/launchd),与 `planet-port install` 完全同构。可做签名 + Developer ID 公证(免 Gatekeeper 拦截),release.sh 里加 20 行打包步骤即可 |
-| **.dmg 拖拽安装** | ⚠️ 不匹配 | 拖拽式适合 .app;本产品是 CLI + LaunchDaemon 系统服务,拖进 /Applications 装不了 launchd,最终还得跑脚本,形式大于内容 |
-| **.app(GUI 安装器)** | ⚠️ 后置 | 若未来做桌面 GUI(planet-port-desktop 名义上的形态),随 .app 首次启动引导执行 `planet-port install`(sudo via osascript)更顺;当前纯 CLI 阶段投入产出比低 |
-| **Homebrew tap** | ✅ 顺手 | 写个 formula 调 release tarball,brew 生态用户零文档安装;可与 .pkg 并行 |
-
-关键前提:**分发前需要 Apple Developer ID 代码签名 + 公证**,否则用户首次
-运行 CLI 与加载 LaunchDaemon 都会被 Gatekeeper 拦(未签名二进制下载后无
-com.apple.quarantine 豁免)。没有开发者账号也能发,但用户体验是"右键打开 +
-系统设置放行",只适合早期尝鲜。
+当前阶段**只做在线 / 离线两条安装路径**,不做 .pkg。技术上可行(payload 即
+现有 tarball + postinstall 调 `planet-port install`),待面向普通用户分发时
+再评估;届时需同步解决 Developer ID 签名 + 公证,否则 Gatekeeper 会拦截
+首次运行。
