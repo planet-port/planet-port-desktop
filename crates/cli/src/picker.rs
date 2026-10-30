@@ -18,6 +18,8 @@ use signal_hook::{
     iterator::Signals,
 };
 use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// 选择器候选(id 用于回填 --planet,label 用于展示)
 pub struct PlanetOption {
@@ -44,6 +46,9 @@ fn cancelled(e: &InquireError) {
 /// 单选(join 等变更类命令):Ok = 选中的 canonical id;Err = 取消/出错。
 /// Select 回车即选高亮项,天然满足「高亮 = 选中」,无需定制
 pub fn pick_single(planets: &[PlanetOption], verb: &str) -> Result<String, ()> {
+    // inquire 内部同走 crossterm 事件源(死 TTY 同样会卡),信号线程保证
+    // SIGHUP/SIGTERM 到达即恢复终端并终止;看门狗因无迭代可埋点,不适用
+    spawn_signal_guard();
     let labels: Vec<String> = planets.iter().map(|p| p.label.clone()).collect();
     let idx = Select::new(&rust_i18n::t!("cli.picker.prompt", verb = verb), labels)
         .with_help_message(&rust_i18n::t!("cli.picker.helpSingle"))
@@ -61,9 +66,68 @@ pub fn pick_single(planets: &[PlanetOption], verb: &str) -> Result<String, ()> {
 struct RawGuard;
 impl Drop for RawGuard {
     fn drop(&mut self) {
-        let _ = execute!(std::io::stderr(), Show);
-        let _ = terminal::disable_raw_mode();
+        restore_terminal();
     }
+}
+
+/// 恢复终端(显示光标 + 退出 raw 模式);正常收尾与异常终止路径共用
+fn restore_terminal() {
+    let _ = execute!(std::io::stderr(), Show);
+    let _ = terminal::disable_raw_mode();
+}
+
+/// 按信号本义终止:恢复终端 → 还原默认处置 → 重发信号,保留
+/// killed-by-signal 的退出语义。libc 是既有依赖,不引低层封装
+fn die_by_signal(sig: i32) -> ! {
+    restore_terminal();
+    unsafe {
+        libc::signal(sig, libc::SIG_DFL);
+        libc::raise(sig);
+    }
+    // 默认处置必然终止;万一返回,兜底退出而不是 panic(panic 只杀本线程)
+    std::process::exit(130)
+}
+
+/// 信号防护线程:SIGHUP/SIGTERM/SIGINT 的处置不依赖主循环轮询。
+/// 实测 crossterm 0.29 的 event::poll 在 TTY 失效(PTY 主端关闭,read
+/// 持续 EIO)时内部热循环永不返回——主循环走不到信号检查,SIGTERM
+/// 杀不掉、CPU 打满。改为独立线程阻塞等信号,收到即恢复终端并按信号
+/// 本义终止;PTY 主端消亡时内核投递 SIGHUP,正是选择器该退出的时机。
+/// 线程随进程退出回收(一次性 CLI,无需显式停止);注册失败降级为无防护
+fn spawn_signal_guard() {
+    if let Ok(signals) = Signals::new([SIGTERM, SIGINT, SIGHUP]) {
+        std::thread::spawn(move || {
+            let mut signals = signals;
+            for sig in signals.forever() {
+                die_by_signal(sig);
+            }
+        });
+    }
+}
+
+/// 心跳看门狗:兜底「事件源卡死且无信号送达」的残余场景(TTY 已 EIO
+/// 但 SIGHUP 未及投递)。主循环每迭代 +1(正常节奏 poll 100ms ≥10Hz),
+/// 连续 3s 未走动判定卡死,恢复终端后退出码 1。仅 pick_multi 可用——
+/// pick_single 走 inquire 内部循环,没有可埋点的迭代
+fn spawn_watchdog(heartbeat: Arc<AtomicU64>) {
+    std::thread::spawn(move || {
+        let mut last = 0u64;
+        let mut stalled = 0u32;
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let now = heartbeat.load(Ordering::Relaxed);
+            if now == last {
+                stalled += 1;
+                if stalled >= 6 {
+                    restore_terminal();
+                    std::process::exit(1);
+                }
+            } else {
+                stalled = 0;
+                last = now;
+            }
+        }
+    });
 }
 
 /// 渲染一屏并返回行数(供下次重绘回退用)。on = 勾选或(空选时的)高亮
@@ -119,24 +183,14 @@ pub fn pick_multi(planets: &[PlanetOption], verb: &str) -> Result<MultiPick, ()>
     let mut lines = render(&prompt, &hint, &labels, &checked, cursor).map_err(|e| {
         eprintln!("{}", rust_i18n::t!("cli.picker.renderFailed", e = e));
     })?;
-
-    // 信号防护:raw 模式的 Drop 守卫只覆盖 panic/正常返回,SIGTERM/SIGHUP
-    // 的默认处置直接终止进程,终端会残留 raw + 隐藏光标。signal-hook 把
-    // 信号转为队列在循环里轮询;收到即先恢复终端,再还原默认处置并重发
-    // 信号,进程按信号本义终止。注册失败则降级为无防护(功能不受影响)
-    let mut signals = Signals::new([SIGTERM, SIGINT, SIGHUP]).ok();
+    // 信号线程 + 心跳看门狗(见各自注释):前者保证死 TTY 场景随 SIGHUP
+    // 即刻终止,后者兜底事件源卡死且无信号的残余情况
+    spawn_signal_guard();
+    let heartbeat = Arc::new(AtomicU64::new(0));
+    spawn_watchdog(heartbeat.clone());
 
     let chosen = loop {
-        for sig in signals.as_mut().into_iter().flat_map(|s| s.pending()) {
-            let _ = execute!(std::io::stderr(), Show);
-            let _ = terminal::disable_raw_mode();
-            // 还原默认处置后重发信号:进程以信号本义终止(正确退出码),
-            // libc 是既有依赖,避免再引 signal-hook 的低层封装
-            unsafe {
-                libc::signal(sig, libc::SIG_DFL);
-                libc::raise(sig);
-            }
-        }
+        heartbeat.fetch_add(1, Ordering::Relaxed);
         // 事件轮询而非阻塞 read:空窗期回到信号检查
         let ev = match event::poll(std::time::Duration::from_millis(100)) {
             Ok(true) => match event::read() {

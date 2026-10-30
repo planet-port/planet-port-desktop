@@ -56,3 +56,9 @@
 | `info` STATUS | 三态对齐 list | 已连接/连接中/未连接(与 list 同口径) | 通过 |
 | `remove` 确认拒绝 | exit=130 | `已取消` + 130 | 通过 |
 | join/leave 幂等(daemon 侧) | 重复操作静默成功 | 新二进制安装后实测:重复 join 与 leave 未加入网络均 `200 ... OK` + `"idempotent":true`,exit=0 | 通过 |
+
+## 2026-10-30 追加修复(现场问题驱动)
+
+| 命令 | 预期 | 实测 | 结论 |
+|---|---|---|---|
+| `--ui` 选择器 × 死 TTY | 终端会话消亡即退出,不残留进程 | PTY 主端掐断复现:旧二进制 100% CPU 自旋且 SIGTERM 杀不掉(crossterm 0.29 `poll` 对 EIO 死 TTY 内部热循环);新二进制 1s 内随 SIGHUP 退出,SIGTERM 直杀亦生效 | 通过 |
