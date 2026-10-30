@@ -9,20 +9,30 @@
 #
 # 行为:
 #   1. 校验当前 HEAD 即 tag 指向的提交(防止用 dev 代码发 main 的版)
-#   2. 双架构构建(macOS aarch64 + x86_64)
+#   2. 四目标构建(macOS×2 + Linux×2)
 #   3. 按 planet-port_<ver>_<platform>_<arch>.tar.gz 规范打包
 #   4. gh release create 挂资产(已存在则只补传缺失资产,幂等)
 
 set -euo pipefail
 
 REPO="planet-port/planet-port-desktop"
-TARGETS=("aarch64-apple-darwin" "x86_64-apple-darwin")
+# 目标三元组;linux 目标带 .2.31 后缀(cargo-zigbuild 的 glibc 基线标记)
+TARGETS=("aarch64-apple-darwin" "x86_64-apple-darwin" \
+         "x86_64-unknown-linux-gnu.2.31" "aarch64-unknown-linux-gnu.2.31")
 # target 三元组 → 产物命名里的平台架构标记
 arch_tag() {
     case "$1" in
-        aarch64-apple-darwin) echo "macos_aarch64" ;;
-        x86_64-apple-darwin)   echo "macos_x86_64" ;;
+        aarch64-apple-darwin)            echo "macos_aarch64" ;;
+        x86_64-apple-darwin)              echo "macos_x86_64" ;;
+        x86_64-unknown-linux-gnu.2.31)    echo "linux_amd64" ;;
+        aarch64-unknown-linux-gnu.2.31)   echo "linux_arm64" ;;
         *) echo "" ;;
+    esac
+}
+build_target() { # $1=target
+    case "$1" in
+        *-linux-*) cargo zigbuild --release --target "$1" -p planet-port -p daemon ;;
+        *)         cargo build --release --target "$1" -p planet-port -p daemon ;;
     esac
 }
 
@@ -46,8 +56,9 @@ for target in "${TARGETS[@]}"; do
     tag="$(arch_tag "$target")"
     [[ -n "$tag" ]] || die "未配置 ${target} 的产物命名"
     echo "构建 ${target} ..."
-    cargo build --release --target "$target" -p planet-port -p daemon
-    BIN_DIR="target/${target}/release"
+    build_target "$target"
+    # zigbuild 产物目录是不带 glibc 后缀的三元组
+    BIN_DIR="target/${target%.*}/release"
     [[ -x "${BIN_DIR}/planet-port" && -x "${BIN_DIR}/planet-portd" ]] \
         || die "${BIN_DIR} 下二进制缺失"
     ASSET="planet-port_${VERSION}_${tag}.tar.gz"
@@ -63,6 +74,8 @@ cat > "$NOTES" <<EOF
 |---|---|
 | planet-port_${VERSION}_macos_aarch64.tar.gz | macOS Apple Silicon |
 | planet-port_${VERSION}_macos_x86_64.tar.gz | macOS Intel |
+| planet-port_${VERSION}_linux_amd64.tar.gz | Linux x86_64 (glibc≥2.31) |
+| planet-port_${VERSION}_linux_arm64.tar.gz | Linux arm64 (glibc≥2.31) |
 
 ## 安装
 
