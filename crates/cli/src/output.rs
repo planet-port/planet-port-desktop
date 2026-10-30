@@ -24,12 +24,14 @@ impl Table {
 
 impl fmt::Display for Table {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // 单元格可含换行(MANAGED-IPS 多地址堆叠):列宽取该列各行宽度最大值
         let mut widths: Vec<usize> =
             self.headers.iter().map(|h| h.width()).collect();
         for row in &self.rows {
             for (i, c) in row.iter().enumerate() {
                 if let Some(w) = widths.get_mut(i) {
-                    *w = (*w).max(c.width());
+                    let cw = c.split('\n').map(|l| l.width()).max().unwrap_or(0);
+                    *w = (*w).max(cw);
                 }
             }
         }
@@ -51,7 +53,16 @@ impl fmt::Display for Table {
         };
         writeln!(f, "{}", line(&self.headers).trim_end())?;
         for row in &self.rows {
-            writeln!(f, "{}", line(row).trim_end())?;
+            // 多行单元格逐物理行渲染:不足的列补空行,续行自然对齐到本列起点
+            let grid: Vec<Vec<&str>> = row.iter().map(|c| c.split('\n').collect()).collect();
+            let height = grid.iter().map(|g| g.len()).max().unwrap_or(1);
+            for j in 0..height {
+                let phys: Vec<String> = grid
+                    .iter()
+                    .map(|g| g.get(j).copied().unwrap_or("").to_string())
+                    .collect();
+                writeln!(f, "{}", line(&phys).trim_end())?;
+            }
         }
         Ok(())
     }

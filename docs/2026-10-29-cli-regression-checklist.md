@@ -62,3 +62,4 @@
 | 命令 | 预期 | 实测 | 结论 |
 |---|---|---|---|
 | `--ui` 选择器 × 死 TTY | 终端会话消亡即退出,不残留进程 | PTY 主端掐断复现:旧二进制 100% CPU 自旋且 SIGTERM 杀不掉(crossterm 0.29 `poll` 对 EIO 死 TTY 内部热循环);新二进制 1s 内随 SIGHUP 退出,SIGTERM 直杀亦生效 | 通过 |
+| `list` / `listnetworks` 多 managed IP | 列内逐行堆叠全量展示 | 3 IP(含超长畸形 CIDR)实测:续行对齐 MANAGED-IPS 列起点,无截断 | 通过 |

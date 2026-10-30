@@ -78,8 +78,8 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 | 命令 | 说明 |
 |---|---|
 | `info` | 所有 planet 聚合状态表(PLANET/STATUS/ADDRESS/VERSION/LATENCY) |
-| `list [--planet]` | 按**全部登记行星**分组列出网络(不只在线的),行星头标注三态 `[已连接/连接中/未连接]`,无网络行星显示 `(无网络)`;指定 planet 时只列该行星 |
-| `listnetworks [--planet]` | 跨 planet 网络列表(含 PLANET 列);`--planet` 过滤 |
+| `list [--planet]` | 按**全部登记行星**分组列出网络(不只在线的),行星头标注三态 `[已连接/连接中/未连接]`,无网络行星显示 `(无网络)`;指定 planet 时只列该行星;多 managed IP 在 MANAGED-IPS 列内逐行堆叠(全量展示,不截断) |
+| `listnetworks [--planet]` | 跨 planet 网络列表(含 PLANET 列);`--planet` 过滤;多 managed IP 堆叠展示同 `list` |
 | `listpeers [--planet]` | peers 按 planet 分组展示 |
 | `listmoons [--planet]` | moons 聚合表;`--planet` 过滤 |
 | `dump [--planet]` | **单一 planet** 状态 dump(networks/peers/events),不聚合;歧义时报候选列表 |

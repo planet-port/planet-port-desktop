@@ -175,16 +175,13 @@ pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
         }
         let mut t = new_table(&["NETWORK", "NAME", "STATUS", "TYPE", "MANAGED-IPS"]);
         for n in nets {
-            let mut ips = n.assigned_addrs.iter().take(2).cloned().collect::<Vec<_>>();
-            if n.assigned_addrs.len() > 2 {
-                ips.push("…".into());
-            }
+            // 多 managed IP 全量堆叠(换行续行对齐本列),不再截断 2 个
             t.add_row(vec![
                 n.nwid.clone(),
                 n.name.clone().unwrap_or_else(|| "—".into()),
                 n.status.clone(),
                 n.kind.clone(),
-                ips.join(", "),
+                n.assigned_addrs.join("\n"),
             ]);
         }
         println!("{t}\n");
@@ -220,17 +217,14 @@ pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -
         .map(|n| n.nwid.clone())
         .collect();
     for n in rows {
-        let mut ips = n.assigned_addrs.iter().take(2).cloned().collect::<Vec<_>>();
-        if n.assigned_addrs.len() > 2 {
-            ips.push("…".into());
-        }
         t.add_row(vec![
             planet_display(&names, &n.planet),
             n.nwid,
             n.name.unwrap_or_else(|| "—".into()),
             n.status,
             n.kind,
-            ips.join(", "),
+            // 多 managed IP 全量堆叠(换行续行对齐本列),与 list 同口径
+            n.assigned_addrs.join("\n"),
         ]);
     }
     println!("{t}");
