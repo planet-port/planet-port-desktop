@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use crate::client::{CliError, Client};
+use crate::cmd::{planet_label, resolve_single};
 use crate::output::{new_table, print_json};
+use clap::Subcommand;
 use planet_port_api::endpoints;
 use planet_port_api::types::{MoonEntry, NetworkEntry, PeerEntry, PlanetStatus};
 use serde_json::{json, Value};
@@ -85,12 +87,14 @@ pub fn info(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
     .unwrap_or_default();
     let mut t = new_table(&["PLANET", "STATUS", "ADDRESS", "VERSION", "LATENCY"]);
     for p in rows {
+        // 三态对齐 list:停止=未连接、运行且根可达=已连接、运行但离线=连接中
+        // (旧版 ONLINE/OFFLINE/stopped 混在一列,口径与 list 对不上)
         let status = if p.status != "running" {
-            "stopped".to_string()
+            rust_i18n::t!("status.disconnected").to_string()
         } else if p.online {
-            "ONLINE".to_string()
+            rust_i18n::t!("status.connected").to_string()
         } else {
-            "OFFLINE".to_string()
+            rust_i18n::t!("status.connecting").to_string()
         };
         let latency = p
             .latency_ms
@@ -107,14 +111,42 @@ pub fn info(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
 /// 其下无网络表;`--planet` 过滤对分组生效
 pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
     let v = fetch_list(client, endpoints::networks, "networks", filter)?;
-    if json {
-        print_json(&v);
-        return Ok(());
-    }
     let rows: Vec<NetworkEntry> = serde_json::from_value(
         v.get("networks").cloned().unwrap_or(Value::Null),
     )
     .unwrap_or_default();
+    if json {
+        // 分组结构(与文本模式同口径):planets[] 各带 networks[];
+        // 平铺数组是 listnetworks -j 的职责,两个入口不再同源重复。
+        // /status 失败时让错误冒出(退出码承载),不吞成「成功但零数据」
+        let sv = client.get_json(endpoints::status())?;
+        let planets: Vec<PlanetStatus> = serde_json::from_value(
+            sv.get("planets").cloned().unwrap_or(Value::Null),
+        )
+        .unwrap_or_default();
+        let arr: Vec<Value> = planets
+            .iter()
+            .filter(|p| match filter {
+                Some(f) => f.iter().any(|id| id == &p.id || id == &p.name),
+                None => true,
+            })
+            .map(|p| {
+                json!({
+                    "id": p.id,
+                    "name": p.name,
+                    "status": p.status,
+                    "online": p.online,
+                    "networks": rows
+                        .iter()
+                        .filter(|n| n.planet == p.id)
+                        .map(|n| serde_json::to_value(n).unwrap_or(Value::Null))
+                        .collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        print_json(&json!({ "planets": arr }));
+        return Ok(());
+    }
     // /status 只取一次:分组与名称展示共用,避免重复请求
     let planets = planet_statuses(client);
     let names: HashMap<String, String> = planets
@@ -157,7 +189,16 @@ pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
         }
         println!("{t}\n");
     }
+    auth_pending_hint(&rows);
     Ok(())
+}
+
+/// 授权等待状态的行动提示(排障闭环:用户第一反应是"为什么没 IP"):
+/// 卡在 AUTHENTICATION_REQUIRED 时告知去控制器放行。走 stderr,stdout 保持数据纯净
+fn auth_pending_hint(rows: &[NetworkEntry]) {
+    for n in rows.iter().filter(|n| n.status == "AUTHENTICATION_REQUIRED") {
+        eprintln!("{}", rust_i18n::t!("cli.list.authPending", nwid = n.nwid));
+    }
 }
 
 pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
@@ -172,6 +213,12 @@ pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -
     .unwrap_or_default();
     let names = planet_names(client);
     let mut t = new_table(&["PLANET", "NETWORK", "NAME", "STATUS", "TYPE", "MANAGED-IPS"]);
+    // rows 随后被 move 进循环,先取出待提示的授权等待网络
+    let pending: Vec<String> = rows
+        .iter()
+        .filter(|n| n.status == "AUTHENTICATION_REQUIRED")
+        .map(|n| n.nwid.clone())
+        .collect();
     for n in rows {
         let mut ips = n.assigned_addrs.iter().take(2).cloned().collect::<Vec<_>>();
         if n.assigned_addrs.len() > 2 {
@@ -187,6 +234,9 @@ pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -
         ]);
     }
     println!("{t}");
+    for nwid in pending {
+        eprintln!("{}", rust_i18n::t!("cli.list.authPending", nwid = nwid));
+    }
     Ok(())
 }
 
@@ -251,5 +301,66 @@ pub fn listmoons(client: &Client, filter: &Option<Vec<String>>, json: bool) -> R
         ]);
     }
     println!("{t}");
+    Ok(())
+}
+
+// ---- network show:单网络详情视图 ----
+
+#[derive(Subcommand)]
+pub enum NetworkCmd {
+    /// Show one joined network's full detail (IP / routes / DNS / routeViaZeroTier)
+    Show { nwid: String },
+}
+
+pub fn run_network(
+    client: &Client,
+    cmd: &NetworkCmd,
+    planet: &Option<String>,
+    json: bool,
+) -> Result<(), CliError> {
+    match cmd {
+        NetworkCmd::Show { nwid } => network_show(client, nwid, planet, json),
+    }
+}
+
+fn network_show(
+    client: &Client,
+    nwid: &str,
+    planet: &Option<String>,
+    json: bool,
+) -> Result<(), CliError> {
+    let pid = resolve_single(client, planet)?;
+    let n = crate::cmd::mutate::find_network(client, nwid, &pid)?;
+    if json {
+        print_json(&serde_json::to_value(&n).map_err(|e| CliError::Io(e.to_string()))?);
+        return Ok(());
+    }
+    let label = planet_label(client, &Some(pid.clone()))
+        .unwrap_or_else(|| pid.clone());
+    let routes = n
+        .managed_routes
+        .iter()
+        .map(|r| match &r.via {
+            Some(v) => format!("{} via {}", r.target, v),
+            None => r.target.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!("network   {}", n.nwid);
+    println!("planet    {label}");
+    println!("name      {}", n.name.clone().unwrap_or_else(|| "—".into()));
+    println!("status    {}", n.status);
+    println!("type      {} (mac {}, mtu {})", n.kind, n.mac, n.mtu);
+    println!("assigned  {}", n.assigned_addrs.join(", "));
+    println!("routes    {}", if routes.is_empty() { "—".into() } else { routes });
+    println!("dns       mode={} servers=[{}] custom=[{}]",
+        n.dns_mode,
+        n.dns_servers.join(", "),
+        n.custom_dns.join(", "),
+    );
+    println!("routeVia  {}", n.route_via_zero_tier);
+    if let Some(c) = &n.conflict {
+        println!("conflict  {c}");
+    }
     Ok(())
 }

@@ -1,5 +1,5 @@
 use crate::client::{CliError, Client};
-use crate::output::{new_table, print_json};
+use crate::output::{fmt_local_ms, new_table, print_json};
 use planet_port_api::endpoints;
 use planet_port_api::types::{EventEntry, PlanetStatus};
 use serde_json::Value;
@@ -66,7 +66,8 @@ fn render(v: &Value) {
     .unwrap_or_default();
     let mut t = new_table(&["TS", "PLANET", "KIND", "MESSAGE"]);
     for e in entries {
-        t.add_row(vec![e.ts_ms.to_string(), e.planet, e.kind, e.message]);
+        // 文本模式本地时间(-j 保留原始毫秒 epoch,游标语义不变)
+        t.add_row(vec![fmt_local_ms(e.ts_ms), e.planet, e.kind, e.message]);
     }
     println!("{t}");
 }

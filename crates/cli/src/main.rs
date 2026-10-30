@@ -41,6 +41,11 @@ enum Command {
     Info,
     /// List networks grouped by planet
     List,
+    /// Show one joined network's full detail
+    Network {
+        #[command(subcommand)]
+        cmd: cmd::query::NetworkCmd,
+    },
     /// List networks across planets
     Listnetworks,
     /// List peers, grouped by planet
@@ -51,6 +56,8 @@ enum Command {
     Leave { nwid: String },
     /// Set client-side config: routeViaZeroTier / dnsMode / customDns
     Set { nwid: String, values: Vec<String> },
+    /// Get one config value of a joined network (script-friendly)
+    Get { nwid: String, key: String },
     /// List moons
     Listmoons,
     /// Orbit a moon
@@ -194,6 +201,8 @@ fn planet_need(cmd: &Command) -> PlanetNeed {
         Command::Join { .. }
         | Command::Leave { .. }
         | Command::Set { .. }
+        | Command::Get { .. }
+        | Command::Network { .. }
         | Command::Orbit { .. }
         | Command::Deorbit { .. }
         | Command::Dump
@@ -207,6 +216,7 @@ fn planet_verb(cmd: &Command) -> &'static str {
     match cmd {
         Command::Info => "info",
         Command::List => "list",
+        Command::Network { .. } => "network show",
         Command::Listnetworks => "listnetworks",
         Command::Listpeers => "listpeers",
         Command::Listmoons => "listmoons",
@@ -214,6 +224,7 @@ fn planet_verb(cmd: &Command) -> &'static str {
         Command::Join { .. } => "join",
         Command::Leave { .. } => "leave",
         Command::Set { .. } => "set",
+        Command::Get { .. } => "get",
         Command::Orbit { .. } => "orbit",
         Command::Deorbit { .. } => "deorbit",
         Command::Dump => "dump",
@@ -326,12 +337,14 @@ fn dispatch(
         Command::Service { .. } => unreachable!("service 在 main 中单独分流"),
         Command::Info => cmd::query::info(client, query_filter, json),
         Command::List => cmd::query::list(client, query_filter, json),
+        Command::Network { cmd } => cmd::query::run_network(client, cmd, planet_flag, json),
         Command::Listnetworks => cmd::query::listnetworks(client, query_filter, json),
         Command::Listpeers => cmd::query::listpeers(client, query_filter, json),
         Command::Listmoons => cmd::query::listmoons(client, query_filter, json),
         Command::Join { nwid } => cmd::mutate::join(client, nwid, planet_flag, json),
         Command::Leave { nwid } => cmd::mutate::leave(client, nwid, planet_flag, json),
         Command::Set { nwid, values } => cmd::mutate::set(client, nwid, values, planet_flag, json),
+        Command::Get { nwid, key } => cmd::mutate::get(client, nwid, key, planet_flag, json),
         Command::Orbit { moon_id, seed } => cmd::mutate::orbit(client, moon_id, seed, planet_flag, json),
         Command::Deorbit { moon_id } => cmd::mutate::deorbit(client, moon_id, planet_flag, json),
         Command::Dump => cmd::mutate::dump(client, planet_flag, json),
@@ -359,10 +372,27 @@ fn die(e: &CliError) -> ! {
             eprintln!("planet-portd is not running (try: planet-port service start)")
         }
         CliError::Api(code, api) => {
-            eprintln!("error {code}: {}", api.message);
-            if let Some(c) = &api.candidates {
-                for line in c {
-                    eprintln!("  {line}");
+            // 定位类错误改写成人话(--planet 指引 + 候选),不再透传 "?planet="
+            // HTTP 行话;其余 API 错误原样(error/message/candidates 均为 API 数据)
+            match api.error.as_str() {
+                "planetAmbiguous" => {
+                    eprintln!("{}", rust_i18n::t!("cli.error.planetAmbiguous"));
+                    if let Some(c) = &api.candidates {
+                        for line in c {
+                            eprintln!("  {line}");
+                        }
+                    }
+                }
+                "noPlanetRunning" => {
+                    eprintln!("{}", rust_i18n::t!("cli.error.noPlanetRunning"))
+                }
+                _ => {
+                    eprintln!("error {code}: {}", api.message);
+                    if let Some(c) = &api.candidates {
+                        for line in c {
+                            eprintln!("  {line}");
+                        }
+                    }
                 }
             }
         }

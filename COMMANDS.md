@@ -20,8 +20,7 @@
 - 未设置 URL 时 CLI 先读 port 文件(`<config_dir>/planet-portd/port`,planet-portd
   启动写入):存在且内容为 1-65535 的合法端口 → `http://127.0.0.1:<该端口>`;
   读不到或非法 → 默认 `http://127.0.0.1:9998`。`--api-url` / `PLANET_PORT_URL`
-  显式指定时完全跳过端口文件。注意:mockd **不写** port 文件,若机器上残留
-  planet-portd 的 port 文件,联调 mockd 需显式设 URL(或删掉该文件)。
+  显式指定时完全跳过端口文件。
 
 ## 环境变量
 
@@ -48,7 +47,7 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 | ① | `--planet <name\|id>` | 显式指定,优先级最高 |
 | ② | 环境变量 `PLANET_PORT_PLANET` | 由 `eval $(planet-port use <x>)` 设置 |
 | ③ | 唯一 running planet 自动选中 | 仅有一个激活 planet 时自动落到它 |
-| ④ | 多个 running planet | **交互式 TTY**:弹 planet 选择列表(见下);非交互(管道/脚本/`-j`):报 `409` 并列出候选,退出码 2,不猜 |
+| ④ | 多个 running planet | 显式 `--ui` 且 stdin 为 TTY 时弹 planet 选择列表(见下);默认非交互(管道/脚本/`-j`):报 `409` 并列出候选,退出码 2,不猜 |
 
 查询类命令(info / list / listnetworks / listpeers / listmoons)**默认聚合展示**,
 `--planet` 与环境变量在其上的语义是**过滤**,不受上述链约束。
@@ -61,8 +60,8 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 
 ## 交互式 planet 选择
 
-交互式终端(stdin 为 TTY)且未显式指定 planet 时,多 planet 场景弹选择列表
-代替定位链 ④ 的 409 报错:
+显式传 `--ui` 且 stdin 为 TTY 时,多 planet 场景弹选择列表代替定位链 ④ 的
+409 报错(默认非交互,输出可预测,脚本/管道友好):
 
 - **变更类命令**(join / leave / set / orbit / deorbit / dump / moon import)单选:
   候选为全部 running planet,↑↓ 移动,回车确认;
@@ -71,7 +70,7 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
   候选含「<全部>」首项,空格勾选,回车确认;勾选「全部」或空选 = 聚合全部,
   勾选子集则按选中集合过滤(多成员时逐 planet 请求合并);
 - Esc / Ctrl+C 取消,**退出码 130**;
-- 非 TTY(管道/脚本)或 `-j` 模式不弹列表,保持原聚合 / 409 行为。
+- 未传 `--ui`、非 TTY(管道/脚本)或 `-j` 模式不弹列表,保持原聚合 / 409 行为。
 
 ## 状态查询
 
@@ -89,9 +88,11 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 
 | 命令 | 说明 |
 |---|---|
-| `join <nwid>` | 加入网络;对已加入网络返回 409(退出码 1) |
-| `leave <nwid>` | 退出网络 |
-| `set <nwid> <k>=<v>...` | 客户端本地配置:`routeViaZeroTier=0\|1`(非 0/1 退出码 2)、`dnsMode=none\|network\|custom`、`customDns=<逗号分隔>`;未知 key 或不带任何 k=v 退出码 2 |
+| `join <nwid>` | 加入网络;**幂等**:对已加入网络重复 join 静默成功(`{"result":"ok","idempotent":true}`),批量脚本可重入 |
+| `leave <nwid>` | 退出网络;**幂等**:未加入时重复 leave 静默成功 |
+| `set <nwid> <k>=<v>...` | 客户端本地配置:`routeViaZeroTier=0\|1`(非 0/1 退出码 2)、`dnsMode=none\|network\|custom`、`customDns=<逗号分隔>`;未知 key 或不带任何 k=v 退出码 2;zerotier-cli 旧 key(`allowDefault`/`allowManaged`/`allowDNS`)报错时提示等价 key 映射 |
+| `get <nwid> <key>` | 读单个网络配置值(脚本友好):key 取 `routeViaZeroTier`/`dnsMode`/`customDns`/`assignedAddrs`/`managedRoutes` 等字段;字符串裸输出,数组/对象紧凑 JSON;未知 key 退出码 2(同样带旧 key 映射提示) |
+| `network show <nwid>` | 单网络详情视图:planet 落点、状态、assigned IP、managed routes、DNS 三件套、routeViaZeroTier 一屏可见;`-j` 输出完整 NetworkEntry |
 
 ## moon 操作(按定位链落到单一 planet)
 
@@ -108,17 +109,17 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 | `add <file\|URL> [--name <别名>] [--data-dir <绝对路径>] [--port <UDP端口>]` | 导入 planet 文件并立即上线;支持本地路径与 `http(s)://` URL(URL 下载后走同一套校验,超时 30s、响应体上限 8MB);容器导入返回 `501 notImplemented`;`--data-dir`/`--port` 为开发验证覆写(如复用既有 dataDir),日常省略 |
 | `start <name\|id>` | 上线实例;按登记的本地网络配置自动 re-join |
 | `stop <name\|id>` | 下线实例(feth 设备与路由清理),保留登记 |
-| `remove <name\|id> [--yes]` | 删除登记;**自动批量 leave 全部已加入网络并停止实例**后再删除(单个 leave 失败记录事件不阻断);交互确认提示走 stderr(stdout 纯净),`--yes` 供脚本跳过;`-j` 下必须配 `--yes`,否则退出码 2 |
+| `remove <name\|id> [--yes]` | 删除登记;**自动批量 leave 全部已加入网络并停止实例**后再删除(单个 leave 失败记录事件不阻断);交互确认提示走 stderr(stdout 纯净),**确认拒绝退出码 130**(与选择器取消一致,脚本不会误判已删),`--yes` 供脚本跳过;`-j` 下必须配 `--yes`,否则退出码 2 |
 
 ## planet 管理
 
 | 命令 | 说明 |
 |---|---|
 | `planet list` | 登记清单(ICON emoji / ID / STATUS / NETWORKS / PORT) |
-| `planet show <name\|id>` | 详情(worldId、类型、roots、来源、大小、修订时间、端口等) |
+| `planet show <name\|id>` | 详情(worldId、类型、roots、来源、大小、修订时间、端口等);修订时间文本模式为本地时间,`-j` 保留 epoch |
 | `planet rename <name\|id> <新名>` | 重命名别名 |
 | `planet export <name\|id> [-o <file>]` | 导出 planet 二进制;缺省 `-o` 写 stdout |
-| `planet share <name\|id> [--ttl <秒>]` | 生成临时下载链接并打印 URL 与过期时间(默认 300s) |
+| `planet share <name\|id> [--ttl <秒>]` | 生成临时下载链接并打印 URL 与过期时间(默认 300s);URL 按 CLI 实际访问的 base 改写(经 `PLANET_PORT_URL` 指到远端时对他人可达),回环地址时 stderr 提示换局域网 IP;过期时间文本模式为本地时间,`-j` 保留 epoch |
 
 ## shell 上下文
 
@@ -137,11 +138,16 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 | `service uninstall` | 需 root:`launchctl bootout` + 删 plist 与拷贝的二进制;**数据目录保留**,提示手动 `rm -rf` |
 | `service start` | 需 root:`launchctl kickstart -k …`;daemon 启动时按 registry 期望状态自动恢复 planet |
 | `service stop` | 需 root:`launchctl kill TERM …`,命中 daemon 的信号优雅退出路径(逐 planet 红线收尾;**保留期望状态**,start 后自动恢复;显式 `planet-port stop` 才不恢复) |
-| `service status` | 无需 root:ping `/version` 成功 → `运行中(端口 N)`(N 取自 port 文件);失败时按 plist 是否存在区分「未安装」/「已安装未运行」并给出 launchctl 状态摘要 |
+| `service logs [--lines N] [--follow]` | 无需 root:tail daemon 日志(`/Library/Logs/planet-portd/daemon.log`,默认末 50 行);`--follow` 持续跟踪,Ctrl+C 退出;日志文件不存在时退出码 1 |
+| `service status` | 无需 root:尊重 `PLANET_PORT_URL`;ping `/version` 成功 → `运行中(端口 N)`(N 取自 port 文件,**退出码 0**);token 校验失败 → 退出码 1;不在线时按 plist 是否存在区分「未安装」/「已安装未运行」并给出 launchctl 状态摘要,**退出码 3** |
 
 ## 行为说明
 
-- 单操作成功输出为简式,如 `200 join OK`;`moon import` 为 `201 moon import OK`。
+- 单操作成功输出为简式并带 planet 落点,如 `gozi25(3530253632) 200 join OK`(定位链②③生效时用户看不到目标,回执自报家门;落点拿不到时退化为 `200 join OK`);`moon import` 为 `201 moon import OK`。
+- 变更类 `-j` 输出真实响应体:join/leave/orbit 为 `{"result":"ok"}`(幂等重入时附 `"idempotent":true`),remove/deorbit(204 空体)代以 `{"result":"ok"}`,不再是 `null`。
+- 文本模式时间戳本地化(`events` TS、`planet show` 修订时间、`share` 过期时间);`-j` 一律保留原始 epoch(游标/脚本语义不变)。
+- `dump -j` 为结构化对象(`planet`/`networks`/`peers`/`events` 各取自对应 JSON 端点),不再是被 quote 一层的 JSON 字符串;`list -j` 为分组结构 `planets[]` 各带 `networks[]`(平铺数组是 `listnetworks -j` 的职责)。
+- 定位类 409(`planetAmbiguous`/`noPlanetRunning`)在人话层改写为 `--planet` 指引 + 候选列表(跟随 CLI 语言);其余 API 错误原样透传 `error <code>: <message>`。
 - 常规请求全局 10s 超时,超时以错误退出(不误报 daemon 未在线);`events --follow`
   的轮询请求无超时,长挂不受影响。
 - `set` 的 `routeViaZeroTier` 在下一次网络配置更新(控制器下发 netconf)时生效:
@@ -160,7 +166,7 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 | 1 | 运行错误(API 4xx/5xx、IO 错误) |
 | 2 | 用法错误(非法参数、未知 set key)、planet 歧义(409 + 候选列表,仅非交互路径)、service 组需 root(install/uninstall/start/stop 未以 root 运行) |
 | 3 | daemon 不在线,提示 `planet-portd is not running (try: planet-port service start)` |
-| 130 | 交互式 planet 选择被取消(Esc / Ctrl+C) |
+| 130 | 用户中止:交互式 planet 选择被取消(Esc / Ctrl+C)、`remove` 确认拒绝 |
 
 ---
 

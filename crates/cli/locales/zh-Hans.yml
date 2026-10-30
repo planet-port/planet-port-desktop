@@ -26,6 +26,8 @@
   # ---- 命令反馈 ----
   cli.events.needPlanet: "error: events 需要指定 --planet(当前 %{n} 个 running planet)"
   cli.planet.removeConfirm: "planet \"%{id}\" 将自动退出其全部网络、停止并删除登记,确认? [y/N] "
+  cli.planet.removeAborted: 已取消
+  cli.planet.shareLoopHint: "注意: 链接为回环地址,仅本机可打开;发给他人请改用本机的局域网 IP"
 
   # ---- service 子命令 ----
   cli.service.needRoot: "该操作需要 root 权限,请使用: sudo planet-port service <install|uninstall|start|stop>"
@@ -69,3 +71,12 @@
   cli.service.notLoaded: "  未被 launchd 加载"
   cli.service.launchctlFailed: "launchctl %{args} 失败: %{e}"
   cli.service.launchctlExecFailed: "无法执行 launchctl: %{e}"
+  cli.service.logMissing: "日志文件不存在: %{path}(daemon 可能尚未运行过)"
+  cli.service.tailExecFailed: "无法执行 tail: %{e}"
+
+  # ---- 定位类错误(人话改写,见 main.rs die)----
+  cli.error.planetAmbiguous: "error: 多个 planet 正在运行,请用 --planet 指定目标:"
+  cli.error.noPlanetRunning: "error: 没有正在运行的 planet,请先启动:planet-port start <id>"
+
+  # ---- list/listnetworks 授权等待提示 ----
+  cli.list.authPending: "提示: 网络 %{nwid} 正在等待控制器授权(请在 ZeroTier Central 勾选 Allow)"

@@ -86,3 +86,33 @@ stderr/stdout 纪律好、`events --follow` 与多 planet 生命周期管理是 
 
 四份完整报告存于会话记录,本文件为归并后的结论版;如需原文可从评估 agent
 输出归档(`docs/` 下不再重复存放)。
+
+---
+
+## 四、处理结果(2026-10-30 修复批次)
+
+评估后当批次已修复 17 项、明确不做 3 项;mockd 已整体移除(语义漂移的维护成本
+超过其契约验证价值,回归基准改为对真实 planet-portd 实测)。
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | `-j` 变更类输出 null | ✅ 输出真实响应体;204 空体(remove/deorbit)代 `{"result":"ok"}` |
+| 2 | remove 拒绝 exit 0 | ✅ 拒绝 → 130(与选择器取消一致) |
+| 3 | 重名别名静默落点 | ✅ 真实 daemon 本就 409 nameTaken;mockd 缺口随 mockd 移除消失 |
+| 4 | service status 忽略 env / exit 0 | ✅ 尊重 `PLANET_PORT_URL`;在线 0 / token 失败 1 / 不在线 3 |
+| 5 | dump -j 是 JSON 字符串 | ✅ 结构化拼装(planet/networks/peers/events) |
+| 6 | 歧义报错两套话术 | ✅ CLI 层统一人话改写(`--planet` 指引 + 候选),三语言 |
+| 7 | COMMANDS.md 与 --ui 漂移 | ✅ 文档对齐实现(显式 `--ui`,默认非交互) |
+| 8 | 回执不带落点 | ✅ `name(id) 200 join OK` 样式(CLI 经 /status 推导,daemon 契约不变) |
+| 9 | 时间戳原始 epoch | ✅ 文本模式本地时间(events TS / revision / expires_at),`-j` 保留 epoch |
+| 10 | share 输出 127.0.0.1 | ✅ URL 按 CLI base 改写;回环地址 stderr 提示换局域网 IP |
+| 11 | join/leave 非幂等 | ✅ daemon 幂等(`{"result":"ok","idempotent":true}`),CLI 透传 |
+| 13 | 单网络详情缺失 | ✅ 新增 `network show <nwid>` |
+| 14 | 排障闭环缺失 | ✅ 新增 `service logs [--lines N] [--follow]`;list/listnetworks 对 AUTHENTICATION_REQUIRED 给授权行动提示(stderr) |
+| 15 | set key 不兼容 + 无 get | ✅ 旧 key 报错提示映射(allowDefault/allowManaged→routeViaZeroTier,allowDNS→dnsMode);新增 `get <nwid> <key>` |
+| 17 | list/listnetworks -j 同源 | ✅ `list -j` 分组结构 `planets[].networks[]`,listnetworks -j 保持平铺 |
+| 19 | info STATUS 混叠 | ✅ 三态对齐 list(已连接/连接中/未连接) |
+| 20 | mockd 回归盲区 | ✅ mockd 移除,回归基准改为真实 daemon |
+| 12 | 网络成员在线列表 | ⏭ roadmap(需控制器侧成员 API,超出一期本地核心能力) |
+| 16 | listpeers 单路径 | ⏭ roadmap(paths[] 数组涉及 daemon→API 契约变更,收益待权衡) |
+| 18 | 批量语义(--planet all/--wait) | ⏭ roadmap |

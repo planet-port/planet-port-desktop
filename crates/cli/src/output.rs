@@ -60,3 +60,34 @@ impl fmt::Display for Table {
 pub fn print_json(v: &Value) {
     println!("{}", serde_json::to_string_pretty(v).unwrap());
 }
+
+/// 毫秒 epoch → 本地时间(文本模式展示;-j 模式保留原始数值)
+pub fn fmt_local_ms(ms: u64) -> String {
+    chrono::DateTime::from_timestamp_millis(ms as i64)
+        .map(|t| {
+            t.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M:%S%.3f")
+                .to_string()
+        })
+        .unwrap_or_else(|| ms.to_string())
+}
+
+/// 秒 epoch → 本地时间(share 的 expires_at)
+pub fn fmt_local_secs(s: u64) -> String {
+    chrono::DateTime::from_timestamp(s as i64, 0)
+        .map(|t| {
+            t.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        })
+        .unwrap_or_else(|| s.to_string())
+}
+
+/// 单值输出(get 命令):字符串裸输出,布尔/数字原样,数组/对象紧凑 JSON
+pub fn fmt_value(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Array(_) | Value::Object(_) => serde_json::to_string(v).unwrap(),
+        other => other.to_string(),
+    }
+}

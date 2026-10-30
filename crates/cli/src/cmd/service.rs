@@ -45,6 +45,15 @@ pub enum ServiceCmd {
     Stop,
     /// 查看 daemon 运行状态(无需 root)
     Status,
+    /// 查看 daemon 日志(tail;--follow 持续跟踪)
+    Logs {
+        /// 显示末尾 N 行
+        #[arg(long, default_value_t = 50)]
+        lines: usize,
+        /// 持续跟踪(类似 tail -f)
+        #[arg(long)]
+        follow: bool,
+    },
 }
 
 pub fn run(cmd: ServiceCmd, json: bool) -> Result<(), CliError> {
@@ -66,6 +75,7 @@ pub fn run(cmd: ServiceCmd, json: bool) -> Result<(), CliError> {
             stop();
         }
         ServiceCmd::Status => status(json)?,
+        ServiceCmd::Logs { lines, follow } => logs(lines, follow),
     }
     Ok(())
 }
@@ -245,9 +255,10 @@ fn uninstall() {
     println!("{}", rust_i18n::t!("cli.service.dataKept", dir = APP_DIR));
 }
 
-/// 探测 daemon 是否在线:HTTP 有应答(含 401)即在线,返回端口
+/// 探测 daemon 是否在线:HTTP 有应答(含 401)即在线,返回端口。
+/// 尊重 PLANET_PORT_URL:env 指向哪就探哪(旧版恒探真实 daemon,排障误导)
 fn probe_online() -> Option<u16> {
-    let client = Client::new_lenient(None);
+    let client = Client::new_lenient(std::env::var("PLANET_PORT_URL").ok());
     match client.get_json(endpoints::version()) {
         Ok(_) | Err(CliError::Api(..)) => {
             Some(read_port_file().unwrap_or_else(|| port_of(client.base())))
@@ -326,8 +337,8 @@ fn stop() {
 
 fn status(json: bool) -> Result<(), CliError> {
     // 宽松构造:token 缺失不报错;连接成功即在线(401 等任何 HTTP 响应都算,
-    // 探测超时/连接失败才算不在线)
-    let client = Client::new_lenient(None);
+    // 探测超时/连接失败才算不在线)。URL 尊重 PLANET_PORT_URL
+    let client = Client::new_lenient(std::env::var("PLANET_PORT_URL").ok());
     match client.get_json(endpoints::version()) {
         Ok(v) => {
             let port = read_port_file().unwrap_or_else(|| port_of(client.base()));
@@ -377,17 +388,19 @@ fn status(json: bool) -> Result<(), CliError> {
         Err(CliError::Api(401, _)) => {
             let port = read_port_file().unwrap_or_else(|| port_of(client.base()));
             println!("{}", rust_i18n::t!("cli.service.tokenFailed", port = port));
-            return Ok(());
+            // 异常态非零退出(1):「进程在但鉴权失败」不该被脚本读作健康
+            std::process::exit(1);
         }
         // daemon 应答了非 401 的错误:进程在线,原样透传状态
         Err(e @ CliError::Api(..)) => return Err(e),
         Err(CliError::Offline) | Err(CliError::Io(_)) | Err(CliError::Usage(_)) => {}
     }
 
-    // 不在线:看 plist 是否存在判断「未安装」vs「已安装未运行」
+    // 不在线:看 plist 是否存在判断「未安装」vs「已安装未运行」。
+    // 不在线 = 异常态,退出码 3(与 CLI 的 Offline 语义一致)
     if !Path::new(PLIST_PATH).exists() {
         println!("{}", rust_i18n::t!("cli.service.notInstalled", path = PLIST_PATH));
-        return Ok(());
+        std::process::exit(3);
     }
     println!("{}", rust_i18n::t!("cli.service.installedNotRunning"));
     match launchctl_output_quiet(&["print", &format!("system/{LABEL}")]) {
@@ -406,7 +419,31 @@ fn status(json: bool) -> Result<(), CliError> {
         }
         Err(_) => println!("{}", rust_i18n::t!("cli.service.notLoaded")),
     }
-    Ok(())
+    std::process::exit(3);
+}
+
+/// 查看 daemon 日志:tail 末尾 N 行,--follow 时持续跟踪。
+/// 文件缺失(daemon 从未运行/未安装)是明确错误而非空输出
+fn logs(lines: usize, follow: bool) {
+    if !Path::new(LOG_PATH).exists() {
+        eprintln!("{}", rust_i18n::t!("cli.service.logMissing", path = LOG_PATH));
+        std::process::exit(1);
+    }
+    let mut args: Vec<String> = vec!["-n".into(), lines.to_string()];
+    if follow {
+        args.push("-f".into());
+    }
+    args.push(LOG_PATH.into());
+    match Command::new("tail").args(&args).status() {
+        Ok(s) if s.success() => {}
+        // tail 被信号杀死时 code() 为 None;Ctrl+C 的 130 由 SIGINT 命中 CLI
+        // 自身产生,这里只兜非信号的异常退出
+        Ok(s) => std::process::exit(s.code().unwrap_or(1)),
+        Err(e) => {
+            eprintln!("{}", rust_i18n::t!("cli.service.tailExecFailed", e = e));
+            std::process::exit(1);
+        }
+    }
 }
 
 // ---- 工具 ----

@@ -21,3 +21,5 @@ inquire = "0.7"
 crossterm = "0.29"
 rust-i18n = "3"
 sys-locale = "0.3.2"
+# 时间戳本地化(events TS / planet show revision / share expires_at);MIT/Apache-2.0
+chrono = "0.4"
