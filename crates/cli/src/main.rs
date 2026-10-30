@@ -104,6 +104,8 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::service::ServiceCmd,
     },
+    /// 一键安装:同目录二进制套装落盘预设路径 + PATH 软链 + 装服务(需 root)
+    Install,
     /// Show event log
     Events {
         #[arg(long, default_value_t = 40)]
@@ -156,9 +158,13 @@ fn main() {
         .clone()
         .or_else(|| std::env::var("PLANET_PORT_PLANET").ok().filter(|s| !s.is_empty()));
 
-    // service 子命令不经 REST client(全新机器上无 token 也须能 install/status)
+    // service / install 子命令不经 REST client(全新机器上无 token 也须能安装)
     let result = match &cli.command {
         Command::Service { cmd } => cmd::service::run((*cmd).clone(), json),
+        Command::Install => {
+            cmd::install::run(json);
+            Ok(())
+        }
         other => {
             let client = match Client::new(cli.api_url.clone()) {
                 Ok(c) => c,
@@ -259,7 +265,9 @@ fn dispatch(
     json: bool,
 ) -> Result<(), CliError> {
     match command {
-        Command::Service { .. } => unreachable!("service 在 main 中单独分流"),
+        Command::Service { .. } | Command::Install => {
+            unreachable!("service/install 在 main 中单独分流")
+        }
         Command::Info => cmd::query::info(client, query_filter, json),
         Command::List => cmd::query::list(client, query_filter, json),
         Command::Network { cmd } => cmd::query::run_network(client, cmd, planet_flag, json),

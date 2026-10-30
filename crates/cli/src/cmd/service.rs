@@ -26,7 +26,7 @@ const PLIST_PATH: &str = "/Library/LaunchDaemons/cn.imgozi.d.planetport.daemon.p
 const LEGACY_LABEL: &str = "com.planetport.daemon";
 const LEGACY_PLIST_PATH: &str = "/Library/LaunchDaemons/com.planetport.daemon.plist";
 const APP_DIR: &str = "/Library/Application Support/planet-portd";
-const BIN_PATH: &str = "/Library/Application Support/planet-portd/bin/planet-portd";
+pub(crate) const BIN_PATH: &str = "/Library/Application Support/planet-portd/bin/planet-portd";
 // 日志放 /Library/Logs:路径无空格(newsyslog.conf 不支持带空格的文件名),
 // 且是 macOS 约定的系统级日志位置,Console.app 可直接浏览
 const LOG_DIR: &str = "/Library/Logs/planet-portd";
@@ -81,7 +81,7 @@ pub fn run(cmd: ServiceCmd, json: bool) -> Result<(), CliError> {
 }
 
 /// 变更进度回执:文本模式走 stdout;`-j` 模式 stdout 让位给结果 JSON,人话转 stderr
-fn progress(json: bool, msg: String) {
+pub(crate) fn progress(json: bool, msg: String) {
     if json {
         eprintln!("{msg}");
     } else {
@@ -90,7 +90,7 @@ fn progress(json: bool, msg: String) {
 }
 
 /// `-j` 模式的机器回执:stdout 唯一一条 JSON;文本模式无输出
-fn json_done(json: bool, v: serde_json::Value) {
+pub(crate) fn json_done(json: bool, v: serde_json::Value) {
     if json {
         print_json(&v);
     }
@@ -98,7 +98,7 @@ fn json_done(json: bool, v: serde_json::Value) {
 
 // ---- 子命令实现 ----
 
-fn require_root() {
+pub(crate) fn require_root() {
     // euid 判定须真实:root 判断不准会误导安装失败原因(libc 已是 workspace 依赖)
     if unsafe { libc::geteuid() } != 0 {
         eprintln!("{}", rust_i18n::t!("cli.service.needRoot"));
@@ -106,7 +106,7 @@ fn require_root() {
     }
 }
 
-fn install(json: bool) {
+pub(crate) fn install(json: bool) {
     // 1. 拷贝当前二进制到固定路径(plist 指向它,target/debug 路径不稳定)
     let exe = std::env::current_exe().unwrap_or_else(|e| {
         eprintln!("{}", rust_i18n::t!("cli.service.exeNotFound", e = e));
@@ -231,7 +231,7 @@ fn install(json: bool) {
 
 /// 二进制更新用「临时文件 + rename」原子替换:直接 fs::copy 覆盖正在运行的
 /// 二进制会因文本文件忙(macOS ETXTBSY)失败,rename 换 inode 则不受影响。
-fn copy_exe(src: &Path, dst: &str) {
+pub(crate) fn copy_exe(src: &Path, dst: &str) {
     let tmp = Path::new(dst).with_extension("tmp");
     let _ = fs::remove_file(&tmp);
     if let Err(e) = fs::copy(src, &tmp) {
@@ -266,6 +266,15 @@ fn uninstall(json: bool) {
         progress(json, rust_i18n::t!("cli.service.legacyCleaned", label = LEGACY_LABEL).to_string());
     }
     let _ = fs::remove_file(BIN_PATH);
+    // install 命令落盘的 CLI 与 PATH 软链一并清(仅当软链确实指向我们的 CLI)
+    const CLI_BIN: &str = "/Library/Application Support/planet-portd/bin/planet-port";
+    const LINK: &str = "/usr/local/bin/planet-port";
+    let _ = fs::remove_file(CLI_BIN);
+    if let Ok(target) = fs::read_link(LINK) {
+        if target == Path::new(CLI_BIN) {
+            let _ = fs::remove_file(LINK);
+        }
+    }
     // bin 目录若已空则一并移除(数据目录保留)
     if let Some(dir) = Path::new(BIN_PATH).parent() {
         let _ = fs::remove_dir(dir);
@@ -302,7 +311,7 @@ fn service_pid() -> Option<u32> {
 
 /// 轮询等待 daemon HTTP 接口应答(在线),达成返回 true,超时返回 false。
 /// 每次探测都按新 port 文件构造:启动可能绑定新端口,旧值会失效
-fn wait_online(timeout: std::time::Duration) -> bool {
+pub(crate) fn wait_online(timeout: std::time::Duration) -> bool {
     let deadline = std::time::Instant::now() + timeout;
     loop {
         if probe_online().is_some() {

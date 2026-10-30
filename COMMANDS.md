@@ -119,12 +119,20 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 用法:`eval $(planet-port use company)`。CLI 是一次性子进程,无法修改父 shell 环境,
 故必须 eval;状态存于环境变量,可见、可覆盖、脚本可自省。
 
+## 安装
+
+| 命令 | 说明 |
+|---|---|
+| `install` | 需 root:一键自安装(在线/离线共用)。把 CLI 同目录的二进制套装(planet-port + planet-portd)拷到 `/Library/Application Support/planet-portd/bin/`,建 `/usr/local/bin/planet-port` 软链,并完成 `service install`(plist + bootstrap + 拉起);升级场景自动记录 running planet 并在装完后拉回(旧版 daemon 升级时 SIGTERM 落 stopped 的兜底,新版幂等);`-j` 回执同 service install |
+
+在线安装(`curl … install.sh | sudo bash`)与离线安装(解压发布包后 `sudo ./planet-port install`)最终都走本命令,详见 [docs/install.md](docs/install.md) 。
+
 ## service 服务管理
 
 | 命令 | 说明 |
 |---|---|
 | `service install` | 需 root:拷贝二进制到 `/Library/Application Support/planet-portd/bin/planet-portd`,写 `/Library/LaunchDaemons/cn.imgozi.d.planetport.daemon.plist` 并 `launchctl bootstrap system/`;RunAtLoad=true(装载即随开机启动)、KeepAlive={SuccessfulExit=false}(崩溃等异常退出自动拉起,SIGTERM 优雅退出不拉起);幂等,重装先卸载旧服务;`-j` 时进度人话走 stderr、stdout 仅 `{"result":"ok"}`(已装载重入附 `"idempotent":true`) |
-| `service uninstall` | 需 root:`launchctl bootout` + 删 plist 与拷贝的二进制;**数据目录保留**,提示手动 `rm -rf`;`-j` 回执同 install |
+| `service uninstall` | 需 root:`launchctl bootout` + 删 plist、daemon/CLI 二进制与 PATH 软链(软链仅当指向本产品时删);**数据目录保留**,提示手动 `rm -rf`;`-j` 回执同 install |
 | `service start` | 需 root:`launchctl kickstart -k …`;daemon 启动时按 registry 期望状态自动恢复 planet;`-j` 成功回执 `{"result":"ok","port":N}`,超时 `{"result":"error"}` |
 | `service stop` | 需 root:`launchctl kill TERM …`,命中 daemon 的信号优雅退出路径(逐 planet 红线收尾;**保留期望状态**,start 后自动恢复;显式 `planet-port stop` 才不恢复);`-j` 回执 ok / `{"result":"error"}`(超时)/ `{"result":"warning"}`(KeepAlive 拉起) |
 | `service logs [--lines N] [--follow]` | 无需 root:tail daemon 日志(`/Library/Logs/planet-portd/daemon.log`,默认末 50 行);`--follow` 持续跟踪,Ctrl+C 退出;日志文件不存在时退出码 1 |

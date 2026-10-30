@@ -18,7 +18,7 @@
   cli.planet.shareLoopHint: "注意: 链接为回环地址,仅本机可打开;发给他人请改用本机的局域网 IP"
 
   # ---- service 子命令 ----
-  cli.service.needRoot: "该操作需要 root 权限,请使用: sudo planet-port service <install|uninstall|start|stop>"
+  cli.service.needRoot: "该操作需要 root 权限,请加 sudo 重新运行"
   cli.service.exeNotFound: "无法定位当前可执行文件: %{e}"
   cli.service.daemonMissing: "在 %{dir} 旁未找到 daemon 二进制 planet-portd,请先构建 daemon"
   cli.service.mkdirFailed: "无法创建目录 %{dir}: %{e}"
@@ -41,6 +41,11 @@
   cli.service.notRunningSkip: "服务未在运行,跳过卸载步骤"
   cli.service.removed: "已删除 %{plist} 与 %{bin}"
   cli.service.dataKept: "数据目录已保留:%{dir}"
+  cli.install.binaryMissing: "同目录缺少 %{name},无法安装(发布包需含 planet-port 与 planet-portd):%{dir}"
+  cli.install.linkFailed: "建立软链 %{link} 失败:%{e}"
+  cli.install.linked: "已建立软链:%{link} → %{bin}"
+  cli.install.planetRestored: "planet %{id} 已恢复运行"
+  cli.install.planetRestoreFailed: "警告: planet %{id} 恢复失败(%{e}),请手动: planet-port start %{id}"
   cli.service.started: "已启动(端口 %{port})"
   cli.service.startTimeout: "启动超时(15s),日志: %{log}"
   cli.service.stopTimeout: "停止超时(15s),进程仍在收尾,日志: %{log}"

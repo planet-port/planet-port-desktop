@@ -1,3 +1,4 @@
+pub mod install;
 pub mod misc;
 pub mod mutate;
 pub mod planet;

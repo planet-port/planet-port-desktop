@@ -86,49 +86,30 @@ else
     TARBALL="${TMP}/${ASSET}"
 fi
 
-# ── 记录运行中的 planet(升级兜底:旧版 daemon 的 SIGTERM 会落 stopped,
-#    新版才保留期望状态;拉回对新版幂等、对旧版是唯一恢复路径) ────────────
-RUNNING=""
-if [[ -x "$LINK" ]]; then
-    RUNNING="$("$LINK" info --json 2>/dev/null | awk -F'"' '
-        /"id":/ { id = $4 }
-        /"status": *"running"/ { if (id != "") print id; id = "" }
-    ' || true)"
-fi
-
-# ── 停止在跑的服务(优雅退出,daemon 自会清理 feth;随后 install 拉起新版) ──
-if [[ -x "$LINK" ]]; then
-    "$LINK" service stop >/dev/null 2>&1 || true
-fi
-
-# ── 安装二进制 ─────────────────────────────────────────────────────────
+# ── 解包并安装 ─────────────────────────────────────────────────────────
+# 一键安装(二进制落盘 + PATH 软链 + launchd 服务)由 `planet-port install`
+# 自带,含升级兜底(记录 running planet、装完后拉回);本脚本只负责
+# 「下载 + 解压 + 调起」,不再重复实现拷贝/软链/恢复逻辑
 STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE" ${TMP:-}' EXIT
 tar -xzf "$TARBALL" -C "$STAGE"
 [[ -x "$STAGE/planet-port" && -x "$STAGE/planet-portd" ]] \
     || die "包内容不完整(需含可执行的 planet-port 与 planet-portd)"
 
-mkdir -p "$APP_BIN"
-# 先落临时名再 mv:目标可能是正在运行的二进制,直接覆盖会 ETXTBSY
-for bin in planet-port planet-portd; do
-    install -m 755 "${STAGE}/${bin}" "${APP_BIN}/${bin}.new"
-    mv -f "${APP_BIN}/${bin}.new" "${APP_BIN}/${bin}"
-done
-mkdir -p "$(dirname "$LINK")"
-ln -sfn "$APP_BIN/planet-port" "$LINK"
-rm -rf "$STAGE"
-
-# ── 服务安装 ───────────────────────────────────────────────────────────
 if [[ "$NO_SERVICE" -eq 1 ]]; then
-    echo "已跳过服务安装(--no-service),需要时执行: sudo planet-port service install"
-else
-    # daemon 随 service install 拉起,并按 registry 期望状态自动恢复 planet;
-    # RUNNING 拉回兜底旧版 daemon 升级(新版幂等,已恢复的 start 直接成功)
-    "$LINK" service install
-    for id in $RUNNING; do
-        "$LINK" start "$id" >/dev/null 2>&1 \
-            || echo "警告: planet ${id} 恢复失败,请手动: planet-port start ${id}"
+    # 仅落盘二进制与软链,不装服务
+    mkdir -p "$APP_BIN"
+    for bin in planet-port planet-portd; do
+        install -m 755 "${STAGE}/${bin}" "${APP_BIN}/${bin}.new"
+        mv -f "${APP_BIN}/${bin}.new" "${APP_BIN}/${bin}"
     done
+    mkdir -p "$(dirname "$LINK")"
+    ln -sfn "$APP_BIN/planet-port" "$LINK"
+    echo "已跳过服务安装(--no-service),需要时执行: sudo planet-port install"
+else
+    "${STAGE}/planet-port" install
 fi
+rm -rf "$STAGE"
 
 echo
 echo "安装完成: ${VERSION} (${PLATFORM} ${ARCH_TAG})"

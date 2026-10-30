@@ -13,7 +13,7 @@
   cli.planet.removeAborted: aborted
   cli.planet.shareLoopHint: "note: link is loopback and only opens locally; share this machine's LAN IP instead"
 
-  cli.service.needRoot: "This operation requires root. Use: sudo planet-port service <install|uninstall|start|stop>"
+  cli.service.needRoot: "This operation requires root; re-run with sudo"
   cli.service.exeNotFound: "Failed to locate the current executable: %{e}"
   cli.service.daemonMissing: "daemon binary planet-portd not found next to %{dir}; build the daemon first"
   cli.service.mkdirFailed: "Failed to create directory %{dir}: %{e}"
@@ -36,6 +36,11 @@
   cli.service.notRunningSkip: "Service not running, skipping unload"
   cli.service.removed: "Removed %{plist} and %{bin}"
   cli.service.dataKept: "Data directory kept: %{dir}"
+  cli.install.binaryMissing: "%{name} not found in the same directory (release bundle needs both planet-port and planet-portd): %{dir}"
+  cli.install.linkFailed: "failed to create symlink %{link}: %{e}"
+  cli.install.linked: "symlink created: %{link} → %{bin}"
+  cli.install.planetRestored: "planet %{id} restored"
+  cli.install.planetRestoreFailed: "warning: planet %{id} restore failed (%{e}); run: planet-port start %{id}"
   cli.service.started: "Started (port %{port})"
   cli.service.startTimeout: "Start timed out (15s), log: %{log}"
   cli.service.stopTimeout: "Stop timed out (15s), process still finishing, log: %{log}"
