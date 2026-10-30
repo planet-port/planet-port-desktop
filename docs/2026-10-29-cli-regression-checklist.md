@@ -55,4 +55,4 @@
 | `list -j` | 分组结构 | `planets[]` 各带 `networks[]`;listnetworks -j 保持平铺 | 通过 |
 | `info` STATUS | 三态对齐 list | 已连接/连接中/未连接(与 list 同口径) | 通过 |
 | `remove` 确认拒绝 | exit=130 | `已取消` + 130 | 通过 |
-| join/leave 幂等(daemon 侧) | 重复操作静默成功 | 代码已改并编译通过;9998 上为旧二进制,待 `sudo planet-port service start` 重启后复测 | 待复测 |
+| join/leave 幂等(daemon 侧) | 重复操作静默成功 | 新二进制安装后实测:重复 join 与 leave 未加入网络均 `200 ... OK` + `"idempotent":true`,exit=0 | 通过 |

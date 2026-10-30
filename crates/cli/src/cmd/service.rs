@@ -176,8 +176,16 @@ fn install() {
     //    launchd 自动重启,SIGTERM 优雅退出(exit 0)不重启)。
     //    重复安装幂等:先 bootout 卸掉已加载的旧服务(未加载属预期),
     //    bootstrap 撞上「已装载」则提示用 start,不硬退。
+    // pid 须在 bootout 前取:拆除中的 job 查不到 pid
+    let old_pid = service_pid();
     match launchctl_output(&["bootout", &format!("system/{LABEL}")]) {
-        Ok(_) => println!("{}", rust_i18n::t!("cli.service.bootedOutForReinstall", label = LABEL)),
+        Ok(_) => {
+            println!("{}", rust_i18n::t!("cli.service.bootedOutForReinstall", label = LABEL));
+            // bootout 返回 ≠ 旧实例已退:daemon 收 SIGTERM 后要逐 planet 红线
+            // 收尾(拆网卡/路由/DNS),期间立即 bootstrap 会被 launchd 以
+            // Input/output error 5 拒绝。等旧 job/进程真正消失再装载
+            wait_unloaded(old_pid, std::time::Duration::from_secs(10));
+        }
         Err(stderr) => {
             let s = stderr.to_lowercase();
             if s.contains("not loaded") || s.contains("no such process") || s.contains("could not find") {
@@ -444,6 +452,29 @@ fn logs(lines: usize, follow: bool) {
             std::process::exit(1);
         }
     }
+}
+
+/// 重装路径:等待旧服务真正消失——launchd 域里查无此 job(print 失败)且
+/// 已知旧 pid 已退出。超时兜底放行(照旧尝试 bootstrap,由其报错)
+fn wait_unloaded(old_pid: Option<u32>, timeout: std::time::Duration) {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let job_gone =
+            launchctl_output_quiet(&["print", &format!("system/{LABEL}")]).is_err();
+        let proc_gone = old_pid.map(|p| !pid_alive(p)).unwrap_or(true);
+        if job_gone && proc_gone {
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+}
+
+/// 信号 0 探测进程存活(zombie 也算存活,launchd 收尸后才会消失,恰好是我们要的语义)
+fn pid_alive(pid: u32) -> bool {
+    unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
 // ---- 工具 ----
