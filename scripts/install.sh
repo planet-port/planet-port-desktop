@@ -7,12 +7,15 @@
 #
 # 行为:
 #   1. 识别平台与架构,从 GitHub Releases 下载对应预编译包
-#      (命名参考 zerotier 发布规范: planet-port_<ver>_<platform>_<arch>.tar.gz)
-#   2. 二进制安装到 /Library/Application Support/planet-portd/bin/(仅 macOS)
-#   3. /usr/local/bin/planet-port 建软链
-#   4. 执行 planet-port service install(装 launchd 服务并启动;--no-service 跳过)
-#   5. 升级场景:daemon 按 registry 期望状态自动恢复 planet;脚本另做
-#      拉回兜底(旧版 daemon 升级时 SIGTERM 会落 stopped,需脚本恢复)
+#      (命名参考 zerotier 发布规范: planet-port_<ver>_<platform>_<arch>.tar.gz;
+#      macOS: macos_aarch64 / macos_x86_64;Linux: linux_amd64 / linux_arm64)
+#   2. --no-service 时仅落盘二进制:
+#      - macOS: /Library/Application Support/planet-portd/bin/ + /usr/local/bin/planet-port 软链
+#      - Linux: 直接落 /usr/local/bin/planet-port 与 /usr/local/bin/planet-portd(无软链)
+#   3. 否则执行 planet-port install(安装主体在 CLI 内:
+#      macOS 装 launchd 服务;Linux 装 /etc/systemd/system/planet-portd.service 并启动)
+#   4. 升级场景:daemon 按 registry 期望状态自动恢复 planet;CLI 另做
+#      拉回兜底(旧版 daemon 升级时 SIGTERM 会落 stopped,需恢复)
 #
 # 环境变量:
 #   PLANET_PORT_VERSION  指定版本(如 v0.1.1),默认取 Releases 最新
@@ -35,21 +38,26 @@ case "$OS" in
     *) PLATFORM="unsupported" ;;
 esac
 case "$(uname -m)" in
-    arm64|aarch64) ARCH_TAG="aarch64" ;;
-    x86_64|amd64) ARCH_TAG="$( [[ "$PLATFORM" == "linux" ]] && echo amd64 || echo x86_64 )" ;;
+    arm64|aarch64) ARCH_TAG="$( [[ "$PLATFORM" == "linux" ]] && echo arm64 || echo aarch64 )" ;;
+    x86_64|amd64)  ARCH_TAG="$( [[ "$PLATFORM" == "linux" ]] && echo amd64 || echo x86_64 )" ;;
     *) ARCH_TAG="" ;;
 esac
 
-if [[ "$PLATFORM" != "macos" ]]; then
-    die "当前平台(${OS} $(uname -m))的版本尚未发布,已支持: macOS(arm64/x86_64);Linux(ubuntu/mint)、Windows 在发布计划中"
+if [[ "$PLATFORM" == "unsupported" || -z "$ARCH_TAG" ]]; then
+    die "当前平台(${OS} $(uname -m))的版本尚未发布,已支持: macOS(arm64/x86_64)、Linux(amd64/arm64,glibc≥2.31);Windows 在发布计划中"
 fi
 
 if [[ "$(id -u)" -ne 0 ]]; then
     exec sudo bash "$0" "$@"
 fi
 
-APP_BIN="/Library/Application Support/planet-portd/bin"
-LINK="/usr/local/bin/planet-port"
+if [[ "$PLATFORM" == "macos" ]]; then
+    APP_BIN="/Library/Application Support/planet-portd/bin"
+    LINK="/usr/local/bin/planet-port"
+else
+    APP_BIN="/usr/local/bin"
+    LINK="/usr/local/bin/planet-port"
+fi
 
 # ── 参数 ──────────────────────────────────────────────────────────────
 NO_SERVICE=0
@@ -87,7 +95,7 @@ else
 fi
 
 # ── 解包并安装 ─────────────────────────────────────────────────────────
-# 一键安装(二进制落盘 + PATH 软链 + launchd 服务)由 `planet-port install`
+# 一键安装(二进制落盘 + PATH + launchd/systemd 服务)由 `planet-port install`
 # 自带,含升级兜底(记录 running planet、装完后拉回);本脚本只负责
 # 「下载 + 解压 + 调起」,不再重复实现拷贝/软链/恢复逻辑
 STAGE="$(mktemp -d)"
@@ -97,14 +105,16 @@ tar -xzf "$TARBALL" -C "$STAGE"
     || die "包内容不完整(需含可执行的 planet-port 与 planet-portd)"
 
 if [[ "$NO_SERVICE" -eq 1 ]]; then
-    # 仅落盘二进制与软链,不装服务
+    # 仅落盘二进制,不装服务(软链仅 macOS 需要;Linux 直接落 /usr/local/bin)
     mkdir -p "$APP_BIN"
     for bin in planet-port planet-portd; do
         install -m 755 "${STAGE}/${bin}" "${APP_BIN}/${bin}.new"
         mv -f "${APP_BIN}/${bin}.new" "${APP_BIN}/${bin}"
     done
-    mkdir -p "$(dirname "$LINK")"
-    ln -sfn "$APP_BIN/planet-port" "$LINK"
+    if [[ "$PLATFORM" == "macos" ]]; then
+        mkdir -p "$(dirname "$LINK")"
+        ln -sfn "$APP_BIN/planet-port" "$LINK"
+    fi
     echo "已跳过服务安装(--no-service),需要时执行: sudo planet-port install"
 else
     "${STAGE}/planet-port" install
@@ -115,4 +125,9 @@ echo
 echo "安装完成: ${VERSION} (${PLATFORM} ${ARCH_TAG})"
 echo "  CLI:      ${LINK}"
 echo "  二进制:   ${APP_BIN}/"
-echo "  卸载:     sudo ${LINK} service uninstall && sudo rm ${LINK}"
+if [[ "$PLATFORM" == "macos" ]]; then
+    echo "  卸载:     sudo ${LINK} service uninstall && sudo rm ${LINK}"
+else
+    echo "  服务:     /etc/systemd/system/planet-portd.service"
+    echo "  卸载:     sudo ${LINK} service uninstall && sudo rm -f /usr/local/bin/planet-port /usr/local/bin/planet-portd"
+fi
