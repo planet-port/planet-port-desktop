@@ -1,6 +1,6 @@
 //! 网络面端点:GET /networks、join / leave / set、GET /events。
 //! 错误码、错误体、响应结构({"result":"ok"}、{"networks":[...]}、
-//! NetworkEntry 字段)与 crates/mockd 同名 handler 逐字段对齐。
+//! NetworkEntry 字段)以 planet-port-api 类型为唯一基准。
 //!
 //! 已知限制(一期接受):POST /networks/{nwid}(set)只写 net_local,
 //! 生效时机 = 下一轮控制器 ConfigUpdate(sink 侧没有主动重配通道);
@@ -26,14 +26,14 @@ use crate::world;
 
 type ApiErr = (StatusCode, Json<planet_port_api::types::ApiError>);
 
-// ---- 定位链与校验(mockd 同款语义) ----
+// ---- 定位链与校验 ----
 
 /// 变更端点定位链:显式 ?planet= → 存在且 running;省略 → 单 running 自动选,
 /// 多 running 409 planetAmbiguous(带候选),零 running 409 noPlanetRunning。
-/// 查找复用 world::resolve_planet_id(id/name/worldId 均可,是 mockd id/name 的超集)。
+/// 查找复用 world::resolve_planet_id(id/name/worldId 均可作为定位输入)。
 ///
 /// 锁纪律:registry 锁只在函数内部短持;歧义分支需要每个 running planet 的
-/// 实际网络数(mockd 语义 = 核心网络快照条数,非 registry net_local 条数),
+/// 实际网络数(= 核心网络快照条数,非 registry net_local 条数),
 /// 那是 node 查询,须在不持 registry 锁时做 —— 故先短锁收集候选并 clone
 /// 运行时 Arc,放锁后再查询计数。
 pub(crate) fn resolve_running_planet(
@@ -189,7 +189,7 @@ fn mac_str(mac: u64) -> String {
         .join(":")
 }
 
-/// 核心 NetConfig + net_local → mockd 同款 NetworkEntry
+/// 核心 NetConfig + net_local → NetworkEntry(planet-port-api 类型)
 fn to_network_entry(
     planet_id: &str,
     cfg: &NetConfig,
@@ -220,7 +220,7 @@ fn to_network_entry(
             .collect(),
         dns_servers: cfg.dns_servers.iter().map(|s| s.to_string()).collect(),
         route_via_zero_tier: nl.route_via_zero_tier,
-        // 一期无锁定语义,恒 false(mockd 该字段为示例值)
+        // 一期无锁定语义,恒 false
         route_via_locked: false,
         dns_mode: nl.dns_mode.clone(),
         custom_dns: nl.custom_dns.clone(),
@@ -281,14 +281,10 @@ pub async fn net_join(
     let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
     let rt = not_running(&st, &pid)?;
     let nwid_u = parse_nwid(&nwid)?;
-    // 已加入 → 409 alreadyJoined(以核心网络快照为准)
+    // 已加入 → 幂等成功(对齐 zerotier-cli:重复 join 不报错,批量脚本可重入)
     if rt.networks().iter().any(|c| c.nwid == nwid_u) {
-        return Err(err(
-            StatusCode::CONFLICT,
-            "alreadyJoined",
-            &format!("network {nwid} already joined on this planet"),
-            None,
-        ));
+        st.events.push(&rt.planet_id, "join", &format!("already joined {nwid} (idempotent)"));
+        return Ok(Json(json!({"result": "ok", "idempotent": true})));
     }
     // join 在驱动线程执行并等应答,放阻塞线程池
     let rt2 = Arc::clone(&rt);
@@ -335,13 +331,10 @@ pub async fn net_leave(
     let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
     let rt = not_running(&st, &pid)?;
     let nwid_u = parse_nwid(&nwid)?;
+    // 未加入 → 幂等成功(leave 的目标态就是"不在网络里",已达成)
     if !rt.networks().iter().any(|c| c.nwid == nwid_u) {
-        return Err(err(
-            StatusCode::NOT_FOUND,
-            "networkNotFound",
-            &format!("network {nwid} not joined on this planet"),
-            None,
-        ));
+        st.events.push(&rt.planet_id, "leave", &format!("not joined {nwid} (idempotent)"));
+        return Ok(Json(json!({"result": "ok", "idempotent": true})));
     }
     let rt2 = Arc::clone(&rt);
     tokio::task::spawn_blocking(move || rt2.node_leave(nwid_u))
@@ -414,7 +407,7 @@ pub async fn net_set(
         )
     })?;
     let nwid_u = parse_nwid(&nwid)?;
-    // 仅已加入网络可配置(mockd 同款 404 语义)
+    // 仅已加入网络可配置(404 networkNotFound)
     if !rt.networks().iter().any(|c| c.nwid == nwid_u) {
         return Err(err(
             StatusCode::NOT_FOUND,
@@ -423,7 +416,7 @@ pub async fn net_set(
             None,
         ));
     }
-    // mockd 同款字段:routeViaZeroTier bool / dnsMode 枚举 / customDns 数组
+    // 契约字段:routeViaZeroTier bool / dnsMode 枚举 / customDns 数组
     let mut nl = net_local_of(Some(&rt), &entry, nwid_u);
     if let Some(v) = body.get("routeViaZeroTier") {
         match v.as_bool() {
