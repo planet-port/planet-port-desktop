@@ -72,7 +72,9 @@ pub fn info(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
             arr.retain(|p| {
                 ids.iter().any(|id| {
                     p.get("id").and_then(Value::as_str) == Some(id.as_str())
-                        || p.get("name").and_then(Value::as_str) == Some(id.as_str())
+                        || p.get("name")
+                            .and_then(Value::as_str)
+                            .is_some_and(|n| n.eq_ignore_ascii_case(id))
                 })
             });
         }
@@ -127,7 +129,7 @@ pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
         let arr: Vec<Value> = planets
             .iter()
             .filter(|p| match filter {
-                Some(f) => f.iter().any(|id| id == &p.id || id == &p.name),
+                Some(f) => f.iter().any(|id| id == &p.id || p.name.eq_ignore_ascii_case(id)),
                 None => true,
             })
             .map(|p| {
@@ -155,7 +157,7 @@ pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
         .collect();
     for p in planets {
         if let Some(f) = filter {
-            if !f.contains(&p.id) && !f.contains(&p.name) {
+            if !f.iter().any(|id| id == &p.id || p.name.eq_ignore_ascii_case(id)) {
                 continue;
             }
         }

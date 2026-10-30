@@ -14,7 +14,7 @@ pub fn use_planet(client: &Client, planet: &str, json: bool) -> Result<(), CliEr
     .unwrap_or_default();
     let found = rows
         .iter()
-        .find(|p| p.id == planet || p.name == planet)
+        .find(|p| p.id == planet || p.name.eq_ignore_ascii_case(planet))
         .ok_or_else(|| CliError::Usage(format!("planet \"{planet}\" not found")))?;
     if json {
         // 机器可读的解析结果(stdout 唯一 JSON)

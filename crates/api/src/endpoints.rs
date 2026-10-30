@@ -1,8 +1,24 @@
 fn q(planet: Option<&str>) -> String {
     match planet {
-        Some(p) => format!("?planet={p}"),
+        Some(p) => format!("?planet={}", enc(p)),
         None => String::new(),
     }
+}
+
+/// RFC3986 percent-encode(仅保留 unreserved:A-Za-z0-9 - _ . ~)。
+/// planet 别名与网络名可含空格/CJK,进 path 段或 query 值都必须转义;
+/// 不引第三方 crate,实现仅 10 行
+fn enc(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 pub fn version() -> &'static str {
@@ -15,28 +31,28 @@ pub fn planets() -> &'static str {
     "/planets"
 }
 pub fn planet(id: &str) -> String {
-    format!("/planets/{id}")
+    format!("/planets/{}", enc(id))
 }
 pub fn planet_export(id: &str) -> String {
-    format!("/planets/{id}/export")
+    format!("/planets/{}/export", enc(id))
 }
 pub fn planet_share(id: &str) -> String {
-    format!("/planets/{id}/share")
+    format!("/planets/{}/share", enc(id))
 }
 pub fn planet_action(id: &str, action: &str) -> String {
-    format!("/planets/{id}/{action}")
+    format!("/planets/{}/{}", enc(id), action)
 }
 pub fn networks(planet: Option<&str>) -> String {
     format!("/networks{}", q(planet))
 }
 pub fn network_join(nwid: &str, planet: Option<&str>) -> String {
-    format!("/networks/{nwid}/join{}", q(planet))
+    format!("/networks/{}/join{}", enc(nwid), q(planet))
 }
 pub fn network_leave(nwid: &str, planet: Option<&str>) -> String {
-    format!("/networks/{nwid}/leave{}", q(planet))
+    format!("/networks/{}/leave{}", enc(nwid), q(planet))
 }
 pub fn network_set(nwid: &str, planet: Option<&str>) -> String {
-    format!("/networks/{nwid}{}", q(planet))
+    format!("/networks/{}{}", enc(nwid), q(planet))
 }
 pub fn peers(planet: Option<&str>) -> String {
     format!("/peers{}", q(planet))

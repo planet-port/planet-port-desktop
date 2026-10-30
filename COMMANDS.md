@@ -55,8 +55,11 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 仅一个 running planet 时自动;多 running 未指定时报用法错误(退出码 2)。
 显式指定已停止的 planet 仍可查其历史事件。
 
-`--planet` 同时接受别名(name)与 worldId;服务端解析,命中即返回 canonical id
+`--planet` 同时接受别名(name)与 worldId,**别名不区分大小写**;服务端解析,命中即返回 canonical id
 (表格 PLANET 列显示的是 canonical id,如 company 显示 `2187945993`)。
+网络定位同款:`leave` / `set` / `get` / `network show` 的 `<nwid>` 参数也接受
+已加入网络的**名字**(不区分大小写;含空格/中文的名字直接引号包裹即可),同名多条报
+409 列候选;`join` 只认 nwid——未加入的网络名字无从得知。
 
 ## 状态查询
 

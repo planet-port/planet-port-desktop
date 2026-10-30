@@ -138,6 +138,40 @@ fn parse_nwid(s: &str) -> Result<u64, ApiErr> {
     })
 }
 
+/// 网络定位(leave/set 等已加入网络的操作):合法 nwid(0x 容错)直用;
+/// 否则按网络名(不区分大小写)在该 planet 已加入的网络中解析。同名多条 →
+/// 409 列候选不猜;无命中 → 404。join 不走此路径:未加入的网络名字无从
+/// 得知,只认 nwid
+fn resolve_nwid(rt: &crate::state::PlanetRuntime, input: &str) -> Result<u64, ApiErr> {
+    if let Ok(v) = parse_nwid(input) {
+        return Ok(v);
+    }
+    let nets = rt.networks();
+    let hits: Vec<_> = nets
+        .iter()
+        .filter(|c| c.name.eq_ignore_ascii_case(input.trim()))
+        .collect();
+    match hits.as_slice() {
+        [one] => Ok(one.nwid),
+        [] => Err(err(
+            StatusCode::NOT_FOUND,
+            "networkNotFound",
+            &format!("network \"{input}\" not found (by id or name)"),
+            None,
+        )),
+        many => Err(err(
+            StatusCode::CONFLICT,
+            "networkAmbiguous",
+            &format!("network name \"{input}\" matches {} networks", many.len()),
+            Some(
+                many.iter()
+                    .map(|c| format!("{:016x} ({})", c.nwid, c.name))
+                    .collect(),
+            ),
+        )),
+    }
+}
+
 /// NetLocal 默认项:managed 路由走 ZeroTier 接口,无 DNS 覆写
 fn default_net_local() -> NetLocal {
     NetLocal {
@@ -333,7 +367,7 @@ pub async fn net_leave(
     // 锁)分开:两锁不得嵌套
     let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
     let rt = not_running(&st, &pid)?;
-    let nwid_u = parse_nwid(&nwid)?;
+    let nwid_u = resolve_nwid(&rt, &nwid)?;
     // 未加入 → 幂等成功(leave 的目标态就是"不在网络里",已达成)
     if !rt.networks().iter().any(|c| c.nwid == nwid_u) {
         st.events.push(&rt.planet_id, "leave", &format!("not joined {nwid} (idempotent)"));
@@ -409,7 +443,7 @@ pub async fn net_set(
             None,
         )
     })?;
-    let nwid_u = parse_nwid(&nwid)?;
+    let nwid_u = resolve_nwid(&rt, &nwid)?;
     // 仅已加入网络可配置(404 networkNotFound)
     if !rt.networks().iter().any(|c| c.nwid == nwid_u) {
         return Err(err(

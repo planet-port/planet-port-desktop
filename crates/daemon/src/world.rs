@@ -266,13 +266,17 @@ pub fn fetch_url(url: &str) -> Result<Vec<u8>, FetchError> {
     }
 }
 
-/// planet 定位:依次尝试 id 精确 → name 精确 → 按 u64 解析匹配 world_id
-/// (十进制,或 0x 前缀 / 含字母的纯十六进制)
+/// planet 定位:依次尝试 id 精确 → name(不区分大小写)→ 按 u64 解析匹配
+/// world_id(十进制,或 0x 前缀 / 含字母的纯十六进制)
 pub fn resolve_planet_id(registry: &Registry, input: &str) -> Option<String> {
     if let Some(e) = registry.planets.iter().find(|e| e.id == input) {
         return Some(e.id.clone());
     }
-    if let Some(e) = registry.planets.iter().find(|e| e.name.as_deref() == Some(input)) {
+    if let Some(e) = registry
+        .planets
+        .iter()
+        .find(|e| e.name.as_deref().is_some_and(|n| n.eq_ignore_ascii_case(input)))
+    {
         return Some(e.id.clone());
     }
     let parsed = if let Some(hex) = input.strip_prefix("0x").or_else(|| input.strip_prefix("0X")) {

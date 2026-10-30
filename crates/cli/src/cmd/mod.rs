@@ -23,7 +23,9 @@ fn statuses(client: &Client) -> Option<Vec<PlanetStatus>> {
 pub fn planet_label(client: &Client, flag: &Option<String>) -> Option<String> {
     let rows = statuses(client)?;
     if let Some(f) = flag {
-        let p = rows.into_iter().find(|p| &p.id == f || &p.name == f)?;
+        let p = rows
+            .into_iter()
+            .find(|p| p.id == *f || p.name.eq_ignore_ascii_case(f))?;
         return Some(format!("{}({})", p.name, p.id));
     }
     let mut running = rows.into_iter().filter(|p| p.status == "running");
@@ -41,7 +43,10 @@ pub fn planet_label(client: &Client, flag: &Option<String>) -> Option<String> {
 pub fn resolve_single(client: &Client, flag: &Option<String>) -> Result<String, CliError> {
     let rows = statuses(client).ok_or(CliError::Offline)?;
     if let Some(f) = flag {
-        if let Some(p) = rows.iter().find(|p| &p.id == f || &p.name == f) {
+        if let Some(p) = rows
+            .iter()
+            .find(|p| p.id == *f || p.name.eq_ignore_ascii_case(f))
+        {
             if p.status != "running" {
                 return Err(CliError::Api(
                     409,

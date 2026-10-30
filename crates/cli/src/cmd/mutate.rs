@@ -115,28 +115,54 @@ fn norm_nwid(s: &str) -> Result<String, CliError> {
 }
 
 /// 取单个已加入网络的 NetworkEntry(dump/get/network show 共用);
+/// 定位同 daemon resolve_nwid:合法 nwid(0x 容错)直用,否则按网络名
+/// (不区分大小写)在该 planet 已加入的网络中解析,同名多条 409 列候选;
 /// 未加入 → 镜像 daemon 的 404 networkNotFound
 pub(crate) fn find_network(
     client: &Client,
     nwid: &str,
     pid: &str,
 ) -> Result<NetworkEntry, CliError> {
-    let nwid = norm_nwid(nwid)?;
+    let raw = nwid.trim().to_string();
+    // 合法 nwid 才归一化;名字输入(含空格/CJK)norm_nwid 必然失败,先判形再走名字路径
+    let norm = norm_nwid(&raw).ok();
     let v = client.get_json(&endpoints::networks(Some(pid)))?;
     let rows: Vec<NetworkEntry> = serde_json::from_value(
         v.get("networks").cloned().unwrap_or(Value::Null),
     )
     .unwrap_or_default();
-    rows.into_iter()
-        .find(|n| n.nwid == nwid)
-        .ok_or_else(|| CliError::Api(
+    if let Some(nwid) = norm {
+        if let Some(hit) = rows.iter().find(|n| n.nwid == nwid) {
+            return Ok(hit.clone());
+        }
+    }
+    let hits: Vec<&NetworkEntry> = rows
+        .iter()
+        .filter(|n| n.name.as_deref().is_some_and(|name| name.eq_ignore_ascii_case(&raw)))
+        .collect();
+    match hits.as_slice() {
+        [one] => Ok((*one).clone()),
+        [] => Err(CliError::Api(
             404,
             ApiError {
                 error: "networkNotFound".into(),
-                message: format!("network {nwid} not joined on this planet"),
+                message: format!("network \"{raw}\" not found (by id or name)"),
                 candidates: None,
             },
-        ))
+        )),
+        many => Err(CliError::Api(
+            409,
+            ApiError {
+                error: "networkAmbiguous".into(),
+                message: format!("network name \"{raw}\" matches {} networks", many.len()),
+                candidates: Some(
+                    many.iter()
+                        .map(|n| format!("{} ({})", n.nwid, n.name.clone().unwrap_or_default()))
+                        .collect(),
+                ),
+            },
+        )),
+    }
 }
 
 /// `get <nwid> <key>`:读单个配置值,脚本友好;key 取 NetworkEntry 的
