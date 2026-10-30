@@ -123,7 +123,7 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 
 | 命令 | 说明 |
 |---|---|
-| `install` | 需 root:一键自安装(在线/离线共用)。把 CLI 同目录的二进制套装(planet-port + planet-portd)拷到 `/Library/Application Support/planet-portd/bin/`,建 `/usr/local/bin/planet-port` 软链,并完成 `service install`(plist + bootstrap + 拉起);升级场景自动记录 running planet 并在装完后拉回(旧版 daemon 升级时 SIGTERM 落 stopped 的兜底,新版幂等);`-j` 回执同 service install |
+| `install [--yes]` | 需 root:一键自安装(在线/离线共用)。把 CLI 同目录的二进制套装(planet-port + planet-portd)拷到 `/Library/Application Support/planet-portd/bin/`,建 `/usr/local/bin/planet-port` 软链,并完成 `service install`(plist + bootstrap + 拉起);**幂等**,同版本重装不提示;版本不同(升降级)时先确认(同 remove,拒绝退出码 130),`--yes` 跳过,`-j` 下必须配 `--yes`;升级场景自动记录 running planet 并在装完后拉回(旧版 daemon 升级时 SIGTERM 落 stopped 的兜底,新版幂等);`-j` 回执同 service install |
 
 在线安装(`curl … install.sh | sudo bash`)与离线安装(解压发布包后 `sudo ./planet-port install`)最终都走本命令,详见 [docs/install.md](docs/install.md) 。
 

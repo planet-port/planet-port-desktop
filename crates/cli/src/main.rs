@@ -105,7 +105,11 @@ enum Command {
         cmd: cmd::service::ServiceCmd,
     },
     /// 一键安装:同目录二进制套装落盘预设路径 + PATH 软链 + 装服务(需 root)
-    Install,
+    Install {
+        /// 跳过版本差异确认(脚本用;与已装版本相同时本就不提示)
+        #[arg(long)]
+        yes: bool,
+    },
     /// Show event log
     Events {
         #[arg(long, default_value_t = 40)]
@@ -161,8 +165,8 @@ fn main() {
     // service / install 子命令不经 REST client(全新机器上无 token 也须能安装)
     let result = match &cli.command {
         Command::Service { cmd } => cmd::service::run((*cmd).clone(), json),
-        Command::Install => {
-            cmd::install::run(json);
+        Command::Install { yes } => {
+            cmd::install::run(*yes, json);
             Ok(())
         }
         other => {
@@ -265,7 +269,7 @@ fn dispatch(
     json: bool,
 ) -> Result<(), CliError> {
     match command {
-        Command::Service { .. } | Command::Install => {
+        Command::Service { .. } | Command::Install { .. } => {
             unreachable!("service/install 在 main 中单独分流")
         }
         Command::Info => cmd::query::info(client, query_filter, json),

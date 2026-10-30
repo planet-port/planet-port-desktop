@@ -17,6 +17,7 @@
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::client::{CliError, Client};
 use planet_port_api::endpoints;
@@ -26,8 +27,34 @@ use super::service;
 const CLI_BIN: &str = "/Library/Application Support/planet-portd/bin/planet-port";
 const LINK: &str = "/usr/local/bin/planet-port";
 
-pub fn run(json: bool) {
+pub fn run(yes: bool, json: bool) {
     service::require_root();
+    // 0. 版本差异确认:与已装版本不同(升级/降级)时先问一声,同版本幂等
+    //    重装不提示;-j 下确认会污染 stdout,必须显式 --yes(同 remove)
+    if let Some(old) = installed_version() {
+        let new = env!("CARGO_PKG_VERSION");
+        if old != new {
+            if json && !yes {
+                eprintln!("error: --json requires --yes for install when version differs ({old} -> {new})");
+                std::process::exit(2);
+            }
+            if !yes {
+                eprint!(
+                    "{}",
+                    rust_i18n::t!("cli.install.versionConfirm", old = old, new = new)
+                );
+                std::io::Write::flush(&mut std::io::stderr()).ok();
+                let mut answer = String::new();
+                if std::io::stdin().read_line(&mut answer).is_err()
+                    || !answer.trim().eq_ignore_ascii_case("y")
+                {
+                    eprintln!("{}", rust_i18n::t!("cli.install.aborted"));
+                    std::process::exit(130);
+                }
+            }
+        }
+    }
+
     // 1. 升级兜底:记录当前 running 的 planet(服务停止前取;daemon 不在线
     //    则为空,全新安装本就没有可恢复的)
     let running = running_planets();
@@ -89,6 +116,21 @@ pub fn run(json: bool) {
             }
         }
     }
+}
+
+/// 已装 CLI 的版本号(执行 `--version` 取末段);未安装/执行失败返回 None
+/// (失败视作版本未知,按"有旧版"处理走确认)
+fn installed_version() -> Option<String> {
+    if !Path::new(CLI_BIN).is_file() {
+        return None;
+    }
+    let out = Command::new(CLI_BIN)
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let s = String::from_utf8_lossy(&out.stdout);
+    s.split_whitespace().last().map(String::from)
 }
 
 /// CLI 同目录的 daemon 二进制;从 daemon 自身(planet-portd)运行时用自身

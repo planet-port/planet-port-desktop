@@ -41,6 +41,8 @@
   cli.install.linked: "已建立軟鏈:%{link} → %{bin}"
   cli.install.planetRestored: "planet %{id} 已恢復運行"
   cli.install.planetRestoreFailed: "警告: planet %{id} 恢復失敗(%{e}),請手動: planet-port start %{id}"
+  cli.install.versionConfirm: "已安裝 %{old},本次將安裝 %{new}(升級/降級),繼續? [y/N] "
+  cli.install.aborted: 已取消
   cli.service.started: "已啟動(埠 %{port})"
   cli.service.startTimeout: "啟動超時(15s),日誌: %{log}"
   cli.service.stopTimeout: "停止超時(15s),進程仍在收尾,日誌: %{log}"
