@@ -38,7 +38,8 @@ pub fn planet_label(client: &Client, flag: &Option<String>) -> Option<String> {
 
 /// 单目标解析:显式 flag 命中登记项则校验 running(镜像 daemon 变更端点的
 /// 409 planetNotRunning;未命中的输入(如 worldId)透传给 daemon 判定);
-/// 无 flag 时单 running 自动选,零/多 running 镜像 daemon 的 409 错误语义。
+/// 无 flag 时按**登记数**自动选——登记 1 个即选中(stopped 则报
+/// planetNotRunning),登记 ≥2 报 planetAmbiguous,不看连接状态。
 /// 供 CLI 侧自行取数的命令用:dump -j / get / network show
 pub fn resolve_single(client: &Client, flag: &Option<String>) -> Result<String, CliError> {
     let rows = statuses(client).ok_or(CliError::Offline)?;
@@ -61,26 +62,37 @@ pub fn resolve_single(client: &Client, flag: &Option<String>) -> Result<String, 
         }
         return Ok(f.clone());
     }
-    let running: Vec<&PlanetStatus> = rows.iter().filter(|p| p.status == "running").collect();
-    match running.as_slice() {
+    // 自动选择按**登记数**计,不看连接状态:登记 1 个(即使未启用)自动选中,
+    // 由上面的 running 校验兜底报 planetNotRunning;登记 ≥2 一律要求显式指定
+    match rows.as_slice() {
+        [one] if one.status != "running" => Err(CliError::Api(
+            409,
+            ApiError {
+                error: "planetNotRunning".into(),
+                message: format!("planet \"{}\" is not running", one.name),
+                candidates: None,
+            },
+        )),
         [one] => Ok(one.id.clone()),
         [] => Err(CliError::Api(
             409,
             ApiError {
                 error: "noPlanetRunning".into(),
-                message: "no running planet".into(),
+                message: "no planet registered".into(),
                 candidates: None,
             },
         )),
-        _ => Err(CliError::Api(
+        many => Err(CliError::Api(
             409,
             ApiError {
                 error: "planetAmbiguous".into(),
-                message: "multiple running planets".into(),
+                message: "multiple planets registered".into(),
                 candidates: Some(
-                    running
-                        .iter()
-                        .map(|p| format!("{} ({})", p.name, p.network_count))
+                    many.iter()
+                        .map(|p| {
+                            let state = if p.status == "running" { "running" } else { "stopped" };
+                            format!("{} ({}, {})", p.name, p.id, state)
+                        })
                         .collect(),
                 ),
             },

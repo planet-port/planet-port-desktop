@@ -8,7 +8,7 @@
   cli.list.noNetworks: "(無網路)"
 
 
-  cli.events.needPlanet: "error: events 需要指定 --planet(當前 %{n} 個 running planet)"
+  cli.events.needPlanet: "error: events 需要指定 --planet(當前登記 %{n} 個 planet)"
   cli.planet.removeConfirm: "planet \"%{id}\" 將自動退出其全部網路、停止並刪除登記,確認? [y/N] "
   cli.planet.removeAborted: 已取消
   cli.planet.shareLoopHint: "注意: 連結為回環位址,僅本機可開啟;發給他人請改用本機的區域網路 IP"
@@ -58,8 +58,8 @@
   cli.service.tailExecFailed: "無法執行 tail: %{e}"
 
   # ---- 定位类错误(人話改寫,見 main.rs die)----
-  cli.error.planetAmbiguous: "error: 多個 planet 正在執行,請用 --planet 指定目標:"
-  cli.error.noPlanetRunning: "error: 沒有正在執行的 planet,請先啟動:planet-port start <id>"
+  cli.error.planetAmbiguous: "error: 登記了多個 planet,請用 --planet 指定目標:"
+  cli.error.noPlanetRunning: "error: 尚未登記任何 planet,請先添加:planet-port add <file|URL>"
 
   # ---- list/listnetworks 授權等待提示 ----
   cli.list.authPending: "提示: 網路 %{nwid} 正在等待控制器授權(請在 ZeroTier Central 勾選 Allow)"

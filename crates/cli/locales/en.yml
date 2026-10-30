@@ -8,7 +8,7 @@
   cli.list.noNetworks: "(no networks)"
 
 
-  cli.events.needPlanet: "error: events requires --planet (%{n} planets currently running)"
+  cli.events.needPlanet: "error: events requires --planet (%{n} planets registered)"
   cli.planet.removeConfirm: "planet \"%{id}\" will leave all its networks, stop and be removed from the registry. Continue? [y/N] "
   cli.planet.removeAborted: aborted
   cli.planet.shareLoopHint: "note: link is loopback and only opens locally; share this machine's LAN IP instead"
@@ -57,8 +57,8 @@
   cli.service.logMissing: "log file not found: %{path} (daemon may never have run)"
   cli.service.tailExecFailed: "failed to execute tail: %{e}"
   # ---- locator errors (humanized, see main.rs die) ----
-  cli.error.planetAmbiguous: "error: multiple planets are running; specify one with --planet:"
-  cli.error.noPlanetRunning: "error: no running planet; start one first: planet-port start <id>"
+  cli.error.planetAmbiguous: "error: multiple planets registered; specify one with --planet:"
+  cli.error.noPlanetRunning: "error: no planet registered; add one first: planet-port add <file|URL>"
 
   # ---- list/listnetworks auth-pending hint ----
   cli.list.authPending: "hint: network %{nwid} is awaiting controller authorization (tick Allow in ZeroTier Central)"

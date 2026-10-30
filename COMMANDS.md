@@ -46,13 +46,13 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 |---|---|---|
 | ① | `--planet <name\|id>` | 显式指定,优先级最高 |
 | ② | 环境变量 `PLANET_PORT_PLANET` | 由 `eval $(planet-port use <x>)` 设置 |
-| ③ | 唯一 running planet 自动选中 | 仅有一个激活 planet 时自动落到它 |
-| ④ | 多个 running planet | 报 `409` 并列出候选,退出码 2,不猜 |
+| ③ | 唯一**登记**行星自动选中 | 计数只看登记,不看连接状态;登记 1 个(即使未启用)自动落到它,未启用的报 `409 planetNotRunning` |
+| ④ | 登记 ≥2 个行星 | 即使只有 1 个在运行也报 `409` 列出全部候选(标注 running/stopped),退出码 2,不猜 |
 
 查询类命令(info / list / listnetworks / listpeers / listmoons)**默认聚合展示**,
 `--planet` 与环境变量在其上的语义是**过滤**,不受上述链约束。
 **events 例外**:必须落到具体 planet,定位与 dump 同款——显式 `--planet` >
-仅一个 running planet 时自动;多 running 未指定时报用法错误(退出码 2)。
+仅登记 1 个行星时自动;登记 ≥2 未指定时报用法错误(退出码 2)。
 显式指定已停止的 planet 仍可查其历史事件。
 
 `--planet` 同时接受别名(name)与 worldId,**别名不区分大小写**;服务端解析,命中即返回 canonical id

@@ -28,8 +28,9 @@ type ApiErr = (StatusCode, Json<planet_port_api::types::ApiError>);
 
 // ---- 定位链与校验 ----
 
-/// 变更端点定位链:显式 ?planet= → 存在且 running;省略 → 单 running 自动选,
-/// 多 running 409 planetAmbiguous(带候选),零 running 409 noPlanetRunning。
+/// 变更端点定位链:显式 ?planet= → 存在且 running;省略 → 按**登记数**自动选
+/// (登记 1 个即选中,stopped 报 409 planetNotRunning;登记 ≥2 报 409
+/// planetAmbiguous 列全部候选,零登记 409 noPlanetRunning)。
 /// 查找复用 world::resolve_planet_id(id/name/worldId 均可作为定位输入)。
 ///
 /// 锁纪律:registry 锁只在函数内部短持;歧义分支需要每个 running planet 的
@@ -60,32 +61,58 @@ pub(crate) fn resolve_running_planet(
             )),
         };
     }
-    let running: Vec<&RegistryEntry> = reg.planets.iter().filter(|p| p.running).collect();
-    match running.len() {
-        1 => Ok(running[0].id.clone()),
+    // 自动选择按**登记数**计,不看连接状态:登记 1 个(即使未启用)即为其
+    // 目标(running 校验同显式分支);登记 ≥2 一律报歧义要求显式指定
+    match reg.planets.len() {
         0 => Err(err(
             StatusCode::CONFLICT,
             "noPlanetRunning",
-            "no running planet; specify ?planet=",
+            "no planet registered; add one first",
             None,
         )),
+        1 => {
+            let p = &reg.planets[0];
+            if p.running {
+                Ok(p.id.clone())
+            } else {
+                Err(err(
+                    StatusCode::CONFLICT,
+                    "planetNotRunning",
+                    &format!(
+                        "planet \"{}\" is not running",
+                        crate::api_planet::name_of(p)
+                    ),
+                    None,
+                ))
+            }
+        }
         _ => {
-            let named: Vec<(String, Arc<PlanetRuntime>)> = running
+            // 候选列全部登记行星(带运行状态;running 的附实际网络数,以核心
+            // 快照为准——leave 后 net_local 仍保留配置,不计数)。网络数是
+            // node 查询,须在不持 registry 锁时做
+            let cands: Vec<(String, bool, String)> = reg
+                .planets
                 .iter()
-                .filter_map(|p| {
-                    runtime_of(st, &p.id).map(|rt| (crate::api_planet::name_of(p), rt))
-                })
+                .map(|p| (crate::api_planet::name_of(p), p.running, p.id.clone()))
                 .collect();
             drop(reg);
-            // 实际网络数以核心快照为准(leave 后 net_local 仍保留配置,不计数)
-            let candidates: Vec<String> = named
+            let candidates: Vec<String> = cands
                 .into_iter()
-                .map(|(name, rt)| format!("{name} ({})", rt.networks().len()))
+                .map(|(name, running, id)| {
+                    if running {
+                        match runtime_of(st, &id) {
+                            Some(rt) => format!("{name} ({id}, running, {} networks)", rt.networks().len()),
+                            None => format!("{name} ({id}, running)"),
+                        }
+                    } else {
+                        format!("{name} ({id}, stopped)")
+                    }
+                })
                 .collect();
             Err(err(
                 StatusCode::CONFLICT,
                 "planetAmbiguous",
-                "multiple running planets; specify ?planet=",
+                "multiple planets registered; specify ?planet=",
                 Some(candidates),
             ))
         }

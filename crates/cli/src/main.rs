@@ -205,26 +205,21 @@ fn planet_need(cmd: &Command) -> PlanetNeed {
     }
 }
 
-/// running planet 的 canonical id 清单(/status);daemon 不可达等失败返回
-/// None,让后续请求自身报错
-fn running_planet_ids(client: &Client) -> Option<Vec<String>> {
+/// 登记行星的 canonical id 清单(/status,不看连接状态——计数口径以登记为准);
+/// daemon 不可达等失败返回 None,让后续请求自身报错
+fn registered_planet_ids(client: &Client) -> Option<Vec<String>> {
     let v = client.get_json(planet_port_api::endpoints::status()).ok()?;
     let rows: Vec<planet_port_api::types::PlanetStatus> = serde_json::from_value(
         v.get("planets").cloned().unwrap_or(serde_json::Value::Null),
     )
     .unwrap_or_default();
-    Some(
-        rows.into_iter()
-            .filter(|p| p.status == "running")
-            .map(|p| p.id)
-            .collect(),
-    )
+    Some(rows.into_iter().map(|p| p.id).collect())
 }
 
 /// 未显式指定 planet 时的定位。返回(单选 planet, 查询过滤集):
 /// - Single:原样透传,自动选/歧义由 daemon 判定;
 /// - Events:与 dump 同款定位,daemon 的 /events 端点是过滤语义(无歧义
-///   判定),多 running 时由 CLI 报错兜住;
+///   判定),登记 ≥2 时由 CLI 报错兜住(计数只看登记,不看连接状态);
 /// - Multi:显式 planet 等价单成员过滤集,未指定则全量聚合
 fn resolve_planets(
     client: &Client,
@@ -237,7 +232,7 @@ fn resolve_planets(
             if planet_flag.is_some() {
                 return (planet_flag, None);
             }
-            if let Some(ids) = running_planet_ids(client) {
+            if let Some(ids) = registered_planet_ids(client) {
                 match ids.len() {
                     1 => return (Some(ids[0].clone()), None),
                     0 => {}
