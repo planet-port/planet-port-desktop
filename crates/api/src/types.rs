@@ -67,6 +67,10 @@ pub struct NetworkEntry {
     #[serde(rename = "type")]
     pub kind: String, // PUBLIC | PRIVATE
     pub mac: String,
+    /// feth 设备名(dev 端);设备未建(REQUESTING 等未获配置阶段)为 None。
+    /// serde default:旧版 daemon 响应无此键时反序列化仍成功
+    #[serde(default)]
+    pub interface: Option<String>,
     pub mtu: u32,
     pub assigned_addrs: Vec<String>,
     pub managed_routes: Vec<RouteLine>,

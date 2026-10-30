@@ -58,6 +58,16 @@ impl PlanetRuntime {
         self.with_node(|n| n.networks()).unwrap_or_default()
     }
 
+    /// 指定网络当前的 feth 设备名(dev 端;未建设备/已停 → None)。
+    /// /networks 展示用,plane 短锁
+    pub fn if_name(&self, nwid: u64) -> Option<String> {
+        self.plane
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .if_name_of(nwid)
+            .map(|s| s.to_string())
+    }
+
     /// 对端快照(实例已停 → 空)
     pub fn peers(&self) -> Vec<zt_core::PeerInfo> {
         self.with_node(|n| n.peers()).unwrap_or_default()

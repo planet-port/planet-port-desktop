@@ -173,14 +173,17 @@ pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
             println!("  {}\n", rust_i18n::t!("cli.list.noNetworks"));
             continue;
         }
-        let mut t = new_table(&["NETWORK", "NAME", "STATUS", "TYPE", "MANAGED-IPS"]);
+        // 列序对齐 zerotier-cli listnetworks(MAC 在 STATUS 前,DEV 紧随 TYPE)
+        let mut t = new_table(&["NETWORK", "NAME", "MAC", "STATUS", "TYPE", "DEV", "MANAGED-IPS"]);
         for n in nets {
             // 多 managed IP 全量堆叠(换行续行对齐本列),不再截断 2 个
             t.add_row(vec![
                 n.nwid.clone(),
                 n.name.clone().unwrap_or_else(|| "—".into()),
+                n.mac.clone(),
                 n.status.clone(),
                 n.kind.clone(),
+                n.interface.clone().unwrap_or_else(|| "—".into()),
                 n.assigned_addrs.join("\n"),
             ]);
         }
@@ -209,7 +212,7 @@ pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -
     )
     .unwrap_or_default();
     let names = planet_names(client);
-    let mut t = new_table(&["PLANET", "NETWORK", "NAME", "STATUS", "TYPE", "MANAGED-IPS"]);
+    let mut t = new_table(&["PLANET", "NETWORK", "NAME", "MAC", "STATUS", "TYPE", "DEV", "MANAGED-IPS"]);
     // rows 随后被 move 进循环,先取出待提示的授权等待网络
     let pending: Vec<String> = rows
         .iter()
@@ -221,8 +224,10 @@ pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -
             planet_display(&names, &n.planet),
             n.nwid,
             n.name.unwrap_or_else(|| "—".into()),
+            n.mac,
             n.status,
             n.kind,
+            n.interface.unwrap_or_else(|| "—".into()),
             // 多 managed IP 全量堆叠(换行续行对齐本列),与 list 同口径
             n.assigned_addrs.join("\n"),
         ]);
@@ -344,7 +349,10 @@ fn network_show(
     println!("planet    {label}");
     println!("name      {}", n.name.clone().unwrap_or_else(|| "—".into()));
     println!("status    {}", n.status);
-    println!("type      {} (mac {}, mtu {})", n.kind, n.mac, n.mtu);
+    println!("type      {}", n.kind);
+    println!("mac       {}", n.mac);
+    println!("device    {}", n.interface.clone().unwrap_or_else(|| "—".into()));
+    println!("mtu       {}", n.mtu);
     println!("assigned  {}", n.assigned_addrs.join(", "));
     println!("routes    {}", if routes.is_empty() { "—".into() } else { routes });
     println!("dns       mode={} servers=[{}] custom=[{}]",

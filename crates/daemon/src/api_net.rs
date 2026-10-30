@@ -195,6 +195,7 @@ fn to_network_entry(
     cfg: &NetConfig,
     nl: &NetLocal,
     conflict: Option<String>,
+    if_name: Option<String>,
 ) -> NetworkEntry {
     NetworkEntry {
         planet: planet_id.to_string(),
@@ -204,6 +205,7 @@ fn to_network_entry(
         conflict,
         kind: if cfg.is_private { "PRIVATE" } else { "PUBLIC" }.into(),
         mac: mac_str(cfg.mac),
+        interface: if_name,
         mtu: u32::from(cfg.mtu),
         assigned_addrs: cfg
             .assigned
@@ -263,6 +265,7 @@ pub async fn networks_list(
                 &cfg,
                 &nl,
                 conflicts.get(&cfg.nwid).cloned(),
+                rt.if_name(cfg.nwid),
             ));
         }
     }
@@ -498,7 +501,7 @@ pub async fn net_set(
         .get(&nwid_u)
         .cloned();
     let network = match cfg {
-        Some(c) => to_network_entry(&pid, &c, &nl, conflict),
+        Some(c) => to_network_entry(&pid, &c, &nl, conflict, rt.if_name(c.nwid)),
         None => return Err(internal("network snapshot disappeared".into())),
     };
     Ok(Json(json!({ "network": network })))
