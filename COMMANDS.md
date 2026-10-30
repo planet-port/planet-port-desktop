@@ -78,7 +78,7 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 | 命令 | 说明 |
 |---|---|
 | `join <nwid>` | 加入网络;**幂等**:对已加入网络重复 join 静默成功(`{"result":"ok","idempotent":true}`),批量脚本可重入 |
-| `leave <nwid>` | 退出网络;**幂等**:未加入时重复 leave 静默成功 |
+| `leave <nwid>` | 退出网络;**幂等**:未加入时重复 leave 静默成功;**同时清除本地配置记录**(net_local),重启/重新上线不会被 re-join 复活 |
 | `set <nwid> <k>=<v>...` | 客户端本地配置:`routeViaZeroTier=0\|1`(非 0/1 退出码 2)、`dnsMode=none\|network\|custom`、`customDns=<逗号分隔>`;未知 key 或不带任何 k=v 退出码 2;zerotier-cli 旧 key(`allowDefault`/`allowManaged`/`allowDNS`)报错时提示等价 key 映射 |
 | `get <nwid> <key>` | 读单个网络配置值(脚本友好):key 取 `routeViaZeroTier`/`dnsMode`/`customDns`/`assignedAddrs`/`managedRoutes` 等字段;字符串裸输出,数组/对象紧凑 JSON;未知 key 退出码 2(同样带旧 key 映射提示) |
 | `network show <nwid>` | 单网络详情视图:planet 落点、状态、MAC、设备名、mtu、assigned IP、managed routes、DNS 三件套、routeViaZeroTier 一屏可见;`-j` 输出完整 NetworkEntry |

@@ -88,7 +88,7 @@ pub(crate) fn resolve_running_planet(
         }
         _ => {
             // 候选列全部登记行星(带运行状态;running 的附实际网络数,以核心
-            // 快照为准——leave 后 net_local 仍保留配置,不计数)。网络数是
+            // 快照为准——net_local 条目数与实际加入数可能短暂不一致)。网络数是
             // node 查询,须在不持 registry 锁时做
             let cands: Vec<(String, bool, String)> = reg
                 .planets
@@ -395,6 +395,25 @@ pub async fn net_leave(
     let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
     let rt = not_running(&st, &pid)?;
     let nwid_u = resolve_nwid(&rt, &nwid)?;
+    // net_local 记录一并删除(持久层 + 运行时镜像):leave 的目标态是
+    // "彻底不在网络里",保留记录会被下次 start 的 re-join 复活;重新 join
+    // 时按控制器下发的默认配置重来(对齐 zerotier-cli 语义)。放在幂等
+    // 分支之前,顺带清理"运行时已退但记录残留"的半态
+    {
+        let key = format!("{nwid_u:016x}");
+        let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
+            if e.net_local.remove(&key).is_some() {
+                if let Err(err) = reg.save(&st.config_dir) {
+                    eprintln!("[net] registry 写盘失败: {err}");
+                }
+            }
+        }
+    }
+    rt.net_local
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(&nwid_u);
     // 未加入 → 幂等成功(leave 的目标态就是"不在网络里",已达成)
     if !rt.networks().iter().any(|c| c.nwid == nwid_u) {
         st.events.push(&rt.planet_id, "leave", &format!("not joined {nwid} (idempotent)"));
@@ -412,7 +431,7 @@ pub async fn net_leave(
                 None,
             )
         })?;
-    // 设备面拆除 + 快照/冲突清理;net_local 保留(重新 join 恢复用户配置)
+    // 设备面拆除 + 快照/冲突清理(net_local 已在上方删除)
     rt.plane
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
