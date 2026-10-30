@@ -63,6 +63,14 @@
   cli.service.launchctlExecFailed: "無法執行 launchctl: %{e}"
   cli.service.logMissing: "日誌檔案不存在: %{path}(daemon 可能尚未執行過)"
   cli.service.tailExecFailed: "無法執行 tail: %{e}"
+  cli.service.systemctlFailed: "systemctl %{args} 失敗: %{e}"
+  cli.service.systemctlExecFailed: "無法執行 systemctl: %{e}"
+  cli.service.journalctlExecFailed: "無法執行 journalctl: %{e}"
+  cli.service.writeUnitFailed: "寫入 %{path} 失敗: %{e}"
+  cli.service.installedSvc: "已安裝 systemd 服務 %{unit}"
+  cli.service.installedUnit: "  配置:   %{path}"
+  cli.service.systemdState: "  systemd 狀態: %{state}"
+  cli.service.unitEnabled: "已設定開機自動啟動"
 
   # ---- 定位类错误(人話改寫,見 main.rs die)----
   cli.error.planetAmbiguous: "error: 登記了多個 planet,請用 --planet 指定目標:"
