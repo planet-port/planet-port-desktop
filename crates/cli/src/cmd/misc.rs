@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::thread::sleep;
 use std::time::Duration;
 
-pub fn use_planet(client: &Client, planet: &str) -> Result<(), CliError> {
+pub fn use_planet(client: &Client, planet: &str, json: bool) -> Result<(), CliError> {
     let v = client.get_json(endpoints::planets())?;
     let rows: Vec<PlanetStatus> = serde_json::from_value(
         v.get("planets").cloned().unwrap_or(Value::Null),
@@ -16,6 +16,14 @@ pub fn use_planet(client: &Client, planet: &str) -> Result<(), CliError> {
         .iter()
         .find(|p| p.id == planet || p.name == planet)
         .ok_or_else(|| CliError::Usage(format!("planet \"{planet}\" not found")))?;
+    if json {
+        // 机器可读的解析结果(stdout 唯一 JSON)
+        crate::output::print_json(&serde_json::json!({
+            "planet": found.id,
+            "name": found.name,
+        }));
+        return Ok(());
+    }
     // stdout 只输出 export 行(供 eval);提示走 stderr
     println!("export PLANET_PORT_PLANET={}", found.id);
     eprintln!("# default planet set to \"{}\" (this shell only)", found.name);

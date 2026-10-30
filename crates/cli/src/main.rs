@@ -291,7 +291,7 @@ fn dispatch(
         Command::Stop { id } => cmd::planet::stop(client, id, json),
         Command::Planet { cmd } => cmd::planet::run(client, cmd, json),
         Command::Moon { cmd } => cmd::mutate::run_moon(client, cmd, planet_flag, json),
-        Command::Use { planet } => cmd::misc::use_planet(client, planet),
+        Command::Use { planet } => cmd::misc::use_planet(client, planet, json),
         Command::Events { limit, follow } => cmd::misc::events(client, planet_flag, *limit, *follow, json),
     }
 }

@@ -62,3 +62,4 @@
 | 命令 | 预期 | 实测 | 结论 |
 |---|---|---|---|
 | `list` / `listnetworks` 多 managed IP | 列内逐行堆叠全量展示 | 3 IP(含超长畸形 CIDR)实测:续行对齐 MANAGED-IPS 列起点,无截断 | 通过 |
+| 全命令 `-j` 覆盖 | stdout 纯 JSON,机器可解析 | 14 条命令(info/list/dump/events/use/planet 组/service status/get/network show 等)连发实测全部 exit 0 且 JSON 合法;`use` 与 service 四动作补齐 `-j`(service 动作需 root,代码路径回归) | 通过 |

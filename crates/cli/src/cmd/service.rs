@@ -60,24 +60,40 @@ pub fn run(cmd: ServiceCmd, json: bool) -> Result<(), CliError> {
     match cmd {
         ServiceCmd::Install => {
             require_root();
-            install();
+            install(json);
         }
         ServiceCmd::Uninstall => {
             require_root();
-            uninstall();
+            uninstall(json);
         }
         ServiceCmd::Start => {
             require_root();
-            start();
+            start(json);
         }
         ServiceCmd::Stop => {
             require_root();
-            stop();
+            stop(json);
         }
         ServiceCmd::Status => status(json)?,
         ServiceCmd::Logs { lines, follow } => logs(lines, follow),
     }
     Ok(())
+}
+
+/// 变更进度回执:文本模式走 stdout;`-j` 模式 stdout 让位给结果 JSON,人话转 stderr
+fn progress(json: bool, msg: String) {
+    if json {
+        eprintln!("{msg}");
+    } else {
+        println!("{msg}");
+    }
+}
+
+/// `-j` 模式的机器回执:stdout 唯一一条 JSON;文本模式无输出
+fn json_done(json: bool, v: serde_json::Value) {
+    if json {
+        print_json(&v);
+    }
 }
 
 // ---- 子命令实现 ----
@@ -90,7 +106,7 @@ fn require_root() {
     }
 }
 
-fn install() {
+fn install(json: bool) {
     // 1. 拷贝当前二进制到固定路径(plist 指向它,target/debug 路径不稳定)
     let exe = std::env::current_exe().unwrap_or_else(|e| {
         eprintln!("{}", rust_i18n::t!("cli.service.exeNotFound", e = e));
@@ -168,7 +184,7 @@ fn install() {
     if Path::new(LEGACY_PLIST_PATH).exists() {
         let _ = launchctl_output(&["bootout", &format!("system/{LEGACY_LABEL}")]);
         let _ = fs::remove_file(LEGACY_PLIST_PATH);
-        println!("{}", rust_i18n::t!("cli.service.legacyCleaned", label = LEGACY_LABEL));
+        progress(json, rust_i18n::t!("cli.service.legacyCleaned", label = LEGACY_LABEL).to_string());
     }
 
     // 4. 装载(RunAtLoad=true:bootstrap 装载即拉起一次,随开机自动启动;
@@ -180,7 +196,7 @@ fn install() {
     let old_pid = service_pid();
     match launchctl_output(&["bootout", &format!("system/{LABEL}")]) {
         Ok(_) => {
-            println!("{}", rust_i18n::t!("cli.service.bootedOutForReinstall", label = LABEL));
+            progress(json, rust_i18n::t!("cli.service.bootedOutForReinstall", label = LABEL).to_string());
             // bootout 返回 ≠ 旧实例已退:daemon 收 SIGTERM 后要逐 planet 红线
             // 收尾(拆网卡/路由/DNS),期间立即 bootstrap 会被 launchd 以
             // Input/output error 5 拒绝。等旧 job/进程真正消失再装载
@@ -198,17 +214,19 @@ fn install() {
     }
     if let Err(stderr) = launchctl_output(&["bootstrap", "system/", PLIST_PATH]) {
         if stderr.to_lowercase().contains("already bootstrapped") {
-            println!("{}", rust_i18n::t!("cli.service.alreadyBootstrapped", label = LABEL));
+            progress(json, rust_i18n::t!("cli.service.alreadyBootstrapped", label = LABEL).to_string());
+            json_done(json, serde_json::json!({"result": "ok", "idempotent": true}));
             return;
         }
         eprintln!("{}", rust_i18n::t!("cli.service.bootstrapFailed", e = stderr.trim()));
         std::process::exit(1);
     }
 
-    println!("{}", rust_i18n::t!("cli.service.installed", label = LABEL));
-    println!("{}", rust_i18n::t!("cli.service.installedBin", path = BIN_PATH));
-    println!("{}", rust_i18n::t!("cli.service.installedPlist", path = PLIST_PATH));
-    println!("{}", rust_i18n::t!("cli.service.installedData", dir = APP_DIR));
+    progress(json, rust_i18n::t!("cli.service.installed", label = LABEL).to_string());
+    progress(json, rust_i18n::t!("cli.service.installedBin", path = BIN_PATH).to_string());
+    progress(json, rust_i18n::t!("cli.service.installedPlist", path = PLIST_PATH).to_string());
+    progress(json, rust_i18n::t!("cli.service.installedData", dir = APP_DIR).to_string());
+    json_done(json, serde_json::json!({"result": "ok"}));
 }
 
 /// 二进制更新用「临时文件 + rename」原子替换:直接 fs::copy 覆盖正在运行的
@@ -227,14 +245,14 @@ fn copy_exe(src: &Path, dst: &str) {
     }
 }
 
-fn uninstall() {
+fn uninstall(json: bool) {
     // 未加载/已卸载属预期,不算失败
     match launchctl_output(&["bootout", &format!("system/{LABEL}")]) {
-        Ok(_) => println!("{}", rust_i18n::t!("cli.service.unloaded", label = LABEL)),
+        Ok(_) => progress(json, rust_i18n::t!("cli.service.unloaded", label = LABEL).to_string()),
         Err(stderr) => {
             let s = stderr.to_lowercase();
             if s.contains("not loaded") || s.contains("no such process") || s.contains("could not find") {
-                println!("{}", rust_i18n::t!("cli.service.notRunningSkip"));
+                progress(json, rust_i18n::t!("cli.service.notRunningSkip").to_string());
             } else {
                 eprintln!("{}", rust_i18n::t!("cli.service.bootoutFailed", e = stderr.trim()));
             }
@@ -245,7 +263,7 @@ fn uninstall() {
     if Path::new(LEGACY_PLIST_PATH).exists() {
         let _ = launchctl_output(&["bootout", &format!("system/{LEGACY_LABEL}")]);
         let _ = fs::remove_file(LEGACY_PLIST_PATH);
-        println!("{}", rust_i18n::t!("cli.service.legacyCleaned", label = LEGACY_LABEL));
+        progress(json, rust_i18n::t!("cli.service.legacyCleaned", label = LEGACY_LABEL).to_string());
     }
     let _ = fs::remove_file(BIN_PATH);
     // bin 目录若已空则一并移除(数据目录保留)
@@ -259,8 +277,9 @@ fn uninstall() {
             let _ = fs::remove_dir(LOG_DIR);
         }
     }
-    println!("{}", rust_i18n::t!("cli.service.removed", plist = PLIST_PATH, bin = BIN_PATH));
-    println!("{}", rust_i18n::t!("cli.service.dataKept", dir = APP_DIR));
+    progress(json, rust_i18n::t!("cli.service.removed", plist = PLIST_PATH, bin = BIN_PATH).to_string());
+    progress(json, rust_i18n::t!("cli.service.dataKept", dir = APP_DIR).to_string());
+    json_done(json, serde_json::json!({"result": "ok"}));
 }
 
 /// 探测 daemon 是否在线:HTTP 有应答(含 401)即在线,返回端口。
@@ -296,7 +315,7 @@ fn wait_online(timeout: std::time::Duration) -> bool {
     }
 }
 
-fn start() {
+fn start(json: bool) {
     // -k:已在运行则先杀再拉(幂等重启);KeepAlive={SuccessfulExit=false}
     // 只管异常退出后的自动重启,手动 stop(exit 0)不会被拉回
     let old_pid = service_pid();
@@ -313,13 +332,17 @@ fn start() {
     match wait_online(std::time::Duration::from_secs(15)) {
         true => {
             let port = probe_online().unwrap_or(0);
-            println!("{}", rust_i18n::t!("cli.service.started", port = port));
+            progress(json, rust_i18n::t!("cli.service.started", port = port).to_string());
+            json_done(json, serde_json::json!({"result": "ok", "port": port}));
         }
-        false => println!("{}", rust_i18n::t!("cli.service.startTimeout", log = LOG_PATH)),
+        false => {
+            progress(json, rust_i18n::t!("cli.service.startTimeout", log = LOG_PATH).to_string());
+            json_done(json, serde_json::json!({"result": "error"}));
+        }
     }
 }
 
-fn stop() {
+fn stop(json: bool) {
     // TERM 命中 daemon 的信号优雅退出路径:逐 planet 红线收尾后删 port 文件;
     // 退出码 0,KeepAlive 不会把它重新拉起
     launchctl(&["kill", "TERM", &format!("system/{LABEL}")]);
@@ -330,16 +353,19 @@ fn stop() {
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
     if service_pid().is_some() {
-        println!("{}", rust_i18n::t!("cli.service.stopTimeout", log = LOG_PATH));
+        progress(json, rust_i18n::t!("cli.service.stopTimeout", log = LOG_PATH).to_string());
+        json_done(json, serde_json::json!({"result": "error"}));
         return;
     }
     // pid 已消失:优雅退出本不会被 KeepAlive 拉回;若短暂窗口内又上线,
     // 说明它以非零码退出触发了自动重启,如实报告
     std::thread::sleep(std::time::Duration::from_secs(1));
     if probe_online().is_some() {
-        println!("{}", rust_i18n::t!("cli.service.keepaliveRelaunched"));
+        progress(json, rust_i18n::t!("cli.service.keepaliveRelaunched").to_string());
+        json_done(json, serde_json::json!({"result": "warning"}));
     } else {
-        println!("{}", rust_i18n::t!("cli.service.stopped"));
+        progress(json, rust_i18n::t!("cli.service.stopped").to_string());
+        json_done(json, serde_json::json!({"result": "ok"}));
     }
 }
 

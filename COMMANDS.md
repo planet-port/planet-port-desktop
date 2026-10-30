@@ -111,7 +111,7 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 
 | 命令 | 说明 |
 |---|---|
-| `use <name\|id>` | stdout 输出 `export PLANET_PORT_PLANET=<id>` 供 `eval`;人话提示走 stderr;planet 不存在时退出码 2 且 stdout 无输出 |
+| `use <name\|id>` | stdout 输出 `export PLANET_PORT_PLANET=<id>` 供 `eval`;人话提示走 stderr;planet 不存在时退出码 2 且 stdout 无输出;`-j` 输出 `{"planet":"<id>","name":"<name>"}` |
 
 用法:`eval $(planet-port use company)`。CLI 是一次性子进程,无法修改父 shell 环境,
 故必须 eval;状态存于环境变量,可见、可覆盖、脚本可自省。
@@ -120,10 +120,10 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 
 | 命令 | 说明 |
 |---|---|
-| `service install` | 需 root:拷贝二进制到 `/Library/Application Support/planet-portd/bin/planet-portd`,写 `/Library/LaunchDaemons/cn.imgozi.d.planetport.daemon.plist` 并 `launchctl bootstrap system/`;RunAtLoad=true(装载即随开机启动)、KeepAlive={SuccessfulExit=false}(崩溃等异常退出自动拉起,SIGTERM 优雅退出不拉起);幂等,重装先卸载旧服务 |
-| `service uninstall` | 需 root:`launchctl bootout` + 删 plist 与拷贝的二进制;**数据目录保留**,提示手动 `rm -rf` |
-| `service start` | 需 root:`launchctl kickstart -k …`;daemon 启动时按 registry 期望状态自动恢复 planet |
-| `service stop` | 需 root:`launchctl kill TERM …`,命中 daemon 的信号优雅退出路径(逐 planet 红线收尾;**保留期望状态**,start 后自动恢复;显式 `planet-port stop` 才不恢复) |
+| `service install` | 需 root:拷贝二进制到 `/Library/Application Support/planet-portd/bin/planet-portd`,写 `/Library/LaunchDaemons/cn.imgozi.d.planetport.daemon.plist` 并 `launchctl bootstrap system/`;RunAtLoad=true(装载即随开机启动)、KeepAlive={SuccessfulExit=false}(崩溃等异常退出自动拉起,SIGTERM 优雅退出不拉起);幂等,重装先卸载旧服务;`-j` 时进度人话走 stderr、stdout 仅 `{"result":"ok"}`(已装载重入附 `"idempotent":true`) |
+| `service uninstall` | 需 root:`launchctl bootout` + 删 plist 与拷贝的二进制;**数据目录保留**,提示手动 `rm -rf`;`-j` 回执同 install |
+| `service start` | 需 root:`launchctl kickstart -k …`;daemon 启动时按 registry 期望状态自动恢复 planet;`-j` 成功回执 `{"result":"ok","port":N}`,超时 `{"result":"error"}` |
+| `service stop` | 需 root:`launchctl kill TERM …`,命中 daemon 的信号优雅退出路径(逐 planet 红线收尾;**保留期望状态**,start 后自动恢复;显式 `planet-port stop` 才不恢复);`-j` 回执 ok / `{"result":"error"}`(超时)/ `{"result":"warning"}`(KeepAlive 拉起) |
 | `service logs [--lines N] [--follow]` | 无需 root:tail daemon 日志(`/Library/Logs/planet-portd/daemon.log`,默认末 50 行);`--follow` 持续跟踪,Ctrl+C 退出;日志文件不存在时退出码 1 |
 | `service status` | 无需 root:尊重 `PLANET_PORT_URL`;ping `/version` 成功 → `运行中(端口 N)`(N 取自 port 文件,**退出码 0**);token 校验失败 → 退出码 1;不在线时按 plist 是否存在区分「未安装」/「已安装未运行」并给出 launchctl 状态摘要,**退出码 3** |
 
