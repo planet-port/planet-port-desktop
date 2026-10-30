@@ -57,8 +57,8 @@ for target in "${TARGETS[@]}"; do
     [[ -n "$tag" ]] || die "未配置 ${target} 的产物命名"
     echo "构建 ${target} ..."
     build_target "$target"
-    # zigbuild 产物目录是不带 glibc 后缀的三元组
-    BIN_DIR="target/${target%.*}/release"
+    # zigbuild 产物目录是不带 glibc 后缀的三元组;%%.* 删最长后缀,去掉整个 .2.31
+    BIN_DIR="target/${target%%.*}/release"
     [[ -x "${BIN_DIR}/planet-port" && -x "${BIN_DIR}/planet-portd" ]] \
         || die "${BIN_DIR} 下二进制缺失"
     ASSET="planet-port_${VERSION}_${tag}.tar.gz"
