@@ -9,11 +9,13 @@
 | 2026-10-31 | gozi-mba (10.152.124.24) | Linux Mint 21.3 (glibc 2.35) | x86_64 | 通过 | systemd 全流程 e2e;与官方 zerotier-one 共存 |
 | 2026-10-31 | WX-RK3566 (10.121.15.88) | Ubuntu 20.04.6 LTS (glibc 2.31) | aarch64 | 通过 | systemd 全流程 e2e;与官方 zerotier-one 共存;glibc 基线机型 |
 | 2026-10-31 | openclaw (192.168.8.220) | Ubuntu 24.04.4 LTS (glibc 2.39, systemd 255) | x86_64 | 通过 | 覆盖升级场景:旧 daemon 数据保留、planet 自动恢复、tap 重建;与官方 zerotier-one 共存 |
+| 2026-10-31 | (待实测,实机未开机) | Windows 10(版本/build 待查) | x86_64(待查) | 未实测——仅编译级预验证(cargo-xwin 交叉 check 全绿),三道 Gate 待实机 | wintun L3 路线 POC 代码已就绪;待实测清单见 docs/2026-10-31-windows-poc-report.md |
 
 ## 已知边界(实测结论)
 
 - Linux 支持范围:amd64 / arm64,glibc ≥ 2.31(systemd 发行版);SELinux enforcing(Fedora/RHEL 系)未测不在支持内。
 - `macos_x86_64` 产物已构建,尚未在 Intel Mac 实机验证。
+- Windows:仍是"规划中"——poc4 POC 已完成编译级验证(zt-sys 交叉编译 + 设备层/路由/ARP 垫层代码就绪),但无任何实机 Gate 数据,不算通过。
 - 与官方 zerotier-one 共存:四台均验证互不干扰(接口、端口独立)。
 
 e2e 验证脚本步骤:install → status → info → journalctl 日志 → stop/start → 开机自启 → 幂等重装 → uninstall(unit 删除、数据保留)→ 重装留运行。
