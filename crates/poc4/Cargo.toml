@@ -1,0 +1,19 @@
+[package]
+name = "poc4"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+
+# bin 名固定 poc4_windows(与此前 pocs 中的命名一致)
+[[bin]]
+name = "poc4_windows"
+path = "src/main.rs"
+
+# 依赖无条件声明:整个 crate 仅 Windows 有意义,mac 上也要能编译
+# (workspace 全平台可编译约束),三个依赖均跨平台可构建。
+[dependencies]
+zt-sys = { path = "../zt-sys" }
+# tun-rs:wintun L3 设备,Apache-2.0;address-management 提供地址配置
+tun-rs = { version = "2", default-features = false, features = ["address-management"] }
+# route_manager:managed 路由应用(Task 5 实装),Apache-2.0
+route_manager = "0.2"

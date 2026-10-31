@@ -1111,6 +1111,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "poc4"
+version = "0.1.0"
+dependencies = [
+ "route_manager",
+ "tun-rs",
+ "zt-sys",
+]
+
+[[package]]
 name = "pocs"
 version = "0.1.0"
 dependencies = [
