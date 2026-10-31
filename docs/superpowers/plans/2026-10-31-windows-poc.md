@@ -10,7 +10,8 @@
 
 ## Global Constraints
 
-- Windows 代码只进新文件（`crates/pocs/src/poc4/**`、`crates/pocs/src/bin/poc4_windows.rs`）与 pocs 的 `[target.'cfg(windows)'.dependencies]`；**禁止修改 zt-core / daemon / cli / api 与现有脚本**
+- Windows 代码只进新 crate `crates/poc4/**`（bin 名 `poc4_windows`，依赖只有 zt-sys/tun-rs/route_manager）与根 Cargo.toml 的 members 一行；**禁止修改 zt-core / daemon / cli / api / pocs 与现有脚本**
+- 结构调整记录（2026-10-31，Task 4 执行时）：原计划把 poc4 放 crates/pocs 内，因 pocs 无条件依赖 zt-core（Windows 编译不过）会阻塞交叉检查，改为独立 crates/poc4；下文各任务的 `crates/poc4/src/` 路径均对应 `crates/poc4/src/`
 - 所有 Windows 模块以 `#[cfg(windows)]` 隔离；mac 上 `cargo build --workspace` 必须保持成功（Task 8 验证）
 - 不添加测试用例（用户全局规则）；验证方式 = Win10 实机运行 + 观察输出
 - 任一 Gate 失败即停，定位归因，不打补丁绕过
@@ -208,8 +209,8 @@ ssh 推送到 Win10 实机,规避在 Windows 上跑 bash bootstrap。"
 
 **Files:**
 - Modify: `crates/pocs/Cargo.toml`
-- Create: `crates/pocs/src/bin/poc4_windows.rs`
-- Create: `crates/pocs/src/poc4/mod.rs`、`crates/pocs/src/poc4/device_win.rs`
+- Create: `crates/poc4/src/main.rs`
+- Create: `crates/poc4/src/mod.rs`、`crates/poc4/src/device_win.rs`
 
 **Interfaces:**
 - Consumes: Task 3 的 Win10 构建环境。
@@ -229,7 +230,7 @@ route_manager = "0.2"
 
 - [ ] **Step 2: 写 bin 骨架**
 
-`crates/pocs/src/bin/poc4_windows.rs`：
+`crates/poc4/src/main.rs`：
 
 ```rust
 //! POC 4:Windows 支持可行性(wintun L3 + ZeroTier 核心,最低 Win10)。
@@ -252,7 +253,7 @@ fn main() {
 
 - [ ] **Step 3: 写设备模块（wintun L3）**
 
-`crates/pocs/src/poc4/mod.rs`：
+`crates/poc4/src/mod.rs`：
 
 ```rust
 //! poc4 模块根:仅 Windows 编译。各子模块职责见文件头注释。
@@ -275,7 +276,7 @@ fn crate_main() -> i32 {
 }
 ```
 
-`crates/pocs/src/poc4/device_win.rs`：
+`crates/poc4/src/device_win.rs`：
 
 ```rust
 //! wintun(L3)设备封装:tun-rs 同步设备 + managed 地址(复用其
@@ -379,7 +380,7 @@ pub fn gate1_cli() -> i32 {
 
 - [ ] **Step 4: 空 arp/sa/store/driver/netcfg 占位模块**
 
-POC 分任务推进，为让本任务可编译，其余模块先放最小占位（后续任务替换）。`crates/pocs/src/poc4/sa.rs`：
+POC 分任务推进，为让本任务可编译，其余模块先放最小占位（后续任务替换）。`crates/poc4/src/sa.rs`：
 
 ```rust
 //! sockaddr_storage <-> SocketAddr(winsock 布局,Task 6 实装)。
@@ -418,7 +419,7 @@ Expected: `PASS 适配器已建立`。同时另开 `ssh win10 "powershell -Comma
 - [ ] **Step 7: 提交**
 
 ```bash
-git add crates/pocs/Cargo.toml crates/pocs/src/bin/poc4_windows.rs crates/pocs/src/poc4/
+git add crates/pocs/Cargo.toml crates/poc4/src/main.rs crates/poc4/src/
 git commit -m "feat(pocs): poc4 Windows 设备层骨架(wintun L3)
 
 Windows 支持评估 POC 第一块:tun-rs wintun 适配器封装与
@@ -431,9 +432,9 @@ cfg(windows) target 块,非 Windows 平台仅编译占位 main。"
 ### Task 5: Gate 1b（地址/路由应用 + 从设备读到包）
 
 **Files:**
-- Modify: `crates/pocs/src/poc4/device_win.rs`（gate1_cli 增加 `--gate1-read`）
-- Create: `crates/pocs/src/poc4/routes_win.rs`（RouteApplier 的 Windows 版拷贝）
-- Modify: `crates/pocs/src/poc4/mod.rs`（注册 `mod routes_win;`）
+- Modify: `crates/poc4/src/device_win.rs`（gate1_cli 增加 `--gate1-read`）
+- Create: `crates/poc4/src/routes_win.rs`（RouteApplier 的 Windows 版拷贝）
+- Modify: `crates/poc4/src/mod.rs`（注册 `mod routes_win;`）
 
 **Interfaces:**
 - Consumes: Task 4 的 `WinDevice`。
@@ -441,7 +442,7 @@ cfg(windows) target 块,非 Windows 平台仅编译占位 main。"
 
 - [ ] **Step 1: 写路由应用模块**
 
-`crates/pocs/src/poc4/routes_win.rs`（语义与 zt-core routes.rs 相同：默认路由跳过、差分、单条失败告警继续）：
+`crates/poc4/src/routes_win.rs`（语义与 zt-core routes.rs 相同：默认路由跳过、差分、单条失败告警继续）：
 
 ```rust
 //! managed 路由差分应用(route_manager 的 Windows 后端,CreateIpForwardEntry2)。
@@ -621,7 +622,7 @@ Expected: 60 秒窗口内配合另一终端 `ping 10.121.16.200` 读到包。退
 
 ```bash
 cargo build --workspace
-git add crates/pocs/src/poc4/
+git add crates/poc4/src/
 git commit -m "feat(pocs): poc4 Windows 地址路由应用与收包自验
 
 Gate 1 收尾:managed 路由差分应用(route_manager Windows 后端)
@@ -634,11 +635,11 @@ Gate 1 收尾:managed 路由差分应用(route_manager Windows 后端)
 ### Task 6: Gate 2a（Windows 版 node 驱动：控制面打通，join planet 至 netconf OK）
 
 **Files:**
-- Modify: `crates/pocs/src/poc4/store.rs`（替换占位）
-- Modify: `crates/pocs/src/poc4/sa.rs`（替换占位）
-- Modify: `crates/pocs/src/poc4/netcfg.rs`（替换占位）
-- Modify: `crates/pocs/src/poc4/driver.rs`（替换占位）
-- Modify: `crates/pocs/src/poc4/mod.rs`（入口接 `--planet/--join` 流程）
+- Modify: `crates/poc4/src/store.rs`（替换占位）
+- Modify: `crates/poc4/src/sa.rs`（替换占位）
+- Modify: `crates/poc4/src/netcfg.rs`（替换占位）
+- Modify: `crates/poc4/src/driver.rs`（替换占位）
+- Modify: `crates/poc4/src/mod.rs`（入口接 `--planet/--join` 流程）
 
 **Interfaces:**
 - Consumes: zt-sys 的 bindgen 绑定（Win10 实际生成产物为准）；Task 3 Step 3 记录的字段形态。
@@ -875,7 +876,7 @@ Expected 时间线：`address=xxxxx` → `online=true`（1-30s，Gozi25 根对�
 
 ```bash
 cargo build --workspace
-git add crates/pocs/src/poc4/
+git add crates/poc4/src/
 git commit -m "feat(pocs): poc4 Windows 版 ZeroTier node 驱动(控制面)
 
 平移 zt-core node.rs 架构,Windows 改造点收敛为三处:UDP 独立
@@ -889,8 +890,8 @@ netconf OK 的控制面在 Win10 实测通过。"
 ### Task 7: Gate 2b（数据面：wintun↔核心帧桥 + ARP 垫层，互 ping）
 
 **Files:**
-- Modify: `crates/pocs/src/poc4/arp.rs`（替换占位）
-- Modify: `crates/pocs/src/poc4/mod.rs`（sink 接设备应用与帧桥）
+- Modify: `crates/poc4/src/arp.rs`（替换占位）
+- Modify: `crates/poc4/src/mod.rs`（sink 接设备应用与帧桥）
 
 **Interfaces:**
 - Consumes: Task 5 的 `WinDevice`/`RouteApplier`、Task 6 的 `PocNode`/`PocSink`/`FrameIn`。
@@ -1032,7 +1033,7 @@ Expected：netconf OK 后 mac 侧 `ping <win10 assigned IP>` 双向通（mac 侧
 
 ```bash
 cargo build --workspace
-git add crates/pocs/src/poc4/
+git add crates/poc4/src/
 git commit -m "feat(pocs): poc4 Windows 数据面(wintun 帧桥 + IPv4 ARP 垫层)
 
 Gate 2 收尾:Windows 裸 IP 包补以太网头经 ARP 学习表定目的 MAC
