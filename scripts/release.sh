@@ -39,8 +39,13 @@ build_target() { # $1=target
 die() { echo "错误: $*" >&2; exit 1; }
 
 TAG="${1:-}"
-[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "用法: $0 vX.Y.Z"
+# 支持 vX.Y.Z 与 vX.Y.Z-beta.N(beta 版会以 GitHub prerelease 形式发布,
+# 不会被 /releases/latest 解析到——install.sh 不带版本号时装不到 beta,
+# 用户需显式指定版本,符合 beta 的按需试用语义)
+[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]] || die "用法: $0 vX.Y.Z [vX.Y.Z-beta.N]"
 VERSION="${TAG#v}"
+PRERELEASE=()
+[[ "$TAG" =~ -beta\. ]] && PRERELEASE=(--prerelease)
 
 command -v gh >/dev/null || die "缺少 gh(CLI 登录态用于创建 Release)"
 
@@ -96,7 +101,7 @@ if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
     done
     [[ ${#ASSETS[@]} -gt 0 ]] && gh release upload "$TAG" --repo "$REPO" "${ASSETS[@]}"
 else
-    gh release create "$TAG" --repo "$REPO" --title "$TAG" --notes-file "$NOTES" \
+    gh release create "$TAG" --repo "$REPO" --title "$TAG" "${PRERELEASE[@]}" --notes-file "$NOTES" \
         "${STAGE}"/planet-port_${VERSION}_*.tar.gz
 fi
 echo "完成: https://github.com/${REPO}/releases/tag/${TAG}"
