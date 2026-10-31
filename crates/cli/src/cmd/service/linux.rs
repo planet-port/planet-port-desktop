@@ -143,9 +143,12 @@ pub(crate) fn offline_diag() {
         std::process::exit(3);
     }
     println!("{}", rust_i18n::t!("cli.service.installedNotRunning"));
-    if let Ok(state) = systemctl_output(&["is-active", UNIT]) {
-        println!("{}", rust_i18n::t!("cli.service.systemdState", state = state.trim()));
-    }
+    let state = systemctl_output_quiet(&["is-active", UNIT])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| rust_i18n::t!("common.unknown").to_string());
+    println!("{}", rust_i18n::t!("cli.service.systemdState", state = state));
     std::process::exit(3);
 }
 
@@ -204,6 +207,17 @@ fn systemctl_output(args: &[&str]) -> Result<String, String> {
     match Command::new("systemctl").args(args).output() {
         Ok(o) if o.status.success() => Ok(String::from_utf8_lossy(&o.stdout).into_owned()),
         Ok(o) => Err(String::from_utf8_lossy(&o.stderr).into_owned()),
+        Err(e) => Err(rust_i18n::t!("cli.service.systemctlExecFailed", e = e).to_string()),
+    }
+}
+
+/// 只取 stdout 不问退出码:is-active 对 inactive/failed/activating 一律非零
+/// 退出,状态却写在 stdout——offline_diag 恰只在「已安装未运行」时用它,
+/// 按退出码判定会永远丢状态行(仿 macos.rs 的 launchctl_output_quiet)。
+/// systemctl 本身执行失败(不存在等)仍 Err
+fn systemctl_output_quiet(args: &[&str]) -> Result<String, String> {
+    match Command::new("systemctl").args(args).output() {
+        Ok(o) => Ok(String::from_utf8_lossy(&o.stdout).into_owned()),
         Err(e) => Err(rust_i18n::t!("cli.service.systemctlExecFailed", e = e).to_string()),
     }
 }

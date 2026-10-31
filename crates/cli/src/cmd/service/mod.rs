@@ -26,11 +26,11 @@ use std::path::Path;
 
 #[derive(Clone, clap::Subcommand)]
 pub enum ServiceCmd {
-    /// 安装 LaunchDaemon(拷贝二进制、写 plist 并 bootstrap,需 root)
+    /// 安装系统服务(launchd/systemd,拷贝二进制并写服务定义,需 root)
     Install,
-    /// 卸载 LaunchDaemon(bootout 并删除二进制,数据目录保留,需 root)
+    /// 卸载系统服务(卸载并删除二进制,数据目录保留,需 root)
     Uninstall,
-    /// 启动 daemon(经 launchctl,需 root)
+    /// 启动 daemon(经系统服务管理器,需 root)
     Start,
     /// 停止 daemon(SIGTERM 走优雅退出,需 root)
     Stop,

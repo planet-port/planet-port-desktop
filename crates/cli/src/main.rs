@@ -98,7 +98,7 @@ enum Command {
     /// Print shell export line to set default planet
     #[command(name = "use")]
     Use { planet: String },
-    /// 管理 planet-portd 系统服务(LaunchDaemon 安装/卸载/启停/状态)
+    /// 管理 planet-portd 系统服务(launchd/systemd 安装/卸载/启停/状态)
     #[command(name = "service")]
     Service {
         #[command(subcommand)]
