@@ -22,7 +22,18 @@ fn main() {
         .cpp(true)
         .std("c++17")
         .define("ZT_NO_PEER_METRICS", None)
-        .warnings(false)
+        // Windows:windows.h 的 min/max 宏与核心源码 std::min/std::max 冲突
+        // (官方 Windows 工程同款处理);非 Windows 平台该宏无引用、零影响
+        .define("NOMINMAX", None)
+        .warnings(false);
+    // Windows/clang-cl:AES_aesni.cpp 的 SSSE3/AES-NI/PCLMUL 内联函数需显式开
+    // feature(MSVC 对内联函数不做 feature 检查,flag_if_supported 探测失败自动跳过;
+    // 仅 Windows 目标加,mac/linux 构建零影响)
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        build.flag_if_supported("-mssse3").flag_if_supported("-msse4.1")
+            .flag_if_supported("-maes").flag_if_supported("-mpclmul");
+    }
+    build
         .include(core.join("include"))
         .include(core.join("node"))
         .include(core.join("osdep"))
