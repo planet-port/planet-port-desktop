@@ -1,8 +1,11 @@
 # planet-port 安装指南
 
-适用平台:macOS(Apple Silicon / Intel)。Linux 与 Windows 在发布计划中。
+适用平台:macOS(Apple Silicon / Intel)、Linux(amd64 / arm64,glibc≥2.31,
+Ubuntu 20.04+ / Mint 21+ 等主流发行版,需 systemd)。Windows 在发布计划中。
 
-安装后的系统落点(所有方式一致):
+安装后的系统落点(所有安装方式一致,按平台区分):
+
+**macOS**
 
 | 路径 | 内容 |
 |---|---|
@@ -11,6 +14,16 @@
 | `/usr/local/bin/planet-port` | 指向 CLI 的软链(PATH 可见) |
 | `/Library/LaunchDaemons/cn.imgozi.d.planetport.daemon.plist` | launchd 服务(开机自启、崩溃自动拉起) |
 | `/Library/Logs/planet-portd/daemon.log` | 日志(newsyslog 5MB 轮转) |
+
+**Linux**
+
+| 路径 | 内容 |
+|---|---|
+| `/usr/local/bin/planet-port` | CLI(直接落 PATH 规范位,无软链层) |
+| `/usr/local/bin/planet-portd` | daemon |
+| `/etc/systemd/system/planet-portd.service` | systemd 服务(开机自启、异常退出自动拉起) |
+| `/var/lib/planet-portd` | 数据目录(unit 显式 `--config-dir`) |
+| `journalctl -u planet-portd` | 日志(journald,无需轮转配置) |
 
 ## 在线安装(推荐)
 
@@ -21,29 +34,37 @@ curl -fsSL https://raw.githubusercontent.com/planet-port/planet-port-desktop/mai
 ```
 
 脚本行为:识别平台架构 → 从 GitHub Releases 下载对应
-`planet-port_<ver>_<platform>_<arch>.tar.gz` → 解压 → 调用包内
-`planet-port install` 完成安装(见下)。
+`planet-port_<ver>_<platform>_<arch>.tar.gz`(macOS:`macos_aarch64` /
+`macos_x86_64`;Linux:`linux_amd64` / `linux_arm64`)→ 解压 → 调用包内
+`planet-port install` 完成安装(见下;macOS 装 launchd 服务,Linux 装
+systemd 服务)。
 
 指定版本 / 跳过服务:
 
 ```bash
 curl -fsSL …/install.sh | sudo bash -s -- v0.1.1        # 指定版本
-curl -fsSL …/install.sh | sudo bash -s -- --no-service  # 只装二进制与软链,不装服务
+curl -fsSL …/install.sh | sudo bash -s -- --no-service  # 只落盘二进制(macOS 含软链),不装服务
 ```
 
 ## 离线安装
 
 **方式一:`planet-port install`(推荐,无任何依赖)**
 
-把发布包 tar.gz 拷到目标机器(U 盘/内网传输),解压后:
+把与目标机器平台匹配的发布包 tar.gz 拷过去(U 盘/内网传输),解压后:
 
 ```bash
+# macOS(Apple Silicon)
 tar -xzf planet-port_0.1.0_macos_aarch64.tar.gz
+sudo ./planet-port install
+
+# Linux(amd64;arm64 换 linux_arm64 包)
+tar -xzf planet-port_0.1.0_linux_amd64.tar.gz
 sudo ./planet-port install
 ```
 
-一步完成:同目录的 planet-port / planet-portd 落盘预设路径 → 建
-`/usr/local/bin/planet-port` 软链 → 写 plist 并装载 launchd 服务(立即启动、
+一步完成:同目录的 planet-port / planet-portd 落盘预设路径 → 装
+平台服务(macOS 建 `/usr/local/bin/planet-port` 软链 + 写 plist 装载
+launchd 服务;Linux 直接落 `/usr/local/bin/` + 写 unit,均立即启动、
 随开机自启)。全程无网络、无脚本依赖。
 
 **方式二:经 install.sh 的本地包入口**
@@ -51,7 +72,7 @@ sudo ./planet-port install
 目标机上已有 install.sh(如随发布包分发)时:
 
 ```bash
-sudo PLANET_PORT_TARBALL=./planet-port_0.1.0_macos_aarch64.tar.gz ./install.sh
+sudo PLANET_PORT_TARBALL=./planet-port_0.1.0_linux_amd64.tar.gz ./install.sh
 ```
 
 与在线安装等价,仅"下载"一步替换为本地包。
@@ -67,6 +88,22 @@ sudo PLANET_PORT_TARBALL=./planet-port_0.1.0_macos_aarch64.tar.gz ./install.sh
 - **升级兜底**:安装前记录正在运行的 planet,新 daemon 拉起后自动恢复——
   覆盖"旧版 daemon 被 SIGTERM 后落 stopped"的升级场景,新版幂等;
 - `-j` 输出:进度走 stderr,stdout 仅 `{"result":"ok"}`。
+
+**Linux 与 macOS 的差异**
+
+- **无软链层**:CLI / daemon 直接落 `/usr/local/bin/`(PATH 规范位),
+  macOS 的「App Support/bin + `/usr/local/bin` 软链」两级结构不存在;
+- **服务语义**:systemd unit 用 `Restart=on-failure` +
+  `RestartSec=2`,对应 macOS 的 `KeepAlive={SuccessfulExit=false}`——
+  异常退出自动拉起,SIGTERM 优雅退出 / `systemctl stop` 不拉起;
+  enable 即开机自启,对应 `RunAtLoad=true`;
+- **日志走 journald**:unit 不写文件日志,无轮转配置,`journalctl -u
+  planet-portd` 查看,`service logs` 在 Linux 亦转 journalctl;
+- **启动超时提示**:install / `service start` 等 15s 未在线时,
+  提示改为 `journalctl -u planet-portd` 排查;
+- **`service status` 不在线诊断**:unit 文件不存在 = 未安装;存在则
+  给 `systemctl is-active` 状态摘要(替代 macOS 的 launchctl 摘要),
+  退出码同为 3。
 
 ## 开发机自装
 
@@ -84,8 +121,11 @@ sudo ./target/release/planet-port install
 - **卸载**:
 
 ```bash
-sudo planet-port service uninstall   # 停服务、删二进制/软链/plist;数据目录保留
-sudo rm -rf "/Library/Application Support/planet-portd"   # 彻底清除(可选)
+sudo planet-port service uninstall   # 停服务、删二进制/软链/plist/unit;数据目录保留
+
+# 彻底清除(可选):
+sudo rm -rf "/Library/Application Support/planet-portd"   # macOS
+sudo rm -rf /var/lib/planet-portd                          # Linux
 ```
 
 ## 验证
@@ -93,6 +133,7 @@ sudo rm -rf "/Library/Application Support/planet-portd"   # 彻底清除(可选)
 ```bash
 planet-port service status   # 运行中(端口 9998);未安装/未运行时退出码 3
 planet-port info             # planet 聚合状态
+journalctl -u planet-portd   # Linux 下查日志
 ```
 
 ---

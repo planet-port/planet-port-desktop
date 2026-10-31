@@ -123,7 +123,7 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 
 | 命令 | 说明 |
 |---|---|
-| `install [--yes]` | 需 root:一键自安装(在线/离线共用)。把 CLI 同目录的二进制套装(planet-port + planet-portd)拷到 `/Library/Application Support/planet-portd/bin/`,建 `/usr/local/bin/planet-port` 软链,并完成 `service install`(plist + bootstrap + 拉起);**幂等**,同版本重装不提示;版本不同(升降级)时先确认(同 remove,拒绝退出码 130),`--yes` 跳过,`-j` 下必须配 `--yes`;升级场景自动记录 running planet 并在装完后拉回(旧版 daemon 升级时 SIGTERM 落 stopped 的兜底,新版幂等);`-j` 回执同 service install |
+| `install [--yes]` | 需 root:一键自安装(在线/离线共用)。把 CLI 同目录的二进制套装(planet-port + planet-portd)拷到系统落点并完成 `service install`——macOS:`/Library/Application Support/planet-portd/bin/` + `/usr/local/bin/planet-port` 软链 + plist;Linux:直接落 `/usr/local/bin/planet-port{,d}`(无软链层)+ systemd unit;**幂等**,同版本重装不提示;版本不同(升降级)时先确认(同 remove,拒绝退出码 130),`--yes` 跳过,`-j` 下必须配 `--yes`;升级场景自动记录 running planet 并在装完后拉回(旧版 daemon 升级时 SIGTERM 落 stopped 的兜底,新版幂等);`-j` 回执同 service install |
 
 在线安装(`curl … install.sh | sudo bash`)与离线安装(解压发布包后 `sudo ./planet-port install`)最终都走本命令,详见 [docs/install.md](docs/install.md) 。
 
@@ -131,12 +131,12 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 
 | 命令 | 说明 |
 |---|---|
-| `service install` | 需 root:拷贝二进制到 `/Library/Application Support/planet-portd/bin/planet-portd`,写 `/Library/LaunchDaemons/cn.imgozi.d.planetport.daemon.plist` 并 `launchctl bootstrap system/`;RunAtLoad=true(装载即随开机启动)、KeepAlive={SuccessfulExit=false}(崩溃等异常退出自动拉起,SIGTERM 优雅退出不拉起);幂等,重装先卸载旧服务;`-j` 时进度人话走 stderr、stdout 仅 `{"result":"ok"}`(已装载重入附 `"idempotent":true`) |
-| `service uninstall` | 需 root:`launchctl bootout` + 删 plist、daemon/CLI 二进制与 PATH 软链(软链仅当指向本产品时删);**数据目录保留**,提示手动 `rm -rf`;`-j` 回执同 install |
-| `service start` | 需 root:`launchctl kickstart -k …`;daemon 启动时按 registry 期望状态自动恢复 planet;`-j` 成功回执 `{"result":"ok","port":N}`,超时 `{"result":"error"}` |
-| `service stop` | 需 root:`launchctl kill TERM …`,命中 daemon 的信号优雅退出路径(逐 planet 红线收尾;**保留期望状态**,start 后自动恢复;显式 `planet-port stop` 才不恢复);`-j` 回执 ok / `{"result":"error"}`(超时)/ `{"result":"warning"}`(KeepAlive 拉起) |
-| `service logs [--lines N] [--follow]` | 无需 root:tail daemon 日志(`/Library/Logs/planet-portd/daemon.log`,默认末 50 行);`--follow` 持续跟踪,Ctrl+C 退出;日志文件不存在时退出码 1 |
-| `service status` | 无需 root:尊重 `PLANET_PORT_URL`;ping `/version` 成功 → `运行中(端口 N)`(N 取自 port 文件,**退出码 0**);token 校验失败 → 退出码 1;不在线时按 plist 是否存在区分「未安装」/「已安装未运行」并给出 launchctl 状态摘要,**退出码 3** |
+| `service install` | 需 root,按平台落系统服务:**macOS** 拷贝二进制到 `/Library/Application Support/planet-portd/bin/planet-portd`,写 `/Library/LaunchDaemons/cn.imgozi.d.planetport.daemon.plist` 并 `launchctl bootstrap system/`,RunAtLoad=true(装载即随开机启动)、KeepAlive={SuccessfulExit=false}(崩溃等异常退出自动拉起,SIGTERM 优雅退出不拉起);**Linux** 拷 daemon 到 `/usr/local/bin/planet-portd`,写 `/etc/systemd/system/planet-portd.service` 后 `systemctl daemon-reload + enable + restart`,`Restart=on-failure`(异常退出自动拉起,语义对齐 KeepAlive)、WantedBy=multi-user.target(开机自启);两平台均幂等,重装先卸载旧服务,装完等 daemon 在线确认;`-j` 时进度人话走 stderr、stdout 仅 `{"result":"ok"}`(macOS 已装载重入附 `"idempotent":true`) |
+| `service uninstall` | 需 root:**macOS** `launchctl bootout` + 删 plist、daemon/CLI 二进制与 PATH 软链(软链仅当指向本产品时删);**Linux** `systemctl stop + disable + daemon-reload + reset-failed` + 删 unit 与 `/usr/local/bin/` 下两个二进制(无软链层);**数据目录保留**,提示手动 `rm -rf`;`-j` 回执同 install |
+| `service start` | 需 root:macOS `launchctl kickstart -k …` / Linux `systemctl restart planet-portd`(幂等重启);daemon 启动时按 registry 期望状态自动恢复 planet;`-j` 成功回执 `{"result":"ok","port":N}`,15s 未在线超时 `{"result":"error"}`(文本模式提示查日志:macOS `daemon.log`、Linux `journalctl -u planet-portd`) |
+| `service stop` | 需 root:macOS `launchctl kill TERM …` / Linux `systemctl stop planet-portd`(自带等优雅退出),命中 daemon 的信号优雅退出路径(逐 planet 红线收尾;**保留期望状态**,start 后自动恢复;显式 `planet-port stop` 才不恢复);`-j` 回执 ok / `{"result":"error"}`(超时)/ `{"result":"warning"}`(KeepAlive 拉起,仅 macOS) |
+| `service logs [--lines N] [--follow]` | 无需 root:macOS tail daemon 日志(`/Library/Logs/planet-portd/daemon.log`,默认末 50 行),日志文件不存在时退出码 1;Linux 转 `journalctl --no-pager -n N [-f] -u planet-portd`(journald 无"文件缺失"概念,unit 不存在时 journalctl 报错原样透传);`--follow` 持续跟踪,Ctrl+C 退出 |
+| `service status` | 无需 root:尊重 `PLANET_PORT_URL`;ping `/version` 成功 → `运行中(端口 N)`(N 取自 port 文件,**退出码 0**);token 校验失败 → 退出码 1;不在线时按服务定义文件是否存在(macOS plist / Linux unit)区分「未安装」/「已安装未运行」并给出 launchctl / `systemctl is-active` 状态摘要,**退出码 3** |
 
 ## 行为说明
 
