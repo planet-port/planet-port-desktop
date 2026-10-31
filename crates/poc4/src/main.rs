@@ -5,6 +5,8 @@
 #[cfg(windows)]
 mod device_win;
 #[cfg(windows)]
+mod routes_win;
+#[cfg(windows)]
 pub(crate) mod arp;
 #[cfg(windows)]
 pub(crate) mod driver;
