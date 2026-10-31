@@ -82,9 +82,10 @@ pub(crate) struct FrameOut {
     pub payload: Vec<u8>,
 }
 
-/// 网络配置回调的操作类型(vnet_config 回调携带;驱动线程维护已 join 集合用)。
+/// 网络配置回调的操作类型(vnet_config 回调携带;驱动线程维护已 join 集合用,
+/// Task 7 数据面 sink 据此分流设备应用/拆机)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum NetConfigOp {
+pub enum NetConfigOp {
     Up,
     ConfigUpdate,
     Down,
@@ -94,7 +95,8 @@ pub(crate) enum NetConfigOp {
 /// 上层接收 Node 事件/网络配置/虚拟网帧的出口(Task 7 数据面直接挂上去)。
 pub trait PocSink: Send + 'static {
     fn on_event(&mut self, ev: &str);
-    fn on_net_config(&mut self, cfg: NetConfig);
+    /// op 必须透传:数据面 sink 据此区分「应用配置(Up/Update)」与「拆机(Down/Destroy)」。
+    fn on_net_config(&mut self, op: NetConfigOp, cfg: NetConfig);
     fn on_frame(&mut self, nwid: u64, src_mac: u64, dst_mac: u64, ether_type: u16, payload: &[u8]);
     fn local_ipv4s(&self) -> Vec<Ipv4Addr>;
 }
@@ -170,7 +172,6 @@ struct Inner {
     event_out: Sender<String>,
     netcfg_out: Sender<(NetConfigOp, NetConfig)>,
     // 设备→核心帧通道发送端(设备线程经 PocNode::frame_in_tx 取得)
-    #[allow(dead_code)] // Task 7 数据面使用
     frame_in: Sender<FrameIn>,
     // 命令通道发送端;PocNode 借此下发 join/stop
     cmd_tx: Sender<Cmd>,
@@ -370,7 +371,6 @@ impl PocNode {
 
     /// 设备→核心帧通道发送端(数据面读线程用)。
     /// 驱动线程每圈固定消费该通道,帧入核心延迟上限一个 tick(≤500ms)。
-    #[allow(dead_code)] // Task 7 数据面使用
     pub fn frame_in_tx(&self) -> Sender<FrameIn> {
         self.inner().frame_in.clone()
     }
@@ -620,7 +620,9 @@ unsafe fn run_driver(mut d: Driver) {
                     current_networks.retain(|&x| x != cfg.nwid);
                 }
             }
-            if call_sink(&mut d.sink, &inner.running, "on_net_config", |s| s.on_net_config(cfg))
+            if call_sink(&mut d.sink, &inner.running, "on_net_config", |s| {
+                s.on_net_config(op, cfg)
+            })
                 .is_none()
             {
                 return;
