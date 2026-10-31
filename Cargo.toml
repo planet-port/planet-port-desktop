@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/api", "crates/cli", "crates/zt-sys", "crates/zt-core", "crates/pocs", "crates/daemon"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 license = "MIT"
 
