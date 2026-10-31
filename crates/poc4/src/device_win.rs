@@ -181,7 +181,7 @@ pub fn gate1_cli() -> i32 {
                 let mut seen = 0u64;
                 while !rd_stop.load(Ordering::SeqCst) {
                     match rd.try_recv(&mut buf) {
-                        Ok(len) => {
+                        Ok(len) if len > 0 => {
                             seen += 1;
                             // L3:首字节高 4 位是 IP 版本;wintun 理论只交付 IP 包
                             let ver = buf[0] >> 4;
@@ -190,6 +190,7 @@ pub fn gate1_cli() -> i32 {
                                 "[gate1] 包#{seen}: len={len} ipver={ver} proto={proto}(1=ICMP 17=UDP 6=TCP)"
                             );
                         }
+                        Ok(_) => {}
                         Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                             std::thread::sleep(std::time::Duration::from_millis(20));
                         }

@@ -84,6 +84,10 @@ poc4 独立 crate(架构理由见 1.2),全部 Windows 路径包 `#[cfg(windows)]
 | 工具链 | VS Build Tools(C++ 工作负载)+ LLVM + Rust MSVC;rustup/crate 走 rsproxy 镜像(GitHub 直连受限),wintun.dll 从 wintun.net 取 | 版本号记入 compatibility.md |
 | ssh | 内置 OpenSSH Server 可选功能 | mac 侧免密切换 |
 
+> **wintun.dll 摆放位置**:tun-rs 在 Windows 默认 `LoadLibrary("wintun.dll")`,poc4 未配置
+> `wintun_file`,DLL 搜索序为 **exe 同目录 → 系统目录 → PATH**。请把从 wintun.net 下载的
+> `wintun.dll` 放到 `poc4_windows.exe` 同目录,避免 Gate 1 首跑因 LoadLibrary 失败被误判为 Gate 失败。
+
 ### 3.2 Gate 0 实机:Win10 本地编译 zt-sys
 
 ```
@@ -94,6 +98,8 @@ cargo build -p zt-sys        # MSVC + LLVM 工具链下
 - 通过标准:`cargo build -p zt-sys` 成功;随后 `poc4_windows` 整包构建。
 
 ### 3.3 Gate 1:wintun 设备层(管理员权限运行)
+
+前置:确认 `wintun.dll` 已放在 `poc4_windows.exe` 同目录(见 §3.1 摆放说明)。
 
 ```
 poc4_windows --gate1-create                  # 建设备,检查后回车销毁
@@ -129,7 +135,7 @@ poc4_windows --planet <planet文件> --join <nwid> --dir <工作目录> [--port 
 
 - ZeroTier 1.16.2 C++ 核心在 Windows 目标可编译,bindgen 绑定无未解疑点(2.1/2.2);
 - zt-core/routes.rs 的路由语义可直接平移到 route_manager 的 Windows 后端,默认路由保护等逻辑无损;
-- ARP 垫层实现量小:`ArpShim` 一个结构(出向补 14 字节以太网头 + 入向学习/应答,无 checksum 逻辑),百行级,与可行性调研 §2.3"同 macOS utun 处理方式"的预估一致;
+- ARP 垫层实现量小:`ArpShim` 一个结构(出向补 14 字节以太网头 + 入向学习/应答,无 checksum 逻辑),百行级,与可行性调研 §2.1/§2.3"同 macOS utun 处理方式"的预估一致(引文逐字见 §2.1 平台表 Windows 行,§2.3 为语义同源表述);
 - Windows 版 node 驱动的四个改造点(UDP 读线程/唤醒/AsRawSocket/c_ulong ADI)全部有确定解法并已实现。
 
 **未证实(全部压在实机)**:
