@@ -354,20 +354,31 @@ fn query_state_pid() -> (Option<u32>, Option<String>) {
     };
     let mut state = None;
     let mut pid = None;
+    let mut state_fallback = None;
     for line in out.lines() {
         let Some((k, v)) = line.split_once(':') else { continue };
         let key = k.trim().to_lowercase();
         let value = v.trim();
         let num = value.split_whitespace().next().and_then(|t| t.parse::<u32>().ok());
-        // 关键字匹配优先(英文 STATE / 中文「状态」);取值列以数字开头且
-        // 在 1..=7 的行只有 STATE(合法退出码也落在其后,首个命中即 STATE)
+        // 确认路径:关键字命中(英文 STATE / 中文「状态」)且取值列以数字开头。
+        // 数字兜底:输出中首个取值在 1..=7 且非 TYPE/PID 行——sc query 的输出
+        // 顺序固定为 TYPE/STATE/退出码/PID,满足该特征的只有 STATE(TYPE 取值
+        // 是 10/16/20 等十六进制写法,WIN32_EXIT_CODE 等取值为 0 或大数,PID 在
+        // STATE 之后且显式排除)。兜底覆盖 GBK 乱码/本地化标签变体(TYPE→TYP、
+        // STATUS 不含 "state" 等)下关键字不命中的场景,否则 stop 空转 30s 后
+        // 硬杀、start 幂等分支误判吃 1056
         if (key.contains("state") || key.contains("状态")) && num.is_some() {
             state = num;
-        } else if state.is_some() && (key.contains("pid") || key.contains("进程")) {
+        } else if state_fallback.is_none() && !key.contains("type") && !key.contains("pid") {
+            if let Some(n @ 1..=7) = num {
+                state_fallback = Some(n);
+            }
+        }
+        if state.is_some() && (key.contains("pid") || key.contains("进程")) {
             pid = value.split_whitespace().next().map(String::from);
         }
     }
-    (state, pid)
+    (state.or(state_fallback), pid)
 }
 
 /// qc 的 START_TYPE 数值(2 = AUTO_START);标签本地化时按「取值 2/3 的首个
