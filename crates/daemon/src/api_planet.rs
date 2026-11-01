@@ -3,7 +3,6 @@
 //! 201 CREATED 等)以 planet-port-api 契约为基准,CLI 按同一契约消费。
 
 use std::fs;
-use std::io::Read;
 use std::net::{Ipv4Addr, UdpSocket};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -34,10 +33,11 @@ fn now_unix() -> u64 {
         .as_secs()
 }
 
-/// 从 /dev/urandom 取 n 字节并 hex 编码为 2n 字符(不引入 getrandom 依赖)
+/// 取 n 字节加密随机数并 hex 编码为 2n 字符(不引入 getrandom 依赖;
+/// 随机源平台分叉见 main.rs 的 fill_random)
 fn random_hex(n: usize) -> std::io::Result<String> {
     let mut buf = vec![0u8; n];
-    fs::File::open("/dev/urandom")?.read_exact(&mut buf)?;
+    crate::fill_random(&mut buf)?;
     Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
 }
 

@@ -16,8 +16,9 @@ mod world;
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{ErrorKind, Read};
+use std::io::ErrorKind;
 use std::net::Ipv4Addr;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -86,17 +87,49 @@ async fn status(State(st): State<AppState>) -> Json<serde_json::Value> {
 
 // ---- 启动 ----
 
-/// 从 /dev/urandom 取 32 字节随机数,hex 编码为 64 字符 token(不引入 getrandom 依赖)
+/// 取加密随机字节。Unix 走 /dev/urandom;Windows 走 BCryptGenRandom 的
+/// 系统首选 RNG(免算法句柄生命周期管理)。调用方自行做 hex 编码。
+#[cfg(unix)]
+fn fill_random(buf: &mut [u8]) -> std::io::Result<()> {
+    use std::io::Read;
+    fs::File::open("/dev/urandom")?.read_exact(buf)
+}
+
+#[cfg(windows)]
+fn fill_random(buf: &mut [u8]) -> std::io::Result<()> {
+    use windows_sys::Win32::Security::Cryptography::{
+        BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+    };
+    let status = unsafe {
+        BCryptGenRandom(
+            std::ptr::null_mut(),
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+            BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+        )
+    };
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "BCryptGenRandom 失败: NTSTATUS {status:#x}"
+        )))
+    }
+}
+
+/// 取 32 字节随机数,hex 编码为 64 字符 token(不引入 getrandom 依赖)
 fn gen_token() -> std::io::Result<String> {
     let mut buf = [0u8; 32];
-    fs::File::open("/dev/urandom")?.read_exact(&mut buf)?;
+    fill_random(&mut buf)?;
     Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// 写文件并设 0644。token/port 文件权限对齐官方 macOS zerotier authtoken.secret 的可读性:
-/// CLI 以普通用户运行需能读到 token 才能调 API;API 仅绑 127.0.0.1,不暴露到网络
+/// CLI 以普通用户运行需能读到 token 才能调 API;API 仅绑 127.0.0.1,不暴露到网络。
+/// Windows 无 POSIX mode 位,跳过(数据目录 ACL 由 install 阶段统一设置)
 fn write_file_0644(path: &Path, data: &str) -> std::io::Result<()> {
     fs::write(path, data)?;
+    #[cfg(unix)]
     fs::set_permissions(path, fs::Permissions::from_mode(0o644))?;
     Ok(())
 }
@@ -122,22 +155,39 @@ fn parse_args() -> Option<PathBuf> {
     config_dir
 }
 
-/// acquire_singleton 的失败分类:「锁被其它实例持有」与「锁文件本身打不开」
+/// acquire_singleton 的失败分类:「锁被其它实例持有」与「锁资源本身拿不到」
 /// 是两种不同故障,排查方向不同,文案必须可区分
 enum SingletonError {
-    /// 锁文件创建/打开失败(权限、磁盘等):不是「已有实例」
+    /// 锁资源创建/打开失败(权限、磁盘等):不是「已有实例」
     Open(std::io::Error),
-    /// flock 返回 EWOULDBLOCK(即 EAGAIN):锁被其它实例持有
+    /// 锁被其它实例持有(Unix: flock EWOULDBLOCK;Windows: 互斥体已存在)
     Locked,
     /// flock 的其它错误(如 EBADF/EINVAL):按锁文件故障报告
+    /// (Windows 的 CreateMutexW 只有「创建失败/已存在」两种结果,无此分类)
+    #[cfg(unix)]
     Lock(std::io::Error),
 }
 
-/// 单实例守卫:对 `<config>/daemon.lock` 取 `flock(LOCK_EX | LOCK_NB)`。
+/// 单例锁的持有物:Unix 是 daemon.lock 的文件句柄,Windows 是命名互斥体
+/// 句柄。两者都必须存活至进程结束——锁随句柄/进程退出由内核释放
+#[cfg(unix)]
+type SingletonGuard = fs::File;
+
+#[cfg(windows)]
+struct SingletonGuard(windows_sys::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl Drop for SingletonGuard {
+    fn drop(&mut self) {
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(self.0) };
+    }
+}
+
+/// 单实例守卫(Unix):对 `<config>/daemon.lock` 取 `flock(LOCK_EX | LOCK_NB)`。
 /// 第二个实例加锁失败即退出,杜绝两个 daemon 共用同一 config 目录互相
-/// 覆写 registry/token/port。锁文件不删除、内容不复用;返回的 File 须存活
-/// 至进程结束(锁随进程退出由内核释放,显式删文件反而会引入竞态)。
-fn acquire_singleton(dir: &Path) -> Result<fs::File, SingletonError> {
+/// 覆写 registry/token/port。锁文件不删除、内容不复用。
+#[cfg(unix)]
+fn acquire_singleton(dir: &Path) -> Result<SingletonGuard, SingletonError> {
     use std::os::unix::io::AsRawFd;
     let path = dir.join("daemon.lock");
     let f = fs::OpenOptions::new()
@@ -159,11 +209,56 @@ fn acquire_singleton(dir: &Path) -> Result<fs::File, SingletonError> {
     Ok(f)
 }
 
-/// 优雅退出:SIGINT/SIGTERM → 逐 planet 走 stop_planet 红线收尾 → registry
-/// 兜底落盘 → 最后删 port 文件(存在即活性信号,CLI 据此快速判断)。
-/// 作为 `with_graceful_shutdown` 的 future 传入:收尾在服务停止前完成,
-/// 在途请求不会被打断,也不被收尾无限拖住(收尾本身有界)。
-async fn shutdown(state: AppState, port_path: PathBuf) {
+/// 单实例守卫(Windows):命名互斥体 `Global\planetportd`。CreateMutexW
+/// 返回已存在对象的句柄时 GetLastError 为 ERROR_ALREADY_EXISTS,语义对齐
+/// flock 的「锁被其它实例持有」。互斥体不带初始所有权(FALSE)也不显式
+/// 释放:句柄存活至进程结束,对象随最后一个句柄消失,进程崩溃时由内核
+/// 回收——与 flock「锁随进程退出释放」一致。Global\ 前缀保证服务上下文
+/// (Task 6 的 SCM,session 0)与控制台直跑(用户 session)互斥到同一把锁。
+#[cfg(windows)]
+fn acquire_singleton(_dir: &Path) -> Result<SingletonGuard, SingletonError> {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
+    use windows_sys::Win32::System::Threading::CreateMutexW;
+    let name: Vec<u16> = "Global\\planetportd\0".encode_utf16().collect();
+    let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+    if handle.is_null() {
+        return Err(SingletonError::Open(std::io::Error::last_os_error()));
+    }
+    if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+        unsafe { CloseHandle(handle) };
+        return Err(SingletonError::Locked);
+    }
+    Ok(SingletonGuard(handle))
+}
+
+/// Windows 优雅退出的停止信号源:watch(bool) 静态通道。SCM 控制回调
+/// (Task 6 的 service_win.rs)在任意线程调 `request_shutdown()` 置位,
+/// `shutdown_signal()` 侧收到后走与 SIGTERM 等价的收尾路径。选 watch 而非
+/// Notify:watch 保留最新值,回调先于监听方 await 触发也不会丢信号。
+#[cfg(windows)]
+static STOP_CHANNEL: std::sync::OnceLock<
+    (tokio::sync::watch::Sender<bool>, tokio::sync::watch::Receiver<bool>),
+> = std::sync::OnceLock::new();
+
+#[cfg(windows)]
+fn stop_channel()
+-> &'static (tokio::sync::watch::Sender<bool>, tokio::sync::watch::Receiver<bool>) {
+    STOP_CHANNEL.get_or_init(|| tokio::sync::watch::channel(false))
+}
+
+/// 请求优雅退出(Windows):从任意线程(含 SCM 的 extern "system" 回调)
+/// 同步调用,非 async。Task 6 接线点;控制台直跑时不经此路径。
+#[cfg(windows)]
+#[allow(dead_code)] // Task 6 的 SCM 控制回调消费,本任务先建好抽象
+fn request_shutdown() {
+    let _ = stop_channel().0.send(true);
+}
+
+/// 等待首个优雅退出信号,返回信号名供收尾日志。平台分叉:
+/// - Unix:SIGTERM/SIGINT(mac/linux 行为零改动)
+/// - Windows:控制台直跑 Ctrl-C;服务上下文 STOP 通道(Task 6 置位)
+#[cfg(unix)]
+async fn shutdown_signal() -> &'static str {
     use tokio::signal::unix::{signal, SignalKind};
     // 任一信号注册失败都不能让 shutdown future 立即 resolve(否则 daemon 会
     // 静默退出):注册成功的信号继续监听,全部失败则永不返回,daemon 持续服务
@@ -192,10 +287,38 @@ async fn shutdown(state: AppState, port_path: PathBuf) {
             None => std::future::pending().await,
         }
     });
-    let sig = tokio::select! {
+    tokio::select! {
         _ = &mut term_fut => "SIGTERM",
         _ = &mut int_fut => "SIGINT",
+    }
+}
+
+#[cfg(windows)]
+async fn shutdown_signal() -> &'static str {
+    let mut stop_rx = stop_channel().1.clone();
+    // 服务停止可能先于监听方注册(理论上不会,启动远早于 STOP;防御性兜底)
+    if *stop_rx.borrow_and_update() {
+        return "SERVICE_STOP";
+    }
+    let stopped = async move {
+        while stop_rx.changed().await.is_ok() {
+            if *stop_rx.borrow_and_update() {
+                break;
+            }
+        }
     };
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => "CTRL_C",
+        _ = stopped => "SERVICE_STOP",
+    }
+}
+
+/// 优雅退出:SIGINT/SIGTERM → 逐 planet 走 stop_planet 红线收尾 → registry
+/// 兜底落盘 → 最后删 port 文件(存在即活性信号,CLI 据此快速判断)。
+/// 作为 `with_graceful_shutdown` 的 future 传入:收尾在服务停止前完成,
+/// 在途请求不会被打断,也不被收尾无限拖住(收尾本身有界)。
+async fn shutdown(state: AppState, port_path: PathBuf) {
+    let sig = shutdown_signal().await;
     eprintln!("收到 {sig},正在停止服务");
     // 待停清单先克隆(短锁):id 取 registry 中标记 running 的(期望运行,含
     // 上次启动失败的残留),再并入运行时 map 中可能多出的 id;name 一并带出
@@ -252,21 +375,29 @@ async fn main() {
     let port_path = dir.join("port");
 
     // 1.5 单实例守卫:在任何副作用(写 token/port、起 planet)之前。锁被
-    // 占用才是「已有实例」;文件打不开是环境故障(权限/磁盘),文案须可区分
+    // 占用才是「已有实例」;锁资源拿不到是环境故障(权限/磁盘),文案须可区分
+    #[cfg(unix)]
     let lock_path = dir.join("daemon.lock");
     let _singleton = match acquire_singleton(&dir) {
         Ok(f) => f,
         Err(SingletonError::Locked) => {
+            #[cfg(unix)]
             eprintln!(
                 "another planet-portd instance is running (lock: {})",
                 lock_path.display()
             );
+            #[cfg(windows)]
+            eprintln!("another planet-portd instance is running (mutex: Global\\planetportd)");
             std::process::exit(1);
         }
         Err(SingletonError::Open(e)) => {
+            #[cfg(unix)]
             eprintln!("cannot open lock file {}: {e}", lock_path.display());
+            #[cfg(windows)]
+            eprintln!("cannot create singleton mutex Global\\planetportd: {e}");
             std::process::exit(1);
         }
+        #[cfg(unix)]
         Err(SingletonError::Lock(e)) => {
             eprintln!("cannot lock file {}: {e}", lock_path.display());
             std::process::exit(1);
@@ -284,7 +415,10 @@ async fn main() {
                 t
             } else {
                 // 兼容旧版本写入的 0600:一次性归位 0644,失败可忽略(CLI 读不到才需处理)
-                let _ = fs::set_permissions(&token_path, fs::Permissions::from_mode(0o644));
+                #[cfg(unix)]
+                {
+                    let _ = fs::set_permissions(&token_path, fs::Permissions::from_mode(0o644));
+                }
                 t
             }
         }

@@ -394,6 +394,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "ureq",
+ "windows-sys 0.59.0",
  "zt-core",
 ]
 

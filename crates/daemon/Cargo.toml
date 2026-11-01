@@ -10,8 +10,8 @@ path = "src/main.rs"
 
 [dependencies]
 axum = "0.8"
-# signal:SIGINT/SIGTERM 优雅退出
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+# signal:SIGINT/SIGTERM 优雅退出;sync:watch 停止通道(Windows 服务停止)与既有 sync::Mutex
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync"] }
 serde.workspace = true
 serde_json.workspace = true
 planet-port-api = { path = "../api" }
@@ -21,3 +21,13 @@ zt-core = { path = "../zt-core" }
 libc = "0.2"
 # planet URL 导入的 HTTP 下载(MIT/Apache-2.0)
 ureq = "3"
+
+# Windows 平台 API:命名互斥体单例锁(Threading/Foundation)+ 随机数
+# (Security_Cryptography 的 BCryptGenRandom);仅 Windows 目标引入,
+# MIT/Apache-2.0。版本对齐 workspace 既有 0.59
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_Security_Cryptography",
+] }
