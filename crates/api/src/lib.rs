@@ -19,10 +19,13 @@ pub fn config_dir() -> PathBuf {
             return PathBuf::from(d);
         }
     }
-    // 系统目录:macOS 为 LaunchDaemon 安装路径,Linux 对齐 zerotier-one 的 /var/lib 惯例
+    // 系统目录:macOS 为 LaunchDaemon 安装路径,Linux 对齐 zerotier-one 的 /var/lib
+    // 惯例,Windows 为 SCM 服务安装的数据目录真值
     #[cfg(target_os = "macos")]
     let system_dir = PathBuf::from("/Library/Application Support/planet-portd");
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    let system_dir = PathBuf::from(r"C:\ProgramData\planet-port");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let system_dir = PathBuf::from("/var/lib/planet-portd");
     if system_dir.is_dir() {
         return system_dir;

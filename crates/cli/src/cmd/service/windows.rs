@@ -78,15 +78,18 @@ pub(crate) fn install(json: bool) {
     ensure_wintun(json);
 
     // 2. 数据目录 ACL 收敛:默认 ProgramData ACL 对 Users 发放写位,而数据
-    //    目录里存 authtoken.secret 与 planet 登记,应只有服务(LocalSystem)
-    //    与管理员可写;/inheritance:r 切断父目录继承,/grant:r 整表重授。
-    //    失败硬退——权限不齐就不该继续把 token 写进一个 Users 可读的目录
+    //    目录里存 planet 登记等服务态数据,应只有服务(LocalSystem)与管理员
+    //    可写;/inheritance:r 切断父目录继承,/grant:r 整表重授。Users 只给
+    //    RX:CLI 是普通用户进程,要能读 authtoken.secret/port 才能连 daemon
+    //    (对齐 mac 的 token 0644 全局可读、官方 zerotier-one 同样本机可读)。
+    //    失败硬退——权限不齐就不该继续往里写 token。
     match Command::new("icacls")
         .args([
             DATA_DIR,
             "/inheritance:r",
             "/grant:r", "SYSTEM:(OI)(CI)F",
             "/grant:r", "Administrators:(OI)(CI)F",
+            "/grant:r", "Users:(OI)(CI)RX",
         ])
         .output()
     {
