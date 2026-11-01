@@ -38,8 +38,8 @@ const NRPT_NS_PREFIX: &str = "";
 /// SCM 查询 STATE 数值 → 展示名(仅 offline_diag 展示用)
 fn state_name(code: u32) -> &'static str {
     match code {
-        1 => "START_PENDING",
-        2 => "STOPPED",
+        1 => "STOPPED",
+        2 => "START_PENDING",
         3 => "STOP_PENDING",
         4 => "RUNNING",
         5 => "CONTINUE_PENDING",
@@ -48,6 +48,11 @@ fn state_name(code: u32) -> &'static str {
         _ => "?",
     }
 }
+
+/// SCM STATE 原始值(windows-sys 0.59 Services 模块常量同值):
+/// 1=STOPPED 2=START_PENDING 3=STOP_PENDING 4=RUNNING
+/// 5=CONTINUE_PENDING 6=PAUSE_PENDING 7=PAUSED
+const SERVICE_STOPPED: u32 = 1;
 
 /// START_TYPE 数值:2 = AUTO_START(is-enabled 的判定依据)
 const START_TYPE_AUTO: u32 = 2;
@@ -316,19 +321,19 @@ fn stop_service(json: bool) {
         }
     }
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    while query_state() != Some(2) && std::time::Instant::now() < deadline {
+    while query_state() != Some(SERVICE_STOPPED) && std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
-    if query_state() != Some(2) {
+    if query_state() != Some(SERVICE_STOPPED) {
         // 强杀按进程映像名(服务句柄随之失效);/T 连带子进程
         let _ = Command::new("taskkill").args(["/F", "/T", "/IM", "planet-portd.exe"]).output();
         progress(json, rust_i18n::t!("cli.service.forceKilled").to_string());
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while query_state() != Some(2) && std::time::Instant::now() < deadline {
+        while query_state() != Some(SERVICE_STOPPED) && std::time::Instant::now() < deadline {
             std::thread::sleep(std::time::Duration::from_millis(300));
         }
     }
-    if query_state() != Some(2) {
+    if query_state() != Some(SERVICE_STOPPED) {
         progress(json, rust_i18n::t!("cli.service.stopTimeoutWin", name = SERVICE_NAME).to_string());
         std::process::exit(1);
     }
