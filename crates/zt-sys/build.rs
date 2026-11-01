@@ -25,6 +25,10 @@ fn main() {
         // Windows:windows.h 的 min/max 宏与核心源码 std::min/std::max 冲突
         // (官方 Windows 工程同款处理);非 Windows 平台该宏无引用、零影响
         .define("NOMINMAX", None)
+        // MSVC 下不定义 ZT_EXPORT 时,ZeroTierOne.h 会 #pragma comment(lib,
+        // "ZeroTierOne_x64.lib") 强制链接官方 DLL 导入库,静态编译据此链接失败
+        // (LNK1104);定义为导出方编译即跳过该 pragma。非 MSVC 分支本就不看此宏
+        .define("ZT_EXPORT", None)
         .warnings(false);
     // Windows/clang-cl:AES_aesni.cpp 的 SSSE3/AES-NI/PCLMUL 内联函数需显式开
     // feature(MSVC 对内联函数不做 feature 检查,flag_if_supported 探测失败自动跳过;
@@ -32,6 +36,8 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         build.flag_if_supported("-mssse3").flag_if_supported("-msse4.1")
             .flag_if_supported("-maes").flag_if_supported("-mpclmul");
+        // OSUtils.cpp 的 SHGetFolderPathA 在 shell32 导入库;仅 Windows 目标
+        println!("cargo:rustc-link-lib=dylib=shell32");
     }
     build
         .include(core.join("include"))
