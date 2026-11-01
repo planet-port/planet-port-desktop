@@ -20,14 +20,38 @@
 //! FFI 约束:回调内禁 panic(不 unwrap、不索引越界)、不跨 FFI 保存 Rust 引用;
 //! 同一 Node 的 process* 串行由驱动线程单线程保证;
 //! ZT_Node_delete 前必须先 join 驱动线程(见 shutdown)。
+//!
+//! # 平台分叉(仅驱动机制,语义逐行保留;Unix 路径零行为改动)
+//!
+//! 1. 唤醒:Unix 用 CLOEXEC 管道(wake_wr/wake_rd + poll);Windows 用 mpsc
+//!    `Sender<u8>`/`Receiver<u8>` + `recv_timeout`(等价 poll 阻塞语义)。
+//! 2. UDP:Unix 是「非阻塞 socket + poll 排空」;Windows 是「阻塞 socket +
+//!    读超时 + 独立读线程」——`recv_from` → `udp_rx` 通道 → 唤醒驱动线程,
+//!    驱动线程每圈 `try_recv` 排空;读线程忽略 WSAECONNRESET(此前 send 到
+//!    某地址收到 ICMP port-unreachable 后下一次 recv 必报,ZeroTier 官方同款)。
+//! 3. `udp_fd`:Unix `as_raw_fd()`;Windows `as_raw_socket()`(winsock SOCKET,
+//!    收发共用同一 socket,句柄值一致)。
+//! 4. `multicastSubscribe` 的 ADI 形参在 Win32 绑定下是 `c_ulong`(32 位)。
 
+#[cfg(not(windows))]
 use std::fs::File;
 use std::io;
+#[cfg(windows)]
+use std::net::SocketAddr;
 use std::net::UdpSocket;
+#[cfg(not(windows))]
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
+#[cfg(windows)]
+use std::os::windows::io::AsRawSocket;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(windows)]
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::mpsc::{channel, Receiver, Sender};
+#[cfg(windows)]
+use std::sync::Arc;
 use std::thread::JoinHandle;
+#[cfg(windows)]
+use std::time::Duration;
 
 use crate::config::{NetConfig, NetConfigOp, NodeEvent, NodeParams, NodeSink};
 use crate::device::{FrameIn, FrameInTx};
@@ -41,6 +65,13 @@ const PHY_BUF: usize = (zt::ZT_MAX_PHYSPAYLOAD + zt::ZT_MAX_HEADROOM) as usize;
 const MCAST_SCAN_MS: i64 = 5000;
 /// poll 单次阻塞上限(ms)
 const POLL_MAX_MS: i32 = 500;
+/// 唤醒等待上限(ms):Windows 无 poll,recv_timeout 等价原 poll 阻塞上限
+#[cfg(windows)]
+const WAKE_MAX_MS: i64 = 500;
+/// UDP 读线程 socket 读超时(ms):读线程借此周期性检查 running,保证可被关停
+/// (Windows 阻塞 recv_from 无 poll,必须以短超时换取停机响应)
+#[cfg(windows)]
+const UDP_READ_TIMEOUT_MS: u64 = 50;
 
 /// 发给驱动线程的串行命令(与 process* 同线程执行,天然互斥)。
 ///
@@ -162,15 +193,31 @@ struct Inner {
     // 命令通道发送端;NodeHandle 借此下发 join/leave/stop
     pub(crate) cmd_tx: Sender<Cmd>,
     // 唤醒管道写端(shutdown 时写一字节让 poll 立即返回)
+    #[cfg(not(windows))]
     pub(crate) wake_wr: File,
+    // 唤醒通道发送端(shutdown/命令/帧入/UDP 收包时发一字节让 recv_timeout 立即返回)
+    #[cfg(windows)]
+    pub(crate) wake_tx: Sender<u8>,
+    #[cfg(not(windows))]
     pub(crate) running: AtomicBool,
+    // Arc:Windows 的 UDP 读线程要跨线程检查同一开关
+    #[cfg(windows)]
+    pub(crate) running: Arc<AtomicBool>,
 }
 
 impl Inner {
-    /// 向唤醒管道写一字节,让驱动线程的 poll 立即返回(fd 写,免 &mut)。
+    /// 唤醒驱动线程:Unix 向唤醒管道写一字节让 poll 立即返回;
+    /// Windows 向唤醒通道发一字节让 recv_timeout 立即返回(均免 &mut)。
     fn wake(&self) {
-        let mut b = [1u8; 1];
-        let _ = unsafe { libc::write(self.wake_wr.as_raw_fd(), b.as_mut_ptr() as *const _, 1) };
+        #[cfg(not(windows))]
+        {
+            let mut b = [1u8; 1];
+            let _ = unsafe { libc::write(self.wake_wr.as_raw_fd(), b.as_mut_ptr() as *const _, 1) };
+        }
+        #[cfg(windows)]
+        {
+            let _ = self.wake_tx.send(1);
+        }
     }
 }
 
@@ -184,7 +231,15 @@ struct Driver {
     frame_in_rx: Receiver<FrameIn>,
     event_rx: Receiver<NodeEvent>,
     netcfg_rx: Receiver<(u64, NetConfigOp, NetConfig)>,
+    #[cfg(not(windows))]
     wake_rd: File,
+    // Windows:UDP 读线程投递的物理包队列 + 唤醒接收端 + winsock SOCKET
+    #[cfg(windows)]
+    udp_rx: Receiver<(Vec<u8>, SocketAddr)>,
+    #[cfg(windows)]
+    wake_rx: Receiver<u8>,
+    #[cfg(windows)]
+    local_socket: i64,
     deadline: i64,
 }
 
@@ -195,6 +250,9 @@ pub struct NodeHandle {
     inner: *mut Inner,
     // Some = 驱动线程存活;shutdown 时 join 后置 None
     driver: Option<JoinHandle<()>>,
+    // Windows 独有:UDP 读线程(start 期 spawn,shutdown 时 join;晚于驱动线程退出无害)
+    #[cfg(windows)]
+    udp_reader: Option<JoinHandle<()>>,
     // Inner 是否已回收(shutdown 已执行);Drop 据此避免二次释放
     shut_down: bool,
 }
@@ -216,7 +274,8 @@ pub struct NodeHandle {
 unsafe impl Send for NodeHandle {}
 unsafe impl Sync for NodeHandle {}
 
-/// CLOEXEC 管道两端(用 File 持有,drop 即关闭)。
+/// CLOEXEC 管道两端(用 File 持有,drop 即关闭)。Windows 无管道,走 mpsc。
+#[cfg(not(windows))]
 fn make_pipe() -> io::Result<(File, File)> {
     let mut fds = [0 as RawFd; 2];
     if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
@@ -242,13 +301,37 @@ impl NodeHandle {
         // World 二进制:第 0 字节 type,随后 8 字节 worldId(大端)
         let world_id = u64::from_be_bytes(planet[1..9].try_into().expect("长度已校验"));
         let udp = UdpSocket::bind(("0.0.0.0", params.bind_port)).map_err(NodeError::Io)?;
+        // Unix:非阻塞 socket,驱动线程 poll 排空;Windows:阻塞 socket + 读超时,
+        // 收包由独立读线程负责(见 run_udp_reader)
+        #[cfg(not(windows))]
         udp.set_nonblocking(true).map_err(NodeError::Io)?;
+        #[cfg(windows)]
+        udp.set_read_timeout(Some(Duration::from_millis(UDP_READ_TIMEOUT_MS)))
+            .map_err(NodeError::Io)?;
+        // Windows:接收端克隆给读线程;发送端留在 Inner 供 wire_send(同一 SOCKET)
+        #[cfg(windows)]
+        let udp_rd = udp.try_clone().map_err(NodeError::Io)?;
+        // winsock SOCKET(收发共用同一 socket,句柄值一致);须在读线程 move 走克隆前取值
+        #[cfg(windows)]
+        let local_socket = udp_rd.as_raw_socket() as i64;
         let (frame_tx, frame_rx) = channel();
         let (frame_in_tx, frame_in_rx) = channel();
         let (event_tx, event_rx) = channel();
         let (netcfg_tx, netcfg_rx) = channel();
         let (cmd_tx, cmd_rx) = channel();
+        #[cfg(not(windows))]
         let (wake_rd, wake_wr) = make_pipe().map_err(NodeError::Io)?;
+        #[cfg(windows)]
+        let (wake_tx, wake_rx) = channel::<u8>();
+        #[cfg(windows)]
+        let (udp_tx, udp_rx) = channel::<(Vec<u8>, SocketAddr)>();
+        #[cfg(not(windows))]
+        let running = AtomicBool::new(true);
+        #[cfg(windows)]
+        let running = Arc::new(AtomicBool::new(true));
+        // 读线程的唤醒克隆:物理包投进 udp_rx 后即唤醒驱动线程(对齐 poll 语义)
+        #[cfg(windows)]
+        let wake_tx_rd = wake_tx.clone();
         let inner = Box::into_raw(Box::new(Inner {
             store: StateStore::new(params.data_dir.clone(), world_id, params.planet_file.clone()),
             udp,
@@ -257,8 +340,14 @@ impl NodeHandle {
             event_out: event_tx,
             netcfg_out: netcfg_tx,
             cmd_tx,
+            #[cfg(not(windows))]
             wake_wr,
-            running: AtomicBool::new(true),
+            #[cfg(windows)]
+            wake_tx,
+            #[cfg(not(windows))]
+            running,
+            #[cfg(windows)]
+            running: Arc::clone(&running),
         }));
         let cbs = zt::ZT_Node_Callbacks {
             version: 0,
@@ -302,6 +391,19 @@ impl NodeHandle {
             }
             return Err(NodeError::DataStoreFailed(format!("首次后台任务失败 rc={rc}")));
         }
+        // Windows:UDP 读线程先于驱动线程启动(阻塞 recv_from → 通道 → 唤醒 → 驱动
+        // 线程 processWirePacket);起不来即回收节点(此刻尚未对外发包)
+        #[cfg(windows)]
+        let reader = std::thread::Builder::new()
+            .name("zt-udp-reader".into())
+            .spawn(move || run_udp_reader(udp_rd, running, udp_tx, wake_tx_rd))
+            .map_err(|e| {
+                unsafe {
+                    zt::ZT_Node_delete(node);
+                    drop(Box::from_raw(inner));
+                }
+                NodeError::Io(io::Error::other(format!("UDP 读线程启动失败: {e}")))
+            })?;
         // 回调出口通道与 sink 一并交给驱动线程消费(事件送达 = on_event/on_net_config)
         let driver = Driver {
             node,
@@ -312,21 +414,38 @@ impl NodeHandle {
             frame_in_rx,
             event_rx,
             netcfg_rx,
+            #[cfg(not(windows))]
             wake_rd,
+            #[cfg(windows)]
+            udp_rx,
+            #[cfg(windows)]
+            wake_rx,
+            #[cfg(windows)]
+            local_socket,
             deadline: if dl > 0 { dl } else { now_ms() + 1 },
         };
         let handle = std::thread::Builder::new()
             .name("zt-driver".into())
             .spawn(move || unsafe { run_driver(driver) })
             .map_err(|e| {
-                // 线程起不来:节点尚未对外发包,直接清理
+                // 线程起不来:节点尚未对外发包,直接清理;Windows 先置停 running
+                // 让已启动的读线程(在 Inner drop 前仍持有发送端克隆)退出
                 unsafe {
+                    #[cfg(windows)]
+                    (*inner).running.store(false, Ordering::SeqCst);
                     zt::ZT_Node_delete(node);
                     drop(Box::from_raw(inner));
                 }
                 NodeError::Io(io::Error::other(format!("驱动线程启动失败: {e}")))
             })?;
-        Ok(Self { node, inner, driver: Some(handle), shut_down: false })
+        Ok(Self {
+            node,
+            inner,
+            driver: Some(handle),
+            #[cfg(windows)]
+            udp_reader: Some(reader),
+            shut_down: false,
+        })
     }
 
     pub fn address(&self) -> u64 {
@@ -360,10 +479,18 @@ impl NodeHandle {
         self.send_cmd(|tx| Cmd::Deorbit(moon_world_id, tx))
     }
 
-    /// 设备→核心帧通道发送端(设备读线程用;发出后自动唤醒驱动线程 poll)。
+    /// 设备→核心帧通道发送端(设备读线程用;发出后自动唤醒驱动线程)。
     pub fn frame_in_tx(&self) -> FrameInTx {
-        let wake = self.inner().wake_wr.try_clone().expect("复制唤醒管道写端失败");
-        FrameInTx::new(self.inner().frame_in.clone(), wake)
+        #[cfg(not(windows))]
+        {
+            let wake = self.inner().wake_wr.try_clone().expect("复制唤醒管道写端失败");
+            FrameInTx::new(self.inner().frame_in.clone(), wake)
+        }
+        #[cfg(windows)]
+        {
+            let wake = self.inner().wake_tx.clone();
+            FrameInTx::new(self.inner().frame_in.clone(), wake)
+        }
     }
 
     /// 当前网络配置快照(直接读核心查询接口;网络列表受核心
@@ -433,8 +560,8 @@ impl NodeHandle {
     }
 
     /// 关停顺序(强制):running=false → 唤醒 poll → Cmd::Stop → join 驱动线程
-    /// → ZT_Node_delete → drop Inner。join 必须先于 delete,否则驱动线程仍在
-    /// 使用已释放的 Node(悬垂)。
+    /// → [Windows: join UDP 读线程] → ZT_Node_delete → drop Inner。join 必须
+    /// 先于 delete,否则驱动线程仍在使用已释放的 Node(悬垂)。
     pub fn shutdown(mut self) {
         self.shutdown_inner();
     }
@@ -448,6 +575,11 @@ impl NodeHandle {
         self.inner().wake();
         let _ = self.inner().cmd_tx.send(Cmd::Stop);
         if let Some(h) = self.driver.take() {
+            let _ = h.join();
+        }
+        // 读线程晚于驱动线程 join:其退出只依赖 running 开关与读超时,无悬垂
+        #[cfg(windows)]
+        if let Some(h) = self.udp_reader.take() {
             let _ = h.join();
         }
         unsafe {
@@ -511,23 +643,28 @@ fn panic_msg(p: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-/// 驱动线程主循环:串行执行全部 process* + 命令 + 回调出口转发 + 组播订阅。
+/// 驱动线程主循环:串行执行全部 process* + 命令 + 回调出口转发 + 组播订阅
+/// + UDP 收包消费(Windows);循环尾部 Unix poll / Windows recv_timeout 等待。
 ///
 /// # Safety
 /// `d.node`/`d.inner` 须为 start() 中有效分配且在 join 本线程前不被释放
 /// (shutdown 的顺序保证)。
 unsafe fn run_driver(mut d: Driver) {
     let inner = unsafe { &*d.inner };
+    #[cfg(not(windows))]
     let udp_fd = inner.udp.as_raw_fd();
     let mut last_mcast_ms: i64 = i64::MIN / 4; // 首圈立即做一次订阅
     // 已 join 的网络(来自 vnet_config 回调的 UP/UPDATE/DOWN/DESTROY)
     let mut current_networks: Vec<u64> = Vec::new();
+    #[cfg(not(windows))]
     let mut buf = [0u8; PHY_BUF];
+    #[cfg(not(windows))]
     let mut polls = [
         libc::pollfd { fd: udp_fd, events: libc::POLLIN, revents: 0 },
         libc::pollfd { fd: d.wake_rd.as_raw_fd(), events: libc::POLLIN, revents: 0 },
     ];
     // POLLERR/POLLNVAL 日志去重:状态保持时只报一次,避免忙转刷屏
+    #[cfg(not(windows))]
     let mut poll_reported = [false; 2];
     loop {
         let now = now_ms();
@@ -659,76 +796,173 @@ unsafe fn run_driver(mut d: Driver) {
             };
             for nwid in &current_networks {
                 for ip in &ips {
+                    // ADI=IPv4 主机序;Win32 绑定下形参 c_ulong 为 32 位,类型天然成立
+                    #[cfg(not(windows))]
+                    let adi = u32::from(*ip) as libc::c_ulong;
+                    #[cfg(windows)]
+                    let adi = u32::from(*ip) as std::os::raw::c_ulong;
                     let _ = unsafe {
                         zt::ZT_Node_multicastSubscribe(
                             d.node,
                             std::ptr::null_mut(),
                             *nwid,
                             0xffff_ffff_ffff,
-                            u32::from(*ip) as libc::c_ulong,
+                            adi,
                         )
                     };
                 }
             }
         }
-        // poll:UDP 可读 / 唤醒;最长等到位下一次后台任务
-        let timeout = ((d.deadline - now_ms()).clamp(1, i64::from(POLL_MAX_MS))) as i32;
-        let n = unsafe { libc::poll(polls.as_mut_ptr(), 2, timeout) };
-        if n > 0 && polls[0].revents & libc::POLLIN != 0 {
-            // 排空当前可读包;每包都可能推进 deadline
-            loop {
-                match inner.udp.recv_from(&mut buf) {
-                    Ok((len, from)) if len > 0 => {
-                        let sa = sa::to_sockaddr_storage(&from, None);
-                        let mut dl: i64 = 0;
-                        let _ = unsafe {
-                            zt::ZT_Node_processWirePacket(
-                                d.node,
-                                std::ptr::null_mut(),
-                                now_ms() as _,
-                                i64::from(udp_fd),
-                                &sa,
-                                buf.as_ptr() as *const _,
-                                len as _,
-                                &mut dl,
-                            )
-                        };
-                        if dl > 0 && dl < d.deadline {
-                            d.deadline = dl;
+        #[cfg(not(windows))]
+        {
+            // poll:UDP 可读 / 唤醒;最长等到位下一次后台任务
+            let timeout = ((d.deadline - now_ms()).clamp(1, i64::from(POLL_MAX_MS))) as i32;
+            let n = unsafe { libc::poll(polls.as_mut_ptr(), 2, timeout) };
+            if n > 0 && polls[0].revents & libc::POLLIN != 0 {
+                // 排空当前可读包;每包都可能推进 deadline
+                loop {
+                    match inner.udp.recv_from(&mut buf) {
+                        Ok((len, from)) if len > 0 => {
+                            let sa = sa::to_sockaddr_storage(&from, None);
+                            let mut dl: i64 = 0;
+                            let _ = unsafe {
+                                zt::ZT_Node_processWirePacket(
+                                    d.node,
+                                    std::ptr::null_mut(),
+                                    now_ms() as _,
+                                    i64::from(udp_fd),
+                                    &sa,
+                                    buf.as_ptr() as *const _,
+                                    len as _,
+                                    &mut dl,
+                                )
+                            };
+                            if dl > 0 && dl < d.deadline {
+                                d.deadline = dl;
+                            }
                         }
+                        _ => break,
                     }
-                    _ => break,
+                }
+            }
+            if n > 0 && polls[1].revents & libc::POLLIN != 0 {
+                let mut b = [0u8; 64];
+                let _ = unsafe { libc::read(polls[1].fd, b.as_mut_ptr() as *mut _, b.len()) };
+            }
+            // POLLERR/POLLNVAL:fd 级异常,两者后果天差地别。NVAL = fd 无效
+            // (节点已不可用,置 running=false 并退出驱动线程防忙转);ERR 多为
+            // 暂态(如 ICMP 差错),**只打 stderr 日志,不发 Fatal** —— 上层把
+            // Fatal 视为停机,一次暂态 ERR 不应冻结设备面。日志按状态保持去重。
+            for (i, p) in polls.iter().enumerate() {
+                let err = p.revents & libc::POLLERR != 0;
+                let nval = p.revents & libc::POLLNVAL != 0;
+                if !err && !nval {
+                    poll_reported[i] = false;
+                    continue;
+                }
+                let what = if i == 0 { "UDP socket" } else { "唤醒管道" };
+                let kind = if nval { "POLLNVAL(fd 无效)" } else { "POLLERR(多为暂态,已忽略)" };
+                if !poll_reported[i] {
+                    poll_reported[i] = true;
+                    eprintln!("[driver] {what} poll 异常: {kind}");
+                }
+                if nval {
+                    inner.running.store(false, Ordering::SeqCst);
+                    return;
                 }
             }
         }
-        if n > 0 && polls[1].revents & libc::POLLIN != 0 {
-            let mut b = [0u8; 64];
-            let _ = unsafe { libc::read(polls[1].fd, b.as_mut_ptr() as *mut _, b.len()) };
-        }
-        // POLLERR/POLLNVAL:fd 级异常,两者后果天差地别。NVAL = fd 无效
-        // (节点已不可用,置 running=false 并退出驱动线程防忙转);ERR 多为
-        // 暂态(如 ICMP 差错),**只打 stderr 日志,不发 Fatal** —— 上层把
-        // Fatal 视为停机,一次暂态 ERR 不应冻结设备面。日志按状态保持去重。
-        for (i, p) in polls.iter().enumerate() {
-            let err = p.revents & libc::POLLERR != 0;
-            let nval = p.revents & libc::POLLNVAL != 0;
-            if !err && !nval {
-                poll_reported[i] = false;
-                continue;
+        #[cfg(windows)]
+        {
+            // UDP 读线程投递的物理包 → processWirePacket;每包都可能推进 deadline
+            while let Ok((pkt, from)) = d.udp_rx.try_recv() {
+                if pkt.is_empty() {
+                    continue;
+                }
+                let sa = sa::to_sockaddr_storage(&from, None);
+                let mut dl: i64 = 0;
+                let _ = unsafe {
+                    zt::ZT_Node_processWirePacket(
+                        d.node,
+                        std::ptr::null_mut(),
+                        now_ms() as _,
+                        d.local_socket,
+                        &sa,
+                        pkt.as_ptr() as *const _,
+                        pkt.len() as _,
+                        &mut dl,
+                    )
+                };
+                if dl > 0 && dl < d.deadline {
+                    d.deadline = dl;
+                }
             }
-            let what = if i == 0 { "UDP socket" } else { "唤醒管道" };
-            let kind = if nval { "POLLNVAL(fd 无效)" } else { "POLLERR(多为暂态,已忽略)" };
-            if !poll_reported[i] {
-                poll_reported[i] = true;
-                eprintln!("[driver] {what} poll 异常: {kind}");
-            }
-            if nval {
-                inner.running.store(false, Ordering::SeqCst);
-                return;
+            // 等待:下一次后台任务 deadline,或任一通道唤醒(等价原 poll 语义)。
+            // 帧入/命令/wake 各通道都会先于下一圈被消费,这里只负责"睡到点"。
+            let tick = ((d.deadline - now_ms()).clamp(1, i64::from(WAKE_MAX_MS))) as u64;
+            match d.wake_rx.recv_timeout(Duration::from_millis(tick)) {
+                Ok(_) => {
+                    // 排空积压的唤醒字节(合并为一次提前醒)
+                    while d.wake_rx.try_recv().is_ok() {}
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => {
+                    // 发送端随 Inner 消失:视为停机信号
+                    inner.running.store(false, Ordering::SeqCst);
+                    return;
+                }
             }
         }
         if !inner.running.load(Ordering::SeqCst) {
             return;
+        }
+    }
+}
+
+/// UDP 读线程(Windows):阻塞 recv_from → `(payload, from)` 投通道 → 唤醒
+/// 驱动线程。读超时(start 期已设)使循环可周期性检查 running,保证可被关停。
+///
+/// 唤醒对齐 Unix poll 语义:fd 可读即唤醒驱动线程,包不等待下一 tick;
+/// 每包只唤醒一次,驱动线程每圈把 udp_rx 排空后再睡,不忙转。
+///
+/// 错误策略:
+/// - 读超时/WouldBlock:正常轮询出口,回到循环头检查 running;
+/// - ConnectionReset/ConnectionRefused:Windows 特有 —— 此前 send 到某地址
+///   收到 ICMP port-unreachable 后,下一次 recv 会报 WSAECONNRESET。必须
+///   忽略,否则一次不可达就把读线程打死(ZeroTier 官方同款处理);
+/// - 其他错误退避 200ms 继续,不因一次 IO 抖动永久退出。
+#[cfg(windows)]
+fn run_udp_reader(
+    sock: UdpSocket,
+    running: Arc<AtomicBool>,
+    tx: Sender<(Vec<u8>, SocketAddr)>,
+    wake: Sender<u8>,
+) {
+    let mut buf = vec![0u8; PHY_BUF];
+    while running.load(Ordering::SeqCst) {
+        match sock.recv_from(&mut buf) {
+            Ok((len, from)) if len > 0 => {
+                if tx.send((buf[..len].to_vec(), from)).is_err() {
+                    // 驱动线程已退出,通道对端不在了
+                    return;
+                }
+                // 先投包再唤醒:驱动线程醒来即从 udp_rx 排空消费
+                let _ = wake.send(1);
+            }
+            Ok(_) => {}
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock
+                        | io::ErrorKind::TimedOut
+                        | io::ErrorKind::Interrupted
+                        | io::ErrorKind::ConnectionReset
+                        | io::ErrorKind::ConnectionRefused
+                ) => {}
+            Err(e) => {
+                eprintln!("[udp-reader] recv 错误(退避 200ms 继续): {e}");
+                std::thread::sleep(Duration::from_millis(200));
+            }
         }
     }
 }

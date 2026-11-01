@@ -3,6 +3,10 @@
 use std::net::Ipv4Addr;
 
 /// 非回环接口上的全部 IPv4(去重升序)。枚举失败返回空(仅影响组播接收,不致命)。
+///
+/// Unix 用 libc::getifaddrs(仅 Unix 提供);Windows 无该 API,用 `getifaddrs`
+/// crate(crates.io,MIT,内部走 GetAdaptersAddresses),语义一致。
+#[cfg(not(windows))]
 pub fn local_ipv4s() -> Vec<Ipv4Addr> {
     let mut out = Vec::new();
     unsafe {
@@ -23,6 +27,26 @@ pub fn local_ipv4s() -> Vec<Ipv4Addr> {
             cur = ifa.ifa_next;
         }
         libc::freeifaddrs(ifap);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// Windows 版:GetAdaptersAddresses 封装,过滤回环后取全部 IPv4。
+/// 失败返回空(仅影响组播接收,不致命),与 Unix 分支语义一致。
+#[cfg(windows)]
+pub fn local_ipv4s() -> Vec<Ipv4Addr> {
+    let mut out = Vec::new();
+    if let Ok(it) = getifaddrs::getifaddrs() {
+        for ifa in it {
+            if ifa.flags.contains(getifaddrs::InterfaceFlags::LOOPBACK) {
+                continue;
+            }
+            if let std::net::IpAddr::V4(v4) = ifa.address {
+                out.push(v4);
+            }
+        }
     }
     out.sort_unstable();
     out.dedup();

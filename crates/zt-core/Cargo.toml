@@ -6,8 +6,6 @@ license = "MPL-2.0"
 
 [dependencies]
 zt-sys = { path = "../zt-sys" }
-# libc:pipe/poll(驱动线程阻塞原语),MIT/Apache-2.0
-libc = "0.2"
 # tun-rs:feth L2 设备(创建/收发帧/MAC/地址),Apache-2.0;
 # default-features = false 关掉 address-management(Linux/Windows 用的 netconfig-rs,
 # macOS 上地址配置走 DeviceImpl 自身 ioctl + route_manager,不依赖该 feature)
@@ -15,8 +13,17 @@ tun-rs = { version = "2", default-features = false }
 # route_manager:BSD 路由 socket / netlink 应用 managed 路由,Apache-2.0
 route_manager = "0.2"
 
+# libc:pipe/poll/getifaddrs(驱动线程阻塞原语 + 接口枚举),MIT/Apache-2.0;
+# Windows 全程不用(驱动走 mpsc + 独立 UDP 读线程,接口枚举走 getifaddrs crate)
+[target.'cfg(not(windows))'.dependencies]
+libc = "0.2"
+
 # Linux 无 DeviceImpl 自带地址配置,须开 tun-rs 的 address-management
 # (netconfig-rs) 提供 add_address_v4 / remove_address;目标级声明与上方合并,
 # 仅在为 Linux/Windows 构建时生效,macOS 构建不受影响
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 tun-rs = { version = "2", default-features = false, features = ["address-management"] }
+
+# getifaddrs:本机接口枚举(libc::getifaddrs 是 Unix-only),MIT,跨平台
+[target.'cfg(windows)'.dependencies]
+getifaddrs = "0.2"

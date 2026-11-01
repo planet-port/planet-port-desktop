@@ -5,11 +5,13 @@
 //! # 架构红线
 //!
 //! - 本模块只在核心回调 glue(state_get/state_put)内被调用:禁止 panic/unwrap,
-//!   失败以返回值表达;identity.secret 与 planet 落盘必须 0600;
+//!   失败以返回值表达;identity.secret 与 planet 落盘必须 0600(Windows 无
+//!   POSIX 权限位,权限收敛由数据目录 ACL 承担,代码层跳过);
 //! - 每 Node 的 StateStore 独立目录,节点间不得共享(隔离红线,见 POC3)。
 
 use std::fs;
 use std::io;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
@@ -92,10 +94,14 @@ impl StateStore {
             let _ = fs::remove_file(&tmp);
             return -1;
         }
-        // identity.secret(与 secure 标记)收紧为 0600
+        // identity.secret(与 secure 标记)收紧为 0600;Windows 无 POSIX 权限位,
+        // 收敛由数据目录 ACL 承担,代码层跳过
+        #[cfg(unix)]
         if secure {
             let _ = fs::set_permissions(&f, fs::Permissions::from_mode(0o600));
         }
+        #[cfg(not(unix))]
+        let _ = secure;
         0
     }
 }

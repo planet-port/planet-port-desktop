@@ -17,6 +17,7 @@
 //! 帧均含完整 14 字节以太头。Drop 时自动 `ifconfig fethX destroy`。
 
 use std::collections::HashMap;
+#[cfg(not(windows))]
 use std::fs::File;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr};
@@ -48,20 +49,38 @@ pub struct FrameIn {
     pub payload: Vec<u8>,
 }
 
-/// `FrameIn` 通道发送端:发出后写唤醒管道,让驱动线程的 poll 立即返回。
+/// `FrameIn` 通道发送端:发出后写唤醒管道(Unix)/唤醒通道(Windows),
+/// 让驱动线程的 poll / recv_timeout 立即返回。
 pub struct FrameInTx {
     tx: Sender<FrameIn>,
+    #[cfg(not(windows))]
     wake: File,
+    #[cfg(windows)]
+    wake: Sender<u8>,
 }
 
+#[cfg(not(windows))]
 impl Clone for FrameInTx {
     fn clone(&self) -> Self {
         Self { tx: self.tx.clone(), wake: self.wake.try_clone().expect("复制唤醒管道写端失败") }
     }
 }
 
+#[cfg(windows)]
+impl Clone for FrameInTx {
+    fn clone(&self) -> Self {
+        Self { tx: self.tx.clone(), wake: self.wake.clone() }
+    }
+}
+
 impl FrameInTx {
+    #[cfg(not(windows))]
     pub(crate) fn new(tx: Sender<FrameIn>, wake: File) -> Self {
+        Self { tx, wake }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn new(tx: Sender<FrameIn>, wake: Sender<u8>) -> Self {
         Self { tx, wake }
     }
 
@@ -70,9 +89,19 @@ impl FrameInTx {
         if self.tx.send(f).is_err() {
             return false;
         }
+        self.wake_driver();
+        true
+    }
+
+    #[cfg(not(windows))]
+    fn wake_driver(&self) {
         let mut b = [1u8; 1];
         let _ = unsafe { libc::write(self.wake.as_raw_fd(), b.as_mut_ptr() as *const _, 1) };
-        true
+    }
+
+    #[cfg(windows)]
+    fn wake_driver(&self) {
+        let _ = self.wake.send(1);
     }
 }
 

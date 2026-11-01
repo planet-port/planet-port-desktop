@@ -533,6 +533,17 @@ dependencies = [
 
 [[package]]
 name = "getifaddrs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1c016cebf305060d144de015c98191ede05c210af588857bc2d4f8611c04663"
+dependencies = [
+ "bitflags 2.13.2",
+ "libc",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "getifaddrs"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a542e1b7ac1f3d62c5777d430d66eca9cb59e813c46b86e29fa9ce94ff9a4810"
@@ -1725,7 +1736,7 @@ dependencies = [
  "ahash",
  "bytes",
  "encoding_rs",
- "getifaddrs",
+ "getifaddrs 0.6.2",
  "ipnet",
  "libc",
  "libloading 0.9.0",
@@ -2023,6 +2034,15 @@ dependencies = [
 
 [[package]]
 name = "windows-sys"
+version = "0.59.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
+dependencies = [
+ "windows-targets",
+]
+
+[[package]]
+name = "windows-sys"
 version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
@@ -2170,6 +2190,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 name = "zt-core"
 version = "0.1.0"
 dependencies = [
+ "getifaddrs 0.2.0",
  "libc",
  "route_manager",
  "tun-rs",

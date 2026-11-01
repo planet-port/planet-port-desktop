@@ -152,7 +152,9 @@ impl NetConfig {
             // Core/include/ZeroTierOne.h: ZT_NETWORK_TYPE_PRIVATE=0 / PUBLIC=1
             is_private: c.type_ == zt_sys::ZT_VirtualNetworkType_ZT_NETWORK_TYPE_PRIVATE,
             mtu: c.mtu as u16,
-            netconf_revision: c.netconfRevision,
+            // netconfRevision 为 c_ulong:mac/linux 64 位,Win32 下 32 位,
+            // u64::from 收敛到固定宽度(mac/linux 上为恒等,零行为改动)
+            netconf_revision: u64::from(c.netconfRevision),
             assigned,
             routes,
             dns_domain,
