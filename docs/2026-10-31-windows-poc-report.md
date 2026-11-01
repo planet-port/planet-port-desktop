@@ -8,7 +8,7 @@
 ## 0. 一句话结论
 
 - **编译级验证通过**:Windows 目标（x86_64-pc-windows-msvc）全链路——zt-sys 的 C++ 核心编译 + bindgen 绑定生成 + poc4 全部代码——在 mac 上经 cargo-xwin 交叉 check 全绿;既有业务 crate 与 release.sh 零改动。
-- **实机验证待硬件**:Win10 实机不开机,计划的 Task 1-3（实机盘点/工具链/真机 Gate 0）与各 Gate 的实机实测步骤全部冻结。三道 Gate 的结论只到"代码就绪 + 交叉编译通过"级,**未到实机验证级**,待实测清单见第 3 节。
+- **实机验证已完成**:三道 Gate 于 Win11 实机(build 26200 x64)全部 PASS,详见第 3 节实测结果;最低 Win10 未验证,结论按 Win11 记录。
 - **wintun 路线阶段性判断**:交叉编译未出现任何技术性否决信号,Windows 绑定布局已实证、L3 设备/路由/ARP 垫层代码全部就位;但"Win10 ↔ mac 互 ping 通过"这一决定性证据仍缺,**不构成最终结论**。
 
 ## 1. 执行过程与计划偏差
@@ -71,9 +71,9 @@ poc4 独立 crate(架构理由见 1.2),全部 Windows 路径包 `#[cfg(windows)]
 - **POC 精简点**(正式实现再补):Cmd 只留 Join/Stop(leave/orbit/deorbit 裁剪)、0600/ACL 收敛、DNS 字段、pathCheck/pathLookup 回调(None)、`local_ipv4s` 只返回 managed IPv4(物理口枚举裁剪,组播发现覆盖面收窄,单播互通不受影响)。
 - **Minor 备忘清单**(台账 progress.md):gate1 CLI 参数错误 panic(POC 工具可接受)、组播订阅每 5s 跨 FFI 查本机 IP(sink 勿做慢操作)、关停竞态窗口计数可虚高(send 结果未检)、probe_last 避开自身地址仅注释级提示、buf[0] 无 len 防护。
 
-## 3. 待实测清单(实机恢复后执行)
+## 3. 实测执行与结果(2026-10-31 ~ 11-01,Win11 实机)
 
-以下全部**未执行**,无任何数据;命令与观察点在此汇总,实机可用后按序直接跑。
+以下清单已于实机按序执行完毕;实机为 **Windows 11 专业版 build 26200 x64**(huaweimatebook,非最低 Win10,结论按 Win11 记录,Win10 下限待后续验证)。原命令与观察点保留作复测参照,结果见 §3.6。
 
 ### 3.1 环境盘点(Task 1-2 冻结项)
 
@@ -129,24 +129,39 @@ poc4_windows --planet <planet文件> --join <nwid> --dir <工作目录> [--port 
 - compatibility.md 的 Win10 行从"未实测"更新为实测结果;
 - 第 4/6 节的阶段性判断升级为最终结论;ARP 垫层"实测代价"(首包延迟/命中数)回填。
 
-## 4. wintun 路线阶段性判断(非最终结论)
+### 3.6 实测结果汇总
 
-**已证实(编译级)**:
+**Gate 0(实机 MSVC 编译)PASS**:zt-sys 4m50s 编译通过,`poc4_windows.exe` 链接成功。实机炸出两处 mac/xwin 交叉验证无法暴露的真问题并已修复(`ZT_EXPORT` 防 ZeroTierOne.h `#pragma comment(lib)` 强链官方 DLL 导入库、OSUtils.cpp 补链 shell32)。工具链:VS Build Tools 2022 17.14 / MSVC 14.44 + LLVM 18.1.8 + rustc 1.99.1。
 
-- ZeroTier 1.16.2 C++ 核心在 Windows 目标可编译,bindgen 绑定无未解疑点(2.1/2.2);
-- zt-core/routes.rs 的路由语义可直接平移到 route_manager 的 Windows 后端,默认路由保护等逻辑无损;
-- ARP 垫层实现量小:`ArpShim` 一个结构(出向补 14 字节以太网头 + 入向学习/应答,无 checksum 逻辑),百行级,与可行性调研 §2.1/§2.3"同 macOS utun 处理方式"的预估一致(引文逐字见 §2.1 平台表 Windows 行,§2.3 为语义同源表述);
-- Windows 版 node 驱动的四个改造点(UDP 读线程/唤醒/AsRawSocket/c_ulong ADI)全部有确定解法并已实现。
+**Gate 1(wintun 设备层)PASS**:`--gate1-create` 适配器建立/销毁闭环;`--gate1-read 10.121.16.50/24` 60s 收 330 包(含 ICMP 探针/ICMPv6 ND/组播混杂),裸 IP 形态符合 L3 设计。观察:探针 /24 路由与地址自动 on-link 路由同前缀时 `CreateIpForwardEntry2` 报 error 87,被告警忽略,不影响结果。wintun.dll(0.14.1,SHA256 与官方一致)放 exe 同目录加载正常,无 HVCI/签名拦截。
 
-**未证实(全部压在实机)**:
+**Gate 2a(节点上线+netconf)PASS**:节点 `08e34ced35` 身份建立、对根 HELLO 交互成功、控制器授权后 `status=OK rev=6 assigned=[10.121.16.241/24]`,`peers=6 活跃路径=4`。
 
-- wintun.dll 在目标机的加载与 HVCI/签名策略拦截;
-- 设备层实际收发包、ring 包形态、地址/路由生效;
-- 互 ping 的延迟与抖动(tick 取舍的实测观感)、ARP 首包代价;
+**Gate 2b(互 ping)PASS**:`--target 10.121.16.1`(mac 侧 planet-portd 节点),32 次 ping 31 通,唯一 miss 为首包(ARP 垫层首次解析叠加 ≤500ms tick,与 §2.5 预期一致);`核心→设备` 帧计数随回包增长,teardown 干净。
+
+**环境排障记录(重要,与代码无关)**:实测三次被"根 124.222.91.224:9993 新建 UDP 会话被出口丢弃"阻塞(poc3 已有同源记忆)。pktmon 抓包实证:poc4 出站 HELLO 正常发出,根对同机官方 zerotier-one(源口 9993/随机口)有回包、对 poc4 新建流零回包,与端口(9994/47000)、节点身份、OS 无关——过滤行为为"已建立流放行、新建流丢弃",且伪装热点的 gozi300 实际桥接回家宽出口( tracert 二跳即 192.168.8.1 )。切真实移动网络后**秒级上线**。结论:Windows 侧协议栈无任何问题。
+
+**Windows 防火墙**:无需手动放行。实测删除 poc4 入站规则后互 ping 依旧全通(出站发起的 UDP 流由有状态检测放行回包)。
+
+## 4. wintun 路线最终判断(实机已验证)
+
+**已证实(实机级,Win11 build 26200)**:
+
+- ZeroTier 1.16.2 C++ 核心在 Windows 实机 MSVC 编译、链接通过(两处仅实机暴露的链接问题已修);
+- wintun.dll 加载正常,无 HVCI/签名策略拦截(0.14.1 官方包,exe 同目录摆放);
+- 设备层建/销、地址应用、收包(60s 330 包,裸 IP 形态)全部实测通过;
+- 路由应用生效(仅 /24 同前缀探针路由报 error 87 告警,不影响);
+- 互 ping 通(31/32,首包 miss 与 tick 取舍预期吻合),ARP 垫层工作正常;
+- 与官方 zerotier-one 同机共存无干扰(9993/9994 各自独立,poc4 无需防火墙放行);
+- Windows 版 node 驱动四改造点(UDP 读线程/唤醒/AsRawSocket/c_ulong ADI)实机运行正常。
+
+**仍未证实**:
+
+- 最低 Win10 兼容性(实机为 Win11,结论按 Win11 记录);
 - IPv6/NDP 垫层(POC 明确不做,纸面预估工作量远大于 ARP);
-- 多适配器共存与官方 zerotier-one 同机干扰情况。
+- 多 planet 多适配器并存的 Windows 行为(POC 单 planet)。
 
-**判断**:wintun L3 路线维持"可行、待实机确认",无否决信号;tap-windows6(L2,免垫层但需装 NDIS 驱动)保留为实机失败时的备选路线。
+**判断**:wintun L3 路线**实机验证可行**,无否决信号;tap-windows6 备选路线归档不再需要。
 
 ## 5. 零影响终验记录(2026-10-31,HEAD d8e6638)
 
@@ -173,12 +188,12 @@ $ git --no-pager diff db7a09a..HEAD --stat -- \
 
 | 工作项 | 状态 | 说明 |
 |---|---|---|
-| zt-sys Windows 编译(NOMINMAX + SSSE3/AES-NI flags + bindgen) | **交叉编译已验证**,实机 MSVC 待验证 | build.rs 修正已落库;实机风险仅 bindgen/libclang 版本匹配 |
+| zt-sys Windows 编译(NOMINMAX + SSSE3/AES-NI flags + bindgen) | **实机已验证**(MSVC 14.44/LLVM 18.1.8/rustc 1.99.1) | build.rs 修正已落库;实机额外修 ZT_EXPORT 与 shell32 两处链接问题 |
 | sockaddr winsock 布局(3 处实证) | **已验证** | in_addr/netconfRevision/multicastSubscribe ADI |
-| Windows 版 node 驱动 | **代码就绪**(poc4 精简版),**回迁纸面** | 正式化 = driver.rs 架构回迁 zt-core/node.rs 的 cfg 改造 + POC 精简点回补(leave/orbit、pathCheck/pathLookup、ACL、信号处理) |
-| wintun L3 设备 + 地址应用 | **代码就绪**,实机待验证 | WinDevice/WinDevice 地址差分 |
-| managed 路由应用 | **代码就绪**(语义平移自 zt-core/routes.rs),实机待验证 | RouteApplier 回迁 zt-core 时与 daemon 期路由共存策略(台账 Important ⑤)一并定 |
-| IPv4 ARP 垫层 | **代码就绪**,实测代价待数据 | ArpShim 直接回迁;出向计数/v6drop 计数已具备可观测性 |
+| Windows 版 node 驱动 | **实机已验证**(poc4 精简版),**回迁纸面** | 正式化 = driver.rs 架构回迁 zt-core/node.rs 的 cfg 改造 + POC 精简点回补(leave/orbit、pathCheck/pathLookup、ACL、信号处理) |
+| wintun L3 设备 + 地址应用 | **实机已验证** | WinDevice/WinDevice 地址差分;Gate 1 三子项全 PASS |
+| managed 路由应用 | **实机已验证** | RouteApplier 回迁 zt-core 时与 daemon 期路由共存策略(台账 Important ⑤)一并定 |
+| IPv4 ARP 垫层 | **实机已验证**(31/32 通,首包 miss 属 tick 预期) | ArpShim 直接回迁;出向计数/v6drop 计数已具备可观测性 |
 | IPv6 NDP 垫层 | 纸面 | POC 明确不做,双向 v6 静默丢弃已计数(v6drop) |
 | 服务化 windows.rs(Windows Service/SYSTEM、named pipe 或 loopback+token) | 纸面 | 参考 cli/src/cmd/service 的 macos.rs/linux.rs 平台模块形态新增 |
 | DNS NRPT | 纸面 | netcfg POC 版已裁 DNS 字段;Task 33 的 DNS 三模式框架待加 Windows 分支 |
@@ -187,4 +202,6 @@ $ git --no-pager diff db7a09a..HEAD --stat -- \
 
 ## 7. 结论
 
-本阶段完成的是"Windows 支持评估"中**不依赖实机的全部工作**:构建链路交叉编译预验证、Windows 绑定布局实证、Gate 1/2 全部代码与自验工具、既有平台零改动证明。三道 Gate 的 PASS/FAIL 判定**全部悬置待实机**,wintun 路线维持阶段性"可行、待确认"。实机恢复后按第 3 节清单执行,预计一次会话即可补齐全部实测数据并升级为最终结论。
+Windows 支持评估 POC **三道 Gate 全部实机 PASS**(Win11 专业版 build 26200 x64):构建链路(实机 MSVC 编译+链接)、设备层(wintun 建销/地址/路由/收包)、组网互通(节点上线拿 netconf、与 mac 节点互 ping 31/32)。wintun L3 + ARP 垫层路线**最终判定可行**,tap-windows6 备选归档。既有平台零改动红线全程保持。
+
+限制与后续:最低 Win10 未验证(结论按 Win11 记录);实机实测期间确认出口侧存在"对根 9993 新建 UDP 流丢弃"的网络过滤(与 Windows 无关,详见 §3.6 环境排障记录),正式版用户若遇同类 `REQUESTING_CONFIGURATION` 卡死应先排查出口网络;正式化工作量按第 6 节清单推进,纸面项(服务化/DNS NRPT/release 目标/签名分发)为下一阶段。
