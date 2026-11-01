@@ -97,6 +97,8 @@ struct NetDevice {
     if_name: String,
     if_index: u32,
     mtu: u16,
+    /// 已处理的 managed 地址(含 Windows 侧跳过的 v6:标记为已处理避免每次
+    /// 刷配置重复告警/重复尝试拆除)
     applied_addrs: Vec<IpNet>,
     routes: Option<RouteApplier>,
     stop: Arc<AtomicBool>,
@@ -298,7 +300,17 @@ impl NetDevice {
             }
             match a.addr {
                 IpAddr::V4(v4) => self.dev.add_address_v4(v4, a.prefix)?,
-                IpAddr::V6(v6) => self.dev.add_address_v6(v6, a.prefix)?,
+                IpAddr::V6(_) => {
+                    // Windows 设备面 v6 帧是双向黑洞(wintun L3 无 NDP 垫层,
+                    // reader/send 侧对 v6 帧丢弃计 v6drop),v6 地址不应用,
+                    // 否则系统会把 v6 流量路由进黑洞适配器。与 routes.rs 的
+                    // 「不安装 v6 托管路由」是同一平台差异;待 NDP 垫层落地放开。
+                    eprintln!(
+                        "[device] {} 跳过 v6 地址 {}/{}(Windows L3 面无 v6 垫层,不应用)",
+                        self.if_name, a.addr, a.prefix
+                    );
+                    continue;
+                }
             }
             eprintln!("[device] {} + {}/{}", self.if_name, a.addr, a.prefix);
         }
