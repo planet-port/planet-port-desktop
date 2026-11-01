@@ -91,7 +91,7 @@ sudo PLANET_PORT_TARBALL=./planet-port_0.1.0_linux_amd64.tar.gz ./install.sh
 
 ## Windows 安装(x86_64)
 
-支持 Windows 10+(wintun 的系统下限,纸面),实测基线为 Windows 11
+支持 Windows 10+(纸面,按支持面收敛),实测基线为 Windows 11
 build 26200,Win10 未实测。产物为 zip(`planet-port_<ver>_windows_x86_64.zip`,
 内含 planet-port.exe / planet-portd.exe / wintun.dll / install-offline.ps1)。
 本版本**不做代码签名**,SmartScreen 拦截属预期,见下文「故障排查」。
@@ -109,8 +109,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version 0.1.3  # 指定�
 脚本行为:强制 TLS 1.2 → 管理员校验 → GitHub API 解析版本 → 下载
 `planet-port_<ver>_windows_x86_64.zip` 并解压 → 包内容完整性预检(三件套
 缺一即给全量缺件清单)→ 调起包内 `planet-port.exe service install` 完成落盘、
-ACL 收敛与服务注册。iex 管道一键流不可用(资产在 GitHub Releases),落地
-执行为准。
+ACL 收敛与服务注册。脚本用 param 块接收 `-Version`,iex 管道无法传参且
+无法落地校验,故采用下载后 `-File` 执行的形态。
 
 ### 离线安装
 

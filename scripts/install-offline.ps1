@@ -9,8 +9,8 @@
 # 职责切分(与 mac/linux 的 install.sh 对齐):落盘/sc create/ACL/失败自拉起
 # 全部由 `planet-port service install` 自带(crates/cli/src/cmd/service/
 # windows.rs),本脚本只负责完整性预检与调起,不重复 sc.exe 逻辑。顶层
-# `planet-port install` 在 Windows 下因 .exe 后缀定位问题不可用,必须走
-# `service install` 子命令。
+# `planet-port install` 在 Windows 亦可用,本脚本走 `service install`
+# 子命令以复用其重装幂等预清理。
 #
 # 落点:
 #   程序 C:\Program Files\planet-port\

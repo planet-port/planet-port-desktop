@@ -11,7 +11,7 @@ Windows POC（windows-poc 分支，报告见 docs/2026-10-31-windows-poc-report.
 - **架构**：方案一——POC 架构 cfg 分叉回迁正式 crate，与仓库 `cfg(target_os)` 惯例一致，mac/linux 代码路径零改动
 - **范围**：完整正式版（数据面+服务化+CLI 全命令+DNS+安装分发），本版本不做代码签名
 - **分发**：线上 `install.ps1`（iex）+ 离线 zip，对齐 mac 的 install.sh + tar.gz 形态
-- **实测基线**：Win11 build 26200；最低 Win10 纸面支持（wintun 要求 Win10+），实测标注
+- **实测基线**：Win11 build 26200；最低 Win10 纸面支持（按支持面收敛），实测标注
 - **分支**：全部工作在 windows-poc 分支完成后再推
 
 ## 总体架构（mac → Windows 对应）
@@ -38,7 +38,7 @@ Windows POC（windows-poc 分支，报告见 docs/2026-10-31-windows-poc-report.
 
 ## 服务化（cli/src/cmd/service/windows.rs）
 
-- 命令面对齐 macos.rs：`install / uninstall / start / stop / status / is-enabled`
+- 命令面对齐 macos.rs：`install / uninstall / start / stop / status / logs`
 - `install`：拷贝二进制到服务目录、`sc.exe create` 注册 LocalSystem 自启动服务、写服务定义；`uninstall` 停服务删注册（数据保留，对齐 mac）
 - daemon 程序加 Windows Service 入口：手写 SCM 接口（StartServiceCtrlDispatcher + 服务状态回调），不引第三方 service 框架——依赖面小，且 daemon 主逻辑（tokio runtime）与 SCM 启动信号的胶合层很薄
 - cli 普通命令（planet/network/peer 等）走既有 loopback API，天然跨平台零改动

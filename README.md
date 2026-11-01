@@ -29,7 +29,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 | Termux（Android） | 待定 | 📐 待定（zerotier-one 官方亦不发布 Termux 包，仅社区仓库有） | 待定 |
 | 其它（FreeBSD / RHEL 系等） | 待定 | 📐 待定 | 待定 |
 
-> 最低版本说明：Linux 系以 Ubuntu 20.04 为构建基线（glibc 向后兼容，20.04 构建的产物可跑更新版本）；macOS 12+ 为设计目标，当前仅在 macOS 26（Apple Silicon）实测；Windows 10+ 为纸面下限（wintun 要求），当前仅在 Windows 11 实测。
+> 最低版本说明：Linux 系以 Ubuntu 20.04 为构建基线（glibc 向后兼容，20.04 构建的产物可跑更新版本）；macOS 12+ 为设计目标，当前仅在 macOS 26（Apple Silicon）实测；Windows 10+ 为纸面下限（按支持面收敛），当前仅在 Windows 11 实测。
 
 架构与可行性结论见 [docs/2026-10-28-desktop-port-feasibility.md](docs/2026-10-28-desktop-port-feasibility.md) ，CLI/API 设计见 [docs/superpowers/specs/2026-10-28-cli-api-design.md](docs/superpowers/specs/2026-10-28-cli-api-design.md) 。
 

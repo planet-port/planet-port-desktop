@@ -2,7 +2,7 @@
 #
 # 用法:
 #   powershell -ExecutionPolicy Bypass -File install.ps1 [-Version 0.1.3]
-#   (iex 一键流因本仓库资产走 GitHub Releases,被拦网络下不可用;落地执行为准)
+#   (iex 管道无法向 param 块传 -Version,亦无法落地校验,故采用 -File 执行)
 #
 # 职责切分(与 mac/linux 的 install.sh 对齐):本脚本只负责「下载 + 解压 +
 # 调起」,落盘/sc create/ACL/失败自拉起全部由 `planet-port service install`
