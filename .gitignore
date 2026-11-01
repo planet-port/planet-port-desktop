@@ -4,3 +4,6 @@
 /Core/
 # POC 本地环境:planet 副本与运行期 dataStore
 crates/pocs/fixtures/
+
+# Win10 实测机连接配置(含密码,勿提交)
+.env.win10
