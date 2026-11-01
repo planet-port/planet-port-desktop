@@ -9,12 +9,17 @@
 //! 控制台直跑(无 --service)不经过本模块,行为与 mac/linux 一致。
 
 use windows_sys::Win32::Foundation::{
-    GetLastError, ERROR_FAILED_SERVICE_CONTROLLER_CONNECT, NO_ERROR,
+    GetLastError, ERROR_FAILED_SERVICE_CONTROLLER_CONNECT, ERROR_SERVICE_SPECIFIC_ERROR, NO_ERROR,
 };
 use windows_sys::Win32::System::Services::*;
 
 /// SCM 分发表里的服务名(Task 7 的 sc create 服务名 planetportd 与之配套)
 const SERVICE_NAME: &str = "planetportd";
+
+/// 工作线程 panic 时上抛的服务特定退出码(取值自定,SCM 只要求非 0;
+/// dwWin32ExitCode=ERROR_SERVICE_SPECIFIC_ERROR 时 SCM 视为 failure,
+/// Task 7 的 sc failure 自拉起策略才生效)
+const SPECIFIC_EXIT_PANIC: u32 = 101;
 
 /// 报给 SCM 的等待上限(START_PENDING/STOP_PENDING 的 WaitHint):daemon
 /// 收尾(逐 planet 拆设备 + registry 落盘)有界,30s 足够;超窗 SCM 判定
@@ -35,8 +40,10 @@ static STATUS_HANDLE: std::sync::atomic::AtomicPtr<core::ffi::c_void> =
     std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
 
 /// 上报服务状态。dwServiceType/dwControlsAccepted/dwCheckPoint 取 brief
-/// 定型值;STOPPED 时清零 ControlsAccepted(SCM 约定:终态不再接受控制码)
-fn report_status(state: u32, exit_code: u32) {
+/// 定型值;STOPPED 时清零 ControlsAccepted(SCM 约定:终态不再接受控制码)。
+/// specific 仅在 exit_code == ERROR_SERVICE_SPECIFIC_ERROR 时有效(Win32
+/// 语义),其余路径传 0
+fn report_status(state: u32, exit_code: u32, specific: u32) {
     let handle = STATUS_HANDLE.load(std::sync::atomic::Ordering::SeqCst);
     if handle.is_null() {
         return;
@@ -50,7 +57,7 @@ fn report_status(state: u32, exit_code: u32) {
             SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN
         },
         dwWin32ExitCode: exit_code,
-        dwServiceSpecificExitCode: 0,
+        dwServiceSpecificExitCode: specific,
         dwCheckPoint: 0,
         dwWaitHint: WAIT_HINT_MS,
     };
@@ -70,7 +77,7 @@ unsafe extern "system" fn handler_ctrl(
 ) -> u32 {
     if matches!(dw_control, SERVICE_CONTROL_STOP | SERVICE_CONTROL_SHUTDOWN) {
         crate::request_shutdown();
-        report_status(SERVICE_STOP_PENDING, NO_ERROR);
+        report_status(SERVICE_STOP_PENDING, NO_ERROR, 0);
     }
     NO_ERROR
 }
@@ -125,7 +132,7 @@ unsafe extern "system" fn service_proc(_argc: u32, _argv: *mut *mut u16) {
     }
     STATUS_HANDLE.store(status_handle, std::sync::atomic::Ordering::SeqCst);
 
-    report_status(SERVICE_START_PENDING, NO_ERROR);
+    report_status(SERVICE_START_PENDING, NO_ERROR, 0);
     // 主逻辑在工作线程跑:daemon_main 全程 async(tokio runtime 需在块内
     // 构建),而本线程是 SCM 回调线程,不能被 tokio 长期占用
     let worker = MAIN_BODY
@@ -133,11 +140,19 @@ unsafe extern "system" fn service_proc(_argc: u32, _argv: *mut *mut u16) {
         .unwrap_or_else(|e| e.into_inner())
         .take()
         .map(std::thread::spawn);
-    report_status(SERVICE_RUNNING, NO_ERROR);
+    report_status(SERVICE_RUNNING, NO_ERROR, 0);
     // join 不设超时但有界:收尾本身有界(既有 shutdown 设计),且控制回调
-    // 已在 STOP 时报 STOP_PENDING 占住 30s WaitHint 窗口
-    if let Some(worker) = worker {
-        let _ = worker.join();
+    // 已在 STOP 时报 STOP_PENDING 占住 30s WaitHint 窗口。Err 即主逻辑
+    // panic 穿透:panic 以服务特定错误上报,令 sc failure 拉起生效——若
+    // 仍报 NO_ERROR,SCM 视角是干净停止,自拉起策略不会触发
+    let panicked = if let Some(worker) = worker {
+        worker.join().is_err()
+    } else {
+        false
+    };
+    if panicked {
+        report_status(SERVICE_STOPPED, ERROR_SERVICE_SPECIFIC_ERROR, SPECIFIC_EXIT_PANIC);
+    } else {
+        report_status(SERVICE_STOPPED, NO_ERROR, 0);
     }
-    report_status(SERVICE_STOPPED, NO_ERROR);
 }
