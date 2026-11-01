@@ -11,6 +11,8 @@ mod dns;
 mod events;
 mod registry;
 mod runtime;
+#[cfg(windows)]
+mod service_win;
 mod state;
 mod world;
 
@@ -134,8 +136,18 @@ fn write_file_0644(path: &Path, data: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-fn parse_args() -> Option<PathBuf> {
+/// 命令行参数。service 仅 Windows 有意义:SCM 以服务身份启动时由安装脚本
+/// (Task 7 的 sc create)带上,是「服务上下文 vs 控制台直跑」的判定入口
+struct Args {
+    config_dir: Option<PathBuf>,
+    #[cfg(windows)]
+    service: bool,
+}
+
+fn parse_args() -> Args {
     let mut config_dir = None;
+    #[cfg(windows)]
+    let mut service = false;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -146,13 +158,22 @@ fn parse_args() -> Option<PathBuf> {
                     std::process::exit(2);
                 }
             },
+            #[cfg(windows)]
+            "--service" => service = true,
             other => {
+                #[cfg(unix)]
                 eprintln!("未知参数: {other}(仅支持 --config-dir <path>)");
+                #[cfg(windows)]
+                eprintln!("未知参数: {other}(仅支持 --config-dir <path> 与 --service)");
                 std::process::exit(2);
             }
         }
     }
-    config_dir
+    Args {
+        config_dir,
+        #[cfg(windows)]
+        service,
+    }
 }
 
 /// acquire_singleton 的失败分类:「锁被其它实例持有」与「锁资源本身拿不到」
@@ -247,9 +268,9 @@ fn stop_channel()
 }
 
 /// 请求优雅退出(Windows):从任意线程(含 SCM 的 extern "system" 回调)
-/// 同步调用,非 async。Task 6 接线点;控制台直跑时不经此路径。
+/// 同步调用,非 async。service_win.rs 的控制回调(STOP/SHUTDOWN 控制码)
+/// 经此触发收尾;控制台直跑时不经此路径。
 #[cfg(windows)]
-#[allow(dead_code)] // Task 6 的 SCM 控制回调消费,本任务先建好抽象
 fn request_shutdown() {
     let _ = stop_channel().0.send(true);
 }
@@ -354,10 +375,14 @@ async fn shutdown(state: AppState, port_path: PathBuf) {
     eprintln!("服务已停止");
 }
 
-#[tokio::main]
-async fn main() {
+/// daemon 主逻辑(既有 main 主体,服务/控制台双入口复用):config 解析到
+/// graceful shutdown 收尾一整段。正常路径以 return 结束(退出码由入口的
+/// ExitCode 给出);所有故障路径仍走 std::process::exit 非 0 退出。
+/// 正常路径不再用 std::process::exit(0) 收尾:服务工作线程需要先 return
+/// 让 service_proc 报 STOPPED,再由进程正常退出给 SCM 干净的 0
+async fn daemon_main(args: Args) {
     // 1. config dir:--config-dir 覆盖 env/系统目录/用户目录三级解析
-    let dir = parse_args().unwrap_or_else(planet_port_api::config_dir);
+    let dir = args.config_dir.unwrap_or_else(planet_port_api::config_dir);
     if let Err(e) = fs::create_dir_all(&dir) {
         eprintln!("无法创建配置目录 {}: {e}", dir.display());
         std::process::exit(1);
@@ -521,6 +546,38 @@ async fn main() {
         .with_graceful_shutdown(shutdown(state, port_path))
         .await
         .unwrap();
-    // 信号收尾完成后显式 exit 0:确保服务型运行(launchd)看到干净的退出码
-    std::process::exit(0);
+    // 信号收尾完成即 return:退出码由入口函数的 ExitCode 统一给出(控制台
+    // 直跑与服务身份均为 0;服务工作线程 return 后 service_proc 先报
+    // STOPPED,进程再正常退出,SCM 看到干净的生命周期)
+}
+
+/// 构建 tokio runtime 并跑 daemon 主逻辑。服务/控制台两条入口共用:服务身份
+/// 由 service_proc 的工作线程调,控制台直跑由 main 主线程调。多线程 +
+/// enable_all 与原 #[tokio::main] 的默认展开等价,mac/linux 行为零改动。
+fn run_daemon(args: Args) {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("构建 tokio runtime 失败");
+    rt.block_on(daemon_main(args));
+}
+
+/// 进程入口。main 保持同步:StartServiceCtrlDispatcherW 必须由进程主线程
+/// 调用与 SCM 建立控制通道,不能在 tokio runtime 的工作线程里分发。
+/// - Windows + --service:服务身份,阻塞至服务停止(Task 7 的 sc create)
+/// - 其余(含 mac/linux、Windows 控制台直跑):构建 runtime 跑主逻辑
+fn main() -> std::process::ExitCode {
+    let args = parse_args();
+    #[cfg(windows)]
+    if args.service {
+        let code = service_win::run_service(move || run_daemon(args));
+        return if code == 0 {
+            std::process::ExitCode::SUCCESS
+        } else {
+            eprintln!("Windows 服务分发失败: Win32 错误码 {code}");
+            std::process::ExitCode::from(u8::try_from(code).unwrap_or(1))
+        };
+    }
+    run_daemon(args);
+    std::process::ExitCode::SUCCESS
 }

@@ -23,11 +23,13 @@ libc = "0.2"
 ureq = "3"
 
 # Windows 平台 API:命名互斥体单例锁(Threading/Foundation)+ 随机数
-# (Security_Cryptography 的 BCryptGenRandom);仅 Windows 目标引入,
+# (Security_Cryptography 的 BCryptGenRandom)+ SCM 服务入口
+# (System_Services 的 StartServiceCtrlDispatcherW);仅 Windows 目标引入,
 # MIT/Apache-2.0。版本对齐 workspace 既有 0.59
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_System_Threading",
     "Win32_Security_Cryptography",
+    "Win32_System_Services",
 ] }
