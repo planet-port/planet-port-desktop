@@ -385,7 +385,7 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "daemon"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "axum",
  "libc",
@@ -1099,7 +1099,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "planet-port"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "clap",
@@ -1116,7 +1116,7 @@ dependencies = [
 
 [[package]]
 name = "planet-port-api"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "dirs",
  "serde",
