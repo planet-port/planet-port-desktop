@@ -46,9 +46,9 @@ Windows POC（windows-poc 分支，报告见 docs/2026-10-31-windows-poc-report.
 
 ## DNS NRPT
 
-- `dnsMode: zerotier`：为网络托管域加 NRPT 规则，命名服务器指向 daemon 本地 DNS（loopback）
+- `dnsMode: network`：为网络托管搜索域加 NRPT 规则，命名服务器指向**网络下发的 DNS 服务器**（与 mac 的 networksetup 语义对齐；非 daemon 本地 DNS——daemon 不起 DNS 服务端）
 - `none / custom` 语义同 mac；leave/uninstall 时清理全部 NRPT 规则（按命名规则匹配本产品条目，不误删他人规则）
-- DNS 服务端在 daemon 内（平台无关），只动系统接线层（daemon/dns.rs 加 windows 分支）
+- 不起 DNS 服务端：servers 一律取网络下发/用户配置（平台无关的 netconf 计算），daemon 只动系统接线层（daemon/dns.rs 加 windows 分支）
 
 ## 安装与分发
 

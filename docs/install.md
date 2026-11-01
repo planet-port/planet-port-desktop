@@ -1,7 +1,8 @@
 # planet-port 安装指南
 
 适用平台:macOS(Apple Silicon / Intel)、Linux(amd64 / arm64,glibc≥2.31,
-Ubuntu 20.04+ / Mint 21+ 等主流发行版,需 systemd)。Windows 在发布计划中。
+Ubuntu 20.04+ / Mint 21+ 等主流发行版,需 systemd)、Windows(x86_64;纸面
+支持 Win10+,实测基线为 Win11,见下文「Windows 安装」)。
 
 安装后的系统落点(所有安装方式一致,按平台区分):
 
@@ -24,6 +25,17 @@ Ubuntu 20.04+ / Mint 21+ 等主流发行版,需 systemd)。Windows 在发布计�
 | `/etc/systemd/system/planet-portd.service` | systemd 服务(开机自启、异常退出自动拉起) |
 | `/var/lib/planet-portd` | 数据目录(unit 显式 `--config-dir`) |
 | `journalctl -u planet-portd` | 日志(journald,无需轮转配置) |
+
+**Windows**
+
+| 路径 | 内容 |
+|---|---|
+| `C:\Program Files\planet-port\planet-port.exe` | CLI(不自动写入 PATH,建议手动加入) |
+| `C:\Program Files\planet-port\planet-portd.exe` | daemon |
+| `C:\Program Files\planet-port\wintun.dll` | wintun 0.14.1(随装,再分发许可见 third_party/wintun/README.md) |
+| `C:\ProgramData\planet-port\` | 数据目录(安装时以 icacls 收敛为 SYSTEM/Administrators 可写) |
+| SCM 服务 `planetportd` | 开机自启(`start= auto`)+ 异常死亡 5s 后自拉起(`sc failure … restart/5000`) |
+| 日志 | Windows 服务 stdout 不落盘(SCM 无重定向),`service logs` 不支持 |
 
 ## 在线安装(推荐)
 
@@ -77,6 +89,88 @@ sudo PLANET_PORT_TARBALL=./planet-port_0.1.0_linux_amd64.tar.gz ./install.sh
 
 与在线安装等价,仅"下载"一步替换为本地包。
 
+## Windows 安装(x86_64)
+
+支持 Windows 10+(wintun 的系统下限,纸面),实测基线为 Windows 11
+build 26200,Win10 未实测。产物为 zip(`planet-port_<ver>_windows_x86_64.zip`,
+内含 planet-port.exe / planet-portd.exe / wintun.dll / install-offline.ps1)。
+本版本**不做代码签名**,SmartScreen 拦截属预期,见下文「故障排查」。
+
+### 在线安装
+
+管理员 PowerShell(右键开始菜单 → 终端(管理员))中,下载安装脚本后落地执行:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/planet-port/planet-port-desktop/main/scripts/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1                 # 装 latest(最新非 prerelease)
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version 0.1.3  # 指定版本:0.1.3 / v0.1.3 / 0.1.3-beta.1 均可
+```
+
+脚本行为:强制 TLS 1.2 → 管理员校验 → GitHub API 解析版本 → 下载
+`planet-port_<ver>_windows_x86_64.zip` 并解压 → 包内容完整性预检(三件套
+缺一即给全量缺件清单)→ 调起包内 `planet-port.exe service install` 完成落盘、
+ACL 收敛与服务注册。iex 管道一键流不可用(资产在 GitHub Releases),落地
+执行为准。
+
+### 离线安装
+
+把 zip 拷到目标机(U 盘/内网传输),解压后在管理员 PowerShell 中:
+
+```powershell
+cd <解压目录>
+powershell -ExecutionPolicy Bypass -File .\install-offline.ps1   # 方式一:随包脚本(含三件套完整性预检)
+.\planet-port.exe install                                        # 方式二:CLI 一键自安装(同目录须有 planet-portd.exe 与 wintun.dll)
+```
+
+两条路径最终都走 `service install`:三件套拷到 `C:\Program Files\planet-port\`,
+数据目录 `C:\ProgramData\planet-port\` 以 icacls 收敛(里面存 authtoken.secret,
+不该对 Users 开放写位),再 `sc.exe create` 注册服务 `planetportd`
+(`start= auto` 开机自启)+ `sc failure` 置失败自拉起(异常死亡 5s 后由 SCM
+重启)+ start 并等 15s 在线确认。
+
+### 与 macOS/Linux 的差异
+
+- **PATH 不自动写入**:CLI 落 `C:\Program Files\planet-port\planet-port.exe`,
+  无软链层;建议手动把该目录加入 PATH,否则需全路径调用;
+- **无 sudo,用管理员令牌**:install / uninstall / start / stop 校验管理员
+  权限,非管理员提示并退出码 2(对齐 unix 的 root 校验);
+- **升级会先停旧服务**:运行中的 daemon 锁着 exe 映像,install 自动
+  stop → delete → 等「标记待删」落定后重装(unix 靠 rename 免停的通道在
+  Windows 不存在);版本差异确认(`--yes` / 拒绝退出码 130)与升级兜底
+  (装完自动拉回此前 running 的 planet)语义不变;
+- **日志不落盘**:`service logs` 在 Windows 报「暂不支持」(退出码 1);
+  排查用 `sc.exe query planetportd` 与 `service status`;
+- **服务状态解析抗本地化**:非英文系统上 sc.exe 的标签列会本地化,CLI 以
+  STATE 数值为主解析,中文系统可用。
+
+### 卸载与验证
+
+```powershell
+& 'C:\Program Files\planet-port\planet-port.exe' service uninstall
+# 停服务 + sc delete + 删程序目录三件套 + 按前缀清理本产品 NRPT 规则;数据目录保留
+
+& 'C:\Program Files\planet-port\planet-port.exe' service status   # 运行中(端口 9998);未安装/未运行退出码 3
+& 'C:\Program Files\planet-port\planet-port.exe' info
+sc.exe query planetportd
+```
+
+### 故障排查
+
+- **SmartScreen / 下载拦截**:本版本不签名,首次运行弹 SmartScreen 属预期
+  ——点「更多信息」→「仍要运行」;下载的 zip / ps1 被标记时,在文件属性里
+  勾「解除锁定(Unblock)」后重试;脚本执行策略用 `-ExecutionPolicy Bypass`;
+- **家宽出口 UDP 过滤(卡 REQUESTING_CONFIGURATION)**:部分家宽出口对根
+  服务器的新建 UDP 会话丢弃(已建立流放行、新建流零回包),表现为客户端反复
+  发 HELLO 但一直 `REQUESTING_CONFIGURATION` 不上线;伪装热点的出口也可能
+  桥接回同一家庭宽带(tracert 二跳即家宽网关可辨)。换真实移动网络可对照
+  验证;POC 实机排查记录见
+  docs/2026-10-31-windows-poc-report.md §3.6。Windows 防火墙无需手动放行
+  (出站发起的 UDP 流由有状态检测放行回包);
+- **IPv6 已知边界**:wintun 为 L3 设备 + ARP 垫层,设备面 IPv6 帧静默丢弃
+  (计 v6drop),IPv6 地址与托管路由不安装;IPv4 数据面不受影响;
+- **wintun.dll 许可**:随包分发的 wintun 0.14.1 依官方 Prebuilt Binaries
+  License 再分发,详见 third_party/wintun/README.md 与同目录 LICENSE.txt。
+
 ## `install` 命令细节
 
 - **需 root**(`sudo`),幂等:与已装版本相同时直接重装,不产生重复项、不提示;
@@ -115,6 +209,8 @@ sudo ./target/release/planet-port install
 ```
 
 ## 升级与卸载
+
+(Windows 的升级 / 卸载 / 验证命令见上文「Windows 安装」。)
 
 - **升级**:重复执行任一安装方式即可(数据目录与 planet 登记保留,daemon 按
   registry 期望状态自动恢复);

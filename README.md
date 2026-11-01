@@ -10,7 +10,7 @@
 |---|---|---|
 | macOS | ✅ | 📐 |
 | Linux | 🚧 | 📐 |
-| Windows | 📐 | 📐 |
+| Windows | 🚧 | 📐 |
 
 ✅ 可用 · 🚧 进行中 · 📐 规划中
 
@@ -25,11 +25,11 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 | macOS（Apple Silicon / Intel） | tar.gz + 安装脚本 | ✅ 已发布可用（launchd 服务、feth 数据面、DNS 托管完整） | macOS 12+ |
 | Ubuntu / Linux Mint 等 Debian 系 | tar.gz + 安装脚本（后续 deb） | 🚧 适配中：数据面已通（Ubuntu 24.04 实机验证多 planet 上线、join/netconf/路由、跨节点连通与 LAN 直连）；服务层（launchd→systemd）与安装脚本待适配 | Ubuntu 20.04+ / Mint 20+ |
 | Debian | 同上（与 Ubuntu 共用 Linux 产物） | 🚧 同上 | Debian 11+ |
-| Windows | tar.gz + 安装脚本（后续 MSI） | 📐 规划中 | Windows 10+ |
+| Windows | zip + 安装脚本（后续 MSI） | 🚧 实现完成：wintun 数据面、SCM 服务化、CLI 全命令、DNS NRPT、install.ps1 / 离线 zip 安装链路；Win11 实机安装级验收进行中，Win10 纸面支持未实测 | Windows 10+ |
 | Termux（Android） | 待定 | 📐 待定（zerotier-one 官方亦不发布 Termux 包，仅社区仓库有） | 待定 |
 | 其它（FreeBSD / RHEL 系等） | 待定 | 📐 待定 | 待定 |
 
-> 最低版本说明：Linux 系以 Ubuntu 20.04 为构建基线（glibc 向后兼容，20.04 构建的产物可跑更新版本）；macOS 12+ 为设计目标，当前仅在 macOS 26（Apple Silicon）实测。
+> 最低版本说明：Linux 系以 Ubuntu 20.04 为构建基线（glibc 向后兼容，20.04 构建的产物可跑更新版本）；macOS 12+ 为设计目标，当前仅在 macOS 26（Apple Silicon）实测；Windows 10+ 为纸面下限（wintun 要求），当前仅在 Windows 11 实测。
 
 架构与可行性结论见 [docs/2026-10-28-desktop-port-feasibility.md](docs/2026-10-28-desktop-port-feasibility.md) ，CLI/API 设计见 [docs/superpowers/specs/2026-10-28-cli-api-design.md](docs/superpowers/specs/2026-10-28-cli-api-design.md) 。
 
@@ -45,7 +45,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 
 ## 快速开始
 
-> **系统要求**：macOS（Apple Silicon / Intel）。各系统支持程度与最低版本见上方「系统支持与最低版本」。
+> **系统要求**：macOS（Apple Silicon / Intel）；Windows（x86_64）安装见 [docs/install.md](docs/install.md) 的 Windows 章节。各系统支持程度与最低版本见上方「系统支持与最低版本」。
 
 ```bash
 # 一条命令:下载二进制 + 装软链 + 装 launchd 服务并启动

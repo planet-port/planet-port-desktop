@@ -15,7 +15,7 @@
 
 - Linux 支持范围:amd64 / arm64,glibc ≥ 2.31(systemd 发行版);SELinux enforcing(Fedora/RHEL 系)未测不在支持内。
 - `macos_x86_64` 产物已构建,尚未在 Intel Mac 实机验证。
-- Windows:POC 级验证通过(Win11 实机,三道 Gate)——**非安装级通过**,正式 daemon/服务化/安装链路未实现;最低 Win10 未验证,结论按 Win11 记录。
+- Windows:POC 级验证通过(Win11 实机,三道 Gate);**正式版已实现**(wintun 数据面、SCM 服务化、CLI 全命令、DNS NRPT、install.ps1 / 离线 zip 安装链路),**待 Win11 实机安装级 e2e 复验**——上表 Win11 行仍记「通过(POC 级)」,安装级实测后回填;纸面支持 Win10+(wintun 系统下限),未实测,结论按 Win11 记录。已知平台边界:设备面 IPv6 帧静默丢弃、IPv6 地址/托管路由不安装(L3 + ARP 垫层);Windows 服务日志不落盘(`service logs` 不支持);不做代码签名,SmartScreen 拦截属预期。
 - 与官方 zerotier-one 共存:四台均验证互不干扰(接口、端口独立)。
 
 e2e 验证脚本步骤:install → status → info → journalctl 日志 → stop/start → 开机自启 → 幂等重装 → uninstall(unit 删除、数据保留)→ 重装留运行。

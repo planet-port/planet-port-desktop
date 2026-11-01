@@ -127,6 +127,8 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 
 在线安装(`curl … install.sh | sudo bash`)与离线安装(解压发布包后 `sudo ./planet-port install`)最终都走本命令,详见 [docs/install.md](docs/install.md) 。
 
+Windows 上 `install` 同样可用:把同目录三件套(planet-port.exe / planet-portd.exe / wintun.dll)拷到 `C:\Program Files\planet-port\` 后接 `service install`;需管理员令牌(退出码语义同 root);升级时因 exe 映像锁会先停旧服务再重装(unix 的 rename 免停通道在 Windows 不存在),版本确认 / `--yes` / `-j` 约束与升级兜底(planet 自动恢复)不变。
+
 ## service 服务管理
 
 | 命令 | 说明 |
@@ -137,6 +139,24 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 | `service stop` | 需 root:macOS `launchctl kill TERM …` / Linux `systemctl stop planet-portd`(自带等优雅退出),命中 daemon 的信号优雅退出路径(逐 planet 红线收尾;**保留期望状态**,start 后自动恢复;显式 `planet-port stop` 才不恢复);`-j` 回执 ok / `{"result":"error"}`(超时,仅 macOS)/ `{"result":"warning"}`(KeepAlive 拉起,仅 macOS);Linux 恒 ok 或硬失败 exit 1 |
 | `service logs [--lines N] [--follow]` | 无需 root:macOS tail daemon 日志(`/Library/Logs/planet-portd/daemon.log`,默认末 50 行),日志文件不存在时退出码 1;Linux 转 `journalctl --no-pager -n N [-f] -u planet-portd`(journald 无"文件缺失"概念,unit 不存在时 journalctl 报错原样透传);`--follow` 持续跟踪,Ctrl+C 退出 |
 | `service status` | 无需 root:尊重 `PLANET_PORT_URL`;ping `/version` 成功 → `运行中(端口 N)`(N 取自 port 文件,**退出码 0**);token 校验失败 → 退出码 1;不在线时按服务定义文件是否存在(macOS plist / Linux unit)区分「未安装」/「已安装未运行」并给出 launchctl / `systemctl is-active` 状态摘要,**退出码 3** |
+
+### Windows(SCM 服务 planetportd)
+
+服务经 `sc.exe` 管理:程序目录 `C:\Program Files\planet-port\`,数据目录
+`C:\ProgramData\planet-port\`(安装时以 icacls 收敛 SYSTEM/Administrators 可写)。
+特权校验为管理员令牌,语义对齐 unix root——install / uninstall / start / stop
+需管理员,非管理员提示并退出码 2;status / logs 无需管理员。
+
+| 命令 | Windows 行为 |
+|---|---|
+| `service install` | 三件套(CLI / daemon / wintun.dll)落 `C:\Program Files\planet-port\`(exe 同目录找到 wintun.dll 才装,缺位报错引导);已装旧服务先 stop → delete 并等「标记待删」落定再重装;`sc create`(binPath 内嵌 `--service --config-dir`,`start= auto` 开机自启)+ `sc failure … reset= 86400 actions= restart/5000`(异常死亡 5s 后 SCM 拉起,对齐 KeepAlive)+ start 等 15s 在线(超时提示 `sc.exe query planetportd`,服务已建不算安装失败) |
+| `service uninstall` | stop + `sc delete` + 删程序目录三件套与目录本身 + 按 Comment 前缀 `planet-port:` 清理本产品 NRPT 规则(不触碰他产品规则);**数据目录保留**,提示已保留路径 |
+| `service start` | 服务 RUNNING 时先 stop 再 start(幂等重启,对齐 kickstart -k);15s 未在线 `-j` 回 `{"result":"error"}` |
+| `service stop` | `sc stop` 后等真正 STOPPED(30s,超时 taskkill /F 强杀);强杀属异常死亡,会触发 failure 策略 5s 拉回——等满该窗口如实报告,被拉回时 `-j` 回 `{"result":"warning"}`(对齐 macOS) |
+| `service logs` | **不支持**:Windows 服务 stdout/stderr 不落盘(SCM 无重定向),报错退出码 1 |
+| `service status` | 在线判定与退出码同 mac/linux;不在线时按 `sc query` 区分「未安装」(查无此服务)/「已安装未运行」(附 SCM 状态名与 pid),退出码 3;sc 输出标签在非英文系统本地化,按 STATE 数值为主解析 |
+
+卸载:`& 'C:\Program Files\planet-port\planet-port.exe' service uninstall`。安装路径详见 [docs/install.md](docs/install.md) 的 Windows 章节。
 
 ## 行为说明
 
@@ -161,7 +181,7 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 |---|---|
 | 0 | 成功 |
 | 1 | 运行错误(API 4xx/5xx、IO 错误) |
-| 2 | 用法错误(非法参数、未知 set key)、planet 歧义(409 + 候选列表)、service 组需 root(install/uninstall/start/stop 未以 root 运行) |
+| 2 | 用法错误(非法参数、未知 set key)、planet 歧义(409 + 候选列表)、service 组需 root(install/uninstall/start/stop 未以 root 运行;Windows 对应管理员令牌缺失,同码) |
 | 3 | daemon 不在线,提示 `planet-portd is not running (try: planet-port service start)` |
 | 130 | 用户中止:`remove` 确认拒绝 |
 
