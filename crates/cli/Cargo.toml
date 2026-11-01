@@ -18,3 +18,12 @@ rust-i18n = "3"
 sys-locale = "0.3.2"
 # 时间戳本地化(events TS / planet show revision / share expires_at);MIT/Apache-2.0
 chrono = "0.4"
+
+# Windows 服务管理(service/windows.rs):管理员令牌判定(TokenElevation)。
+# 仅 Windows 目标引入,MIT/Apache-2.0;版本对齐 daemon/zt-core 既有 0.59
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+] }

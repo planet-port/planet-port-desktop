@@ -1,18 +1,23 @@
 //! `planet-port service <install|uninstall|start|stop|status|logs>` 服务管理。
 //!
-//! 平台服务管理(macOS launchd / Linux systemd)收敛在同名子模块 macos/linux
-//! 中,经 cfg 编译期选择;本模块只放平台无关的命令分发与公共流程(HTTP 探测、
-//! root 校验、原子拷贝、进度输出)。平台接口见 macos.rs/linux.rs 头部注释。
+//! 平台服务管理(macOS launchd / Linux systemd / Windows SCM)收敛在同名子
+//! 模块 macos/linux/windows 中,经 cfg 编译期选择;本模块只放平台无关的命令
+//! 分发与公共流程(HTTP 探测、root/管理员校验、原子拷贝、进度输出)。平台
+//! 接口见 macos.rs/linux.rs/windows.rs 头部注释。
 
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "windows")]
+mod windows;
 
 #[cfg(target_os = "macos")]
 use macos as platform;
 #[cfg(target_os = "linux")]
 use linux as platform;
+#[cfg(target_os = "windows")]
+use windows as platform;
 
 // install.rs 依赖的平台落盘入口与 CLI 安装路径(其余常量仅平台内部使用)
 pub(crate) use platform::{install_cli, CLI_BIN};
@@ -89,12 +94,21 @@ pub(crate) fn json_done(json: bool, v: serde_json::Value) {
 
 // ---- 公共流程 ----
 
+// 特权校验按平台分叉:unix 看 euid(=0);Windows 无 root 概念,等价校验是
+// 管理员令牌,收敛在平台实现(退出码 2 对齐)。libc::geteuid 在 windows 目标
+// 不存在,不能共用一支
+#[cfg(not(target_os = "windows"))]
 pub(crate) fn require_root() {
     // euid 判定须真实:root 判断不准会误导安装失败原因(libc 已是 workspace 依赖)
     if unsafe { libc::geteuid() } != 0 {
         eprintln!("{}", rust_i18n::t!("cli.service.needRoot"));
         std::process::exit(2);
     }
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn require_root() {
+    platform::require_admin();
 }
 
 /// install.rs 步骤 4 转发:服务安装(装载/拉起)交给平台实现
@@ -119,7 +133,10 @@ pub(crate) fn copy_exe(src: &Path, dst: &str) {
 }
 
 /// 定位与当前可执行文件同目录的 daemon 二进制:CLI 运行时取兄弟
-/// planet-portd,从 daemon 自身运行时用自身;找不到则报错退出 1
+/// planet-portd,从 daemon 自身运行时用自身;找不到则报错退出 1。
+/// 仅 unix 平台:Windows 二进制带 .exe 后缀,按无后缀名比对命不中,
+/// windows.rs 另有同构实现
+#[cfg(not(target_os = "windows"))]
 pub(crate) fn locate_daemon_src() -> std::path::PathBuf {
     let exe = std::env::current_exe().unwrap_or_else(|e| {
         eprintln!("{}", rust_i18n::t!("cli.service.exeNotFound", e = e));

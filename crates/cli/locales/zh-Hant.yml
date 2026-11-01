@@ -72,6 +72,27 @@
   cli.service.systemdState: "  systemd 狀態: %{state}"
   cli.service.unitEnabled: "已設定開機自動啟動"
 
+  # ---- service 子命令(Windows 平台,sc.exe 後端) ----
+  cli.service.needAdmin: "該操作需要系統管理員權限,請以系統管理員身分重新執行"
+  cli.service.winBinaryMissing: "在 %{dir} 未找到 %{name}(安裝需同目錄提供 planet-port.exe / planet-portd.exe / wintun.dll)"
+  cli.service.wintunMissing: "在 %{dir} 未找到 wintun.dll,請將其與 planet-port.exe 放在同一目錄後重試"
+  cli.service.wintunCopied: "已隨裝 wintun.dll → %{path}"
+  cli.service.aclFailed: "收斂資料目錄 %{dir} 存取權限失敗: %{e}"
+  cli.service.scFailed: "sc.exe %{args} 失敗: %{e}"
+  cli.service.scExecFailed: "無法執行 sc.exe: %{e}"
+  cli.service.winInstalled: "已安裝 Windows 服務 %{name}"
+  cli.service.stoppedForReinstall: "已停止舊服務 %{name}(重裝)"
+  cli.service.deletePending: "舊服務 %{name} 處於待刪除狀態(控制代碼未釋放),請稍後重試或重新開機後再裝"
+  cli.service.startTimeoutWin: "啟動逾時(15s),daemon 未應答;可用 `sc.exe query %{name}` 檢視服務狀態"
+  cli.service.stopTimeoutWin: "停止逾時(30s),服務仍未結束;可用 `sc.exe query %{name}` 檢視服務狀態"
+  cli.service.forceKilled: "服務未在期限內結束,已強制結束處理程序"
+  cli.service.failureRestarted: "處理程序被強制結束,但失敗復原策略已將其重新拉起"
+  cli.service.winRemoved: "已刪除 Windows 服務 %{name}(程式目錄 %{dir})"
+  cli.service.winState: "  服務狀態: %{state}"
+  cli.service.logsUnsupported: "Windows 服務日誌未落盤,`service logs` 暫不支援"
+  cli.service.nrptCleaned: "已清理本產品 NRPT 規則(前綴 %{prefix})"
+  cli.service.nrptCleanFailed: "清理 NRPT 規則失敗: %{e}"
+
   # ---- 定位类错误(人話改寫,見 main.rs die)----
   cli.error.planetAmbiguous: "error: 登記了多個 planet,請用 --planet 指定目標:"
   cli.error.noPlanetRunning: "error: 尚未登記任何 planet,請先添加:planet-port add <file|URL>"
