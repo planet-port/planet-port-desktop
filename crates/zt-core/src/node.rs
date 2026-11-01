@@ -30,7 +30,7 @@
 //!    驱动线程每圈 `try_recv` 排空;读线程忽略 WSAECONNRESET(此前 send 到
 //!    某地址收到 ICMP port-unreachable 后下一次 recv 必报,ZeroTier 官方同款)。
 //! 3. `udp_fd`:Unix `as_raw_fd()`;Windows `as_raw_socket()`(winsock SOCKET,
-//!    收发共用同一 socket,句柄值一致)。
+//!    收发同一底层 socket,读线程侧句柄值为 `try_clone` 复制件)。
 //! 4. `multicastSubscribe` 的 ADI 形参在 Win32 绑定下是 `c_ulong`(32 位)。
 
 #[cfg(not(windows))]
@@ -64,6 +64,7 @@ const PHY_BUF: usize = (zt::ZT_MAX_PHYSPAYLOAD + zt::ZT_MAX_HEADROOM) as usize;
 /// 组播订阅扫描周期(ms)
 const MCAST_SCAN_MS: i64 = 5000;
 /// poll 单次阻塞上限(ms)
+#[cfg(not(windows))]
 const POLL_MAX_MS: i32 = 500;
 /// 唤醒等待上限(ms):Windows 无 poll,recv_timeout 等价原 poll 阻塞上限
 #[cfg(windows)]
@@ -311,7 +312,7 @@ impl NodeHandle {
         // Windows:接收端克隆给读线程;发送端留在 Inner 供 wire_send(同一 SOCKET)
         #[cfg(windows)]
         let udp_rd = udp.try_clone().map_err(NodeError::Io)?;
-        // winsock SOCKET(收发共用同一 socket,句柄值一致);须在读线程 move 走克隆前取值
+        // winsock SOCKET(收发同一底层 socket,读线程侧句柄值为复制件);须在读线程 move 走克隆前取值
         #[cfg(windows)]
         let local_socket = udp_rd.as_raw_socket() as i64;
         let (frame_tx, frame_rx) = channel();
@@ -939,6 +940,8 @@ fn run_udp_reader(
     wake: Sender<u8>,
 ) {
     let mut buf = vec![0u8; PHY_BUF];
+    // 兜底:克隆端不继承读超时的平台差异下,这里再设一次,保证关停可被响应
+    let _ = sock.set_read_timeout(Some(Duration::from_millis(UDP_READ_TIMEOUT_MS)));
     while running.load(Ordering::SeqCst) {
         match sock.recv_from(&mut buf) {
             Ok((len, from)) if len > 0 => {
