@@ -30,10 +30,10 @@ pub(crate) const CLI_BIN: &str = r"C:\Program Files\planet-port\planet-port.exe"
 /// (Task 9 打包负责把目标架构的 dll 放进发布包,与本处约定配套)
 const WINTUN_DLL: &str = r"C:\Program Files\planet-port\wintun.dll";
 
-/// 本产品 NRPT 规则的命名前缀(uninstall 清理由此界定「自家的」规则)。
-/// TODO(Task 8 DNS NRPT):规则命名约定落地后回填;空串 = 未定义,清理
-/// 直接跳过——宁可残留也不许按错误前缀误删他产品的规则
-const NRPT_NS_PREFIX: &str = "";
+/// 本产品 NRPT 规则的归属前缀:daemon 以 `-Comment "planet-port:<nwid>"`
+/// 建规则(daemon dns/win.rs 同一约定,勿单方改动),uninstall 清理按
+/// Comment 前缀匹配——Namespace 是业务域名,不能用来识别归属
+const NRPT_COMMENT_PREFIX: &str = "planet-port:";
 
 /// SCM 查询 STATE 数值 → 展示名(仅 offline_diag 展示用)
 fn state_name(code: u32) -> &'static str {
@@ -534,22 +534,19 @@ fn missing_bin_exit(name: &str) -> ! {
     std::process::exit(1);
 }
 
-/// NRPT 残留清理(uninstall):直连 PowerShell 的 NRPT cmdlet 按「命名前缀
-/// 属于本产品」清理,不走 daemon 的 DNS 清理接口(服务此刻已停,接口不可达
-/// 也不可靠)。前缀未定(Task 8 未落地)时整体跳过
+/// NRPT 残留清理(uninstall):直连 PowerShell 的 NRPT cmdlet 按「Comment
+/// 前缀属于本产品」清理,不走 daemon 的 DNS 清理接口(服务此刻已停,接口
+/// 不可达也不可靠)。前缀匹配保证绝不误删他产品的 NRPT 规则
 fn cleanup_nrpt_rules(json: bool) {
-    if NRPT_NS_PREFIX.is_empty() {
-        return; // TODO(Task 8 DNS NRPT):回填 NRPT_NS_PREFIX 后即生效
-    }
     let ps = format!(
-        "Get-DnsClientNrptRule | Where-Object {{ $_.Namespace -like '{NRPT_NS_PREFIX}*' }} | Remove-DnsClientNrptRule -Force"
+        "Get-DnsClientNrptRule | Where-Object {{ $_.Comment -like '{NRPT_COMMENT_PREFIX}*' }} | Remove-DnsClientNrptRule -Force"
     );
     match Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
         .output()
     {
         Ok(o) if o.status.success() => {
-            progress(json, rust_i18n::t!("cli.service.nrptCleaned", prefix = NRPT_NS_PREFIX).to_string());
+            progress(json, rust_i18n::t!("cli.service.nrptCleaned", prefix = NRPT_COMMENT_PREFIX).to_string());
         }
         Ok(o) => {
             let err = if o.stderr.is_empty() { &o.stdout } else { &o.stderr };
