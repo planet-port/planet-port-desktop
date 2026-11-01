@@ -236,6 +236,9 @@ fn acquire_singleton(dir: &Path) -> Result<SingletonGuard, SingletonError> {
 /// 释放:句柄存活至进程结束,对象随最后一个句柄消失,进程崩溃时由内核
 /// 回收——与 flock「锁随进程退出释放」一致。Global\ 前缀保证服务上下文
 /// (Task 6 的 SCM,session 0)与控制台直跑(用户 session)互斥到同一把锁。
+/// 已知语义分叉:unix 锁按 config 目录(<config>/daemon.lock),不同
+/// config-dir 的实例可并存;Windows 这把锁按机器互斥——单 daemon/机是
+/// 本产品的安装形态,属有意收敛而非疏漏。
 #[cfg(windows)]
 fn acquire_singleton(_dir: &Path) -> Result<SingletonGuard, SingletonError> {
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};

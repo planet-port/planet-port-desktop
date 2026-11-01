@@ -9,6 +9,10 @@
 //! - daemon 启动残留清理 / cli uninstall 全清:Comment 前缀
 //!   `planet-port:` 匹配,绝不触碰他产品的 NRPT 规则。
 //!
+//! 已知限制:规则按 nwid(而非 planet)标记归属——两个 planet 登记同一
+//! nwid 时 leave 会跨 owner 删规则。产品形态下 nwid 全局唯一,不构成实际
+//! 冲突;若未来支持 planet 间共享网络需把 owner 纳入 Comment。
+//!
 //! # 与 posix 的差异
 //!
 //! - NRPT 是「按域分流」的增量规则,不改写任何既有 resolver 配置,没有

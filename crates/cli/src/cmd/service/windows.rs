@@ -124,8 +124,10 @@ pub(crate) fn install(json: bool) {
     ]);
 
     // 4. 失败自拉起(KeepAlive 语义):进程异常死亡 5s 后由 SCM 重启;
-    //    reset= 86400 = 失败计数按天清零
-    sc(&["failure", SERVICE_NAME, "reset=", "86400", "actions=", "restart/5000"]);
+    //    reset= 86400 = 失败计数按天清零。actions= 最多三档,分别对应第
+    //    1/2/次及以后的失败——三档全给 restart 才是「每次异常退出都拉起」,
+    //    只给一档则第二次崩溃起 SCM 不再动作
+    sc(&["failure", SERVICE_NAME, "reset=", "86400", "actions=", "restart/5000/restart/5000/restart/5000"]);
 
     // 5. 拉起并等应答(bootstrap 后验在线,同 macos/linux)
     sc(&["start", SERVICE_NAME]);
