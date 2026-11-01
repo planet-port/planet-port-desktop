@@ -138,13 +138,52 @@ pub(super) fn apply(
         return;
     }
     let Some(domain) = domain.and_then(norm_domain) else {
-        events.push(
-            planet_id,
-            "dnsFailed",
-            &format!(
-                "网络 {nwid:016x} NRPT 规则未建立:网络未下发 DNS 搜索域,Windows 无法按域分流"
-            ),
-        );
+        // 域撤销时清残留,避免旧规则持续分流:控制器先下发 domain+servers
+        // 建过规则、后续撤掉 domain 只留 servers 时,若不清理,旧规则仍把旧
+        // 域分流到旧服务器。标记里无本网络记录则系统本就无规则,维持原状。
+        let recs = read_records(config_dir);
+        let stale = recs
+            .iter()
+            .find(|r| r.planet_id == planet_id && r.nwid == nwid);
+        if let Some(stale) = stale {
+            match remove_rules_of_nwid(nwid) {
+                Ok(()) => {
+                    let recs: Vec<NrptRecord> = recs
+                        .iter()
+                        .filter(|r| !(r.planet_id == planet_id && r.nwid == nwid))
+                        .cloned()
+                        .collect();
+                    if recs.is_empty() {
+                        let _ = fs::remove_file(marker_path(config_dir));
+                    } else {
+                        let _ = write_records(config_dir, &recs);
+                    }
+                    events.push(
+                        planet_id,
+                        "dnsFailed",
+                        &format!(
+                            "网络 {nwid:016x} 域 {} 的 NRPT 残留规则已移除:网络未再下发 DNS 搜索域,Windows 无法按域分流",
+                            stale.domain
+                        ),
+                    );
+                }
+                Err(m) => events.push(
+                    planet_id,
+                    "dnsFailed",
+                    &format!(
+                        "网络 {nwid:016x} NRPT 残留规则清理失败(网络未下发 DNS 搜索域):{m}"
+                    ),
+                ),
+            }
+        } else {
+            events.push(
+                planet_id,
+                "dnsFailed",
+                &format!(
+                    "网络 {nwid:016x} NRPT 规则未建立:网络未下发 DNS 搜索域,Windows 无法按域分流"
+                ),
+            );
+        }
         return;
     };
     let recs = read_records(config_dir);
