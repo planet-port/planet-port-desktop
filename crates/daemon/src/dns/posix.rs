@@ -1,5 +1,6 @@
 //! macOS 系统 resolver 覆写(networksetup):网络本地配置 `dnsMode != none` 的
 //! 网络在 netconf 应用时把 DNS 写进主网络服务,离开网络/停实例时还原。
+//! linux 无 networksetup,命令失败如实记 `dnsFailed`(与分叉前行为一致)。
 //!
 //! # 约束与简化
 //!
@@ -177,7 +178,7 @@ fn get_dnsservers(service: &str) -> Result<Vec<String>, String> {
 /// 调用)。servers 为空不动系统(调用方对空 servers 走 `restore`);目标状态
 /// 与当前一致时跳过(netconf 反复 ConfigUpdate 不应反复改写系统)。失败只记
 /// `dnsFailed`。
-pub fn apply(
+pub(super) fn apply(
     config_dir: &Path,
     events: &Ring,
     planet_id: &str,
@@ -251,7 +252,7 @@ pub fn apply(
 /// `spawn_blocking` 内调用)。
 /// `nwid = None` 表示整个 planet(停止/删除,任意 nwid 的记录都归它)。
 /// owner 不匹配(已被后应用者覆盖)→ 不动系统。
-pub fn restore(
+pub(super) fn restore(
     config_dir: &Path,
     events: &Ring,
     planet_id: &str,
@@ -293,7 +294,7 @@ pub fn restore(
 /// 启动早期残留清理(kill -9 未走 stop 路径):无条件还原并删标记文件。
 /// 在恢复 planet 之前调用,避免恢复后的实例又被旧记录干扰。
 /// 调用方须持 `dns_gate` 并在 `spawn_blocking` 内执行。
-pub fn restore_leftover(config_dir: &Path, events: &Ring) {
+pub(super) fn restore_leftover(config_dir: &Path, events: &Ring) {
     let Some(rec) = read_record(config_dir) else {
         return;
     };

@@ -173,17 +173,19 @@ impl NodeSink for DaemonSink {
                 // DNS 写系统 resolver:dnsMode=network 用 netconf 下发的
                 // dns_servers,=custom 用本地配置;servers 为空(none /
                 // network 未下发 / custom 无配置)即「本网络不再托管」,若当前
-                // 标记正归本网络所有则立即还原。networksetup 阻塞且可能失败,
-                // 放 spawn_blocking 执行、失败仅记事件;全程持 dns_gate,与
-                // net_leave / stop 的 restore 及其它网络的 apply 互斥(标记
-                // 文件的 check-then-act 不能交叠)。锁只包 DNS 操作,设备面与
-                // 冲突扫描已在上方完成,不受影响
+                // 标记正归本网络所有则立即还原。domain 是网络下发的搜索域,
+                // 仅 Windows NRPT(按域分流)消费,posix 忽略。networksetup /
+                // powershell 阻塞且可能失败,放 spawn_blocking 执行、失败仅记
+                // 事件;全程持 dns_gate,与 net_leave / stop 的 restore 及其它
+                // 网络的 apply 互斥(标记文件的 check-then-act 不能交叠)。
+                // 锁只包 DNS 操作,设备面与冲突扫描已在上方完成,不受影响
                 let nl_dns = lock(&self.net_local).get(&nwid).cloned();
                 let servers: Vec<String> = match nl_dns.as_ref().map(|n| n.dns_mode.as_str()) {
                     Some("network") => cfg.dns_servers.iter().map(|s| s.to_string()).collect(),
                     Some("custom") => nl_dns.map(|n| n.custom_dns).unwrap_or_default(),
                     _ => Vec::new(),
                 };
+                let dns_domain = cfg.dns_domain.clone();
                 let app = self.app.clone();
                 let pid = self.planet_id.clone();
                 let events = Arc::clone(&self.events);
@@ -200,7 +202,14 @@ impl NodeSink for DaemonSink {
                         .ok();
                     } else {
                         tokio::task::spawn_blocking(move || {
-                            dns::apply(&app.config_dir, &events, &pid, nwid, &servers);
+                            dns::apply(
+                                &app.config_dir,
+                                &events,
+                                &pid,
+                                nwid,
+                                dns_domain.as_deref(),
+                                &servers,
+                            );
                         })
                         .await
                         .ok();
