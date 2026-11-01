@@ -24,13 +24,24 @@ param(
 $ErrorActionPreference = "Stop"
 $repo = "planet-port/planet-port-desktop"
 
-# 1. 管理员检查(service install 内部同样校验,提前拦给明确提示)
+# 0. 强制 TLS 1.2:Windows 10 旧版自带的 .NET 默认安全协议不含 TLS1.2,
+#    直连 GitHub 会以难排查的连接错误失败;显式指定幂等无害
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# 1. 参数校验(-Version 格式与 release.sh 的 TAG 正则对齐,拦截手滑版本号)
+if ($Version -ne "latest" -and $Version -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$') {
+    Write-Error "-Version 格式不合法:'$Version'。示例:0.1.3 / v0.1.3 / 0.1.3-beta.1(或省略该参数装 latest)"
+}
+# 容忍 v 前缀:资产命名统一用不带 v 的纯版本号
+$Version = $Version.TrimStart('v')
+
+# 2. 管理员检查(service install 内部同样校验,提前拦给明确提示)
 $id = [Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Error "需要管理员权限:请在管理员 PowerShell 中运行(右键开始菜单 -> 终端(管理员))"
 }
 
-# 2. 解析版本(GitHub API;latest 取最新非 prerelease,beta 不在此列)
+# 3. 解析版本(GitHub API;latest 取最新非 prerelease,beta 不在此列)
 if ($Version -eq "latest") {
     $rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest"
     $Version = $rel.tag_name.TrimStart('v')
@@ -38,7 +49,7 @@ if ($Version -eq "latest") {
 $asset = "planet-port_${Version}_windows_x86_64.zip"
 $url = "https://github.com/$repo/releases/download/v${Version}/${asset}"
 
-# 3. 下载解压
+# 4. 下载解压
 $tmp = Join-Path $env:TEMP "planet-port-install"
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory $tmp | Out-Null
@@ -47,14 +58,18 @@ Invoke-WebRequest -UseBasicParsing $url -OutFile (Join-Path $tmp $asset)
 Expand-Archive (Join-Path $tmp $asset) (Join-Path $tmp "pkg")
 $pkg = Join-Path $tmp "pkg"
 
-# 4. 包内容完整性预检(缺件时 service install 也会报,这里提前给全量提示)
+# 5. 包内容完整性预检(缺件时 service install 也会报,这里收集齐后给全量提示)
+$missing = @()
 foreach ($f in @("planet-port.exe", "planet-portd.exe", "wintun.dll")) {
     if (-not (Test-Path (Join-Path $pkg $f))) {
-        Write-Error "包内容不完整:缺少 $f(Release 资产可能未上传齐)"
+        $missing += $f
     }
 }
+if ($missing.Count -gt 0) {
+    Write-Error "包内容不完整:缺少 $($missing -join ', ')(Release 资产可能未上传齐)"
+}
 
-# 5. 调起服务安装:从解压目录运行,service install 负责三件套拷贝到
+# 6. 调起服务安装:从解压目录运行,service install 负责三件套拷贝到
 #    C:\Program Files\planet-port、数据目录 ACL、sc create/failure/start
 & (Join-Path $pkg "planet-port.exe") service install
 if ($LASTEXITCODE -ne 0) {

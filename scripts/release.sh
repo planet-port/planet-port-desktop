@@ -37,9 +37,10 @@ build_target() { # $1=target
         *-linux-*) cargo zigbuild --release --target "$1" -p planet-port -p daemon ;;
         x86_64-pc-windows-msvc)
             # Task 1 探针结论:xwin(msvc STL 头 + lld-link)在本机可链接;
-            # llvm 的 clang/lld-link 不在默认 PATH,须显式前置
-            export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
-            cargo xwin build --release --target "$1" -p planet-port -p daemon ;;
+            # llvm 的 clang/lld-link 不在默认 PATH,须显式前置。
+            # 子 shell 内 export,避免污染后续目标的 PATH
+            (export PATH="/opt/homebrew/opt/llvm/bin:$PATH"; \
+                cargo xwin build --release --target "$1" -p planet-port -p daemon) ;;
         *)         cargo build --release --target "$1" -p planet-port -p daemon ;;
     esac
 }

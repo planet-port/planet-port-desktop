@@ -25,11 +25,15 @@ if (-not (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Securit
     Write-Error "需要管理员权限:请在管理员 PowerShell 中运行(右键开始菜单 -> 终端(管理员))"
 }
 
-# 2. 同目录三件套完整性预检
+# 2. 同目录三件套完整性预检(收集齐后一次性给出全量缺件清单)
+$missing = @()
 foreach ($f in @("planet-port.exe", "planet-portd.exe", "wintun.dll")) {
     if (-not (Test-Path (Join-Path $PSScriptRoot $f))) {
-        Write-Error "包内容不完整:当前目录缺少 $f(请解压完整 zip 后重试)"
+        $missing += $f
     }
+}
+if ($missing.Count -gt 0) {
+    Write-Error "包内容不完整:当前目录缺少 $($missing -join ', ')(请解压完整 zip 后重试)"
 }
 
 # 3. 调起服务安装:同目录运行,service install 负责三件套拷贝到
