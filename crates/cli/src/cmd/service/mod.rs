@@ -151,7 +151,9 @@ pub(crate) fn locate_daemon_src() -> std::path::PathBuf {
             "{}",
             rust_i18n::t!(
                 "cli.service.daemonMissing",
-                dir = exe.parent().map(|p| p.display().to_string()).unwrap_or_default()
+                dir = exe.parent().map(|p| p.display().to_string()).unwrap_or_default(),
+                // 二进制名由调用方给:Windows 侧带 .exe 后缀(与实际文件名一致)
+                name = "planet-portd"
             )
         );
         std::process::exit(1);

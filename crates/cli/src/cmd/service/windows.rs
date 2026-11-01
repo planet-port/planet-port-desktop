@@ -522,7 +522,7 @@ fn missing_daemon_exit() -> ! {
     let dir = std::env::current_exe().ok()
         .and_then(|e| e.parent().map(|p| p.display().to_string()))
         .unwrap_or_default();
-    eprintln!("{}", rust_i18n::t!("cli.service.daemonMissing", dir = dir));
+    eprintln!("{}", rust_i18n::t!("cli.service.daemonMissing", dir = dir, name = "planet-portd.exe"));
     std::process::exit(1);
 }
 

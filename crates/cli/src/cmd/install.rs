@@ -59,13 +59,16 @@ pub fn run(yes: bool, json: bool) {
         std::process::exit(1);
     });
     let dir = exe.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-    let cli_src = if exe.file_name().and_then(|n| n.to_str()) == Some("planet-port") {
+    let cli_src = if exe_stem(&exe) == Some("planet-port") {
         exe.clone()
     } else {
-        dir.join("planet-port")
+        dir.join(exe_name("planet-port"))
     };
     let daemon_src = sibling_daemon(&exe);
-    for (name, p) in [("planet-port", &cli_src), ("planet-portd", &daemon_src)] {
+    for (name, p) in [
+        (exe_name("planet-port"), &cli_src),
+        (exe_name("planet-portd"), &daemon_src),
+    ] {
         if !p.is_file() {
             eprintln!(
                 "{}",
@@ -120,10 +123,38 @@ fn installed_version() -> Option<String> {
 
 /// CLI 同目录的 daemon 二进制;从 daemon 自身(planet-portd)运行时用自身
 fn sibling_daemon(exe: &Path) -> PathBuf {
-    if exe.file_name().and_then(|n| n.to_str()) == Some("planet-portd") {
+    if exe_stem(exe) == Some("planet-portd") {
         return exe.to_path_buf();
     }
-    exe.parent().map(|p| p.to_path_buf()).unwrap_or_default().join("planet-portd")
+    exe.parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default()
+        .join(exe_name("planet-portd"))
+}
+
+/// 二进制文件名按平台补 .exe 后缀(Windows 二进制带后缀,按无后缀名比对/
+/// 拼接命不中;与 service::windows::locate_sibling 的既有做法一致)
+#[cfg(target_os = "windows")]
+fn exe_name(stem: &str) -> String {
+    format!("{stem}.exe")
+}
+
+#[cfg(not(target_os = "windows"))]
+fn exe_name(stem: &str) -> String {
+    stem.to_string()
+}
+
+/// 当前可执行文件的 stem(仅 Windows 剥 .exe;unix 无后缀,原样返回)
+#[cfg(target_os = "windows")]
+fn exe_stem(exe: &Path) -> Option<&str> {
+    exe.file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.strip_suffix(".exe").unwrap_or(n))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn exe_stem(exe: &Path) -> Option<&str> {
+    exe.file_name().and_then(|n| n.to_str())
 }
 
 /// 安装前 running 的 planet id 清单;daemon 不在线/查询失败返回空

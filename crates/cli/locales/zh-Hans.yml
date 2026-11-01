@@ -20,7 +20,7 @@
   # ---- service 子命令 ----
   cli.service.needRoot: "该操作需要 root 权限,请加 sudo 重新运行"
   cli.service.exeNotFound: "无法定位当前可执行文件: %{e}"
-  cli.service.daemonMissing: "在 %{dir} 旁未找到 daemon 二进制 planet-portd,请先构建 daemon"
+  cli.service.daemonMissing: "在 %{dir} 旁未找到 daemon 二进制 %{name},请先构建 daemon"
   cli.service.mkdirFailed: "无法创建目录 %{dir}: %{e}"
   cli.service.chmodFailed: "设置 %{path} 权限失败: %{e}"
   cli.service.writePlistFailed: "写入 %{path} 失败: %{e}"

@@ -15,7 +15,7 @@
 
   cli.service.needRoot: "This operation requires root; re-run with sudo"
   cli.service.exeNotFound: "Failed to locate the current executable: %{e}"
-  cli.service.daemonMissing: "daemon binary planet-portd not found next to %{dir}; build the daemon first"
+  cli.service.daemonMissing: "daemon binary %{name} not found next to %{dir}; build the daemon first"
   cli.service.mkdirFailed: "Failed to create directory %{dir}: %{e}"
   cli.service.chmodFailed: "Failed to set permissions on %{path}: %{e}"
   cli.service.writePlistFailed: "Failed to write %{path}: %{e}"

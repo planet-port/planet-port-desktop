@@ -7,8 +7,8 @@
 # 职责切分(与 mac/linux 的 install.sh 对齐):本脚本只负责「下载 + 解压 +
 # 调起」,落盘/sc create/ACL/失败自拉起全部由 `planet-port service install`
 # 自带(Windows 实现在 crates/cli/src/cmd/service/windows.rs),本脚本不重复
-# sc.exe 逻辑。注意顶层 `planet-port install` 在 Windows 下因 .exe 后缀定位
-# 问题不可用,必须走 `service install` 子命令。
+# sc.exe 逻辑(顶层 `planet-port install` 在 Windows 亦可用,本脚本选
+# `service install` 是因为下载解压后无需 root 二次确认、错误提示更聚焦)。
 #
 # 落点(与 windows.rs 约定一致):
 #   程序 C:\Program Files\planet-port\
@@ -32,8 +32,9 @@ $repo = "planet-port/planet-port-desktop"
 if ($Version -ne "latest" -and $Version -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$') {
     Write-Error "-Version 格式不合法:'$Version'。示例:0.1.3 / v0.1.3 / 0.1.3-beta.1(或省略该参数装 latest)"
 }
-# 容忍 v 前缀:资产命名统一用不带 v 的纯版本号
-$Version = $Version.TrimStart('v')
+# 容忍 v 前缀:资产命名统一用不带 v 的纯版本号;校验用的 -notmatch 不区分
+# 大小写,`-Version V0.1.3` 能过校验,这里两种前缀都得剥,否则拼资产名 404
+$Version = $Version.TrimStart('v', 'V')
 
 # 2. 管理员检查(service install 内部同样校验,提前拦给明确提示)
 $id = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -44,7 +45,7 @@ if (-not (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Securit
 # 3. 解析版本(GitHub API;latest 取最新非 prerelease,beta 不在此列)
 if ($Version -eq "latest") {
     $rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest"
-    $Version = $rel.tag_name.TrimStart('v')
+    $Version = $rel.tag_name.TrimStart('v', 'V')
 }
 $asset = "planet-port_${Version}_windows_x86_64.zip"
 $url = "https://github.com/$repo/releases/download/v${Version}/${asset}"
