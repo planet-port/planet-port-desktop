@@ -39,6 +39,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 - **多网络同时连接**：每 planet 独立身份与数据目录；join / leave、跨 planet 聚合查询（网络 / peers / moons）
 - **默认路由与 DNS 自由掌控**：`routeViaZeroTier` 开关、`dnsMode=none|network|custom`，全部陈述式配置，脚本友好
 - **Moon 支持**：orbit / deorbit / 导入 `.moon` 文件
+- **身份模式**：`planet-port identity` 查看各 planet 身份绑定；`identity import` 导入官方 ZeroTier 身份（自动停禁官方服务，沿用原节点地址与网络成员资格）；`identity use <planet> global|own` 切换全局/独立身份绑定
 - **服务化常驻**：launchd 一键安装，开机自启、崩溃自动拉起；SIGTERM 优雅退出（逐 planet 红线收尾，保留期望状态，`service start` 后自动恢复）；重启后自动 re-join 已加入网络
 - **事件日志**：`events --follow` 按 ts 游标增量跟踪状态变更
 - **多语言 CLI**：简中 / 繁中 / 英语，跟随系统语言自动选择（无需配置），语言文件可扩展
