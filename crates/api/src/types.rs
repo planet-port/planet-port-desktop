@@ -124,6 +124,27 @@ pub struct ApiError {
     pub candidates: Option<Vec<String>>,
 }
 
+/// GET /identity 的全局身份段
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalIdentity {
+    pub exists: bool,
+    /// 十位 hex 节点地址;全局身份缺失或不可解析时 None
+    pub node_id: Option<String>,
+}
+
+/// GET /identity 的单 planet 段
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanetIdentity {
+    pub id: String,
+    pub name: String,
+    /// "own" | "global"
+    pub identity: String,
+    pub node_id: Option<String>,
+    pub running: bool,
+}
+
 /// POST /planets/{id}/share 返回体
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -3,6 +3,7 @@
 //! /version、/status;planet 生命周期端点见 api_planet.rs,网络面见
 //! api_net.rs,peers/moons/dump 见 api_misc.rs,实例运行时见 runtime.rs。
 
+mod api_identity;
 mod api_misc;
 mod api_net;
 mod api_planet;
@@ -537,6 +538,7 @@ async fn daemon_main(args: Args) {
         .route("/version", get(version))
         .route("/status", get(status))
         .merge(api_planet::router())
+        .merge(api_identity::router())
         .merge(api_net::router())
         .merge(api_misc::router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_mw))

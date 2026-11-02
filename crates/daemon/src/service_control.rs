@@ -2,9 +2,6 @@
 //! 供身份导入在写入全局身份前调用,消除同身份双开互踢(官方 issue #2433)。
 //! 全部为子进程阻塞实现,调用方须放 spawn_blocking(锁与线程纪律红线)。
 
-// TODO(identity-import): 供身份导入端点调用,接入后移除本行。
-#![allow(dead_code)]
-
 use std::path::Path;
 use std::process::Command;
 
