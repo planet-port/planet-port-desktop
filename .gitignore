@@ -10,3 +10,7 @@ crates/pocs/fixtures/
 
 # 本地 scratch(打包演练产物等,一律进 tmp/)
 /tmp/
+
+# 构建产物与本地会话目录
+/dist/
+/claude-session/
