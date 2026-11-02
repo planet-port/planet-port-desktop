@@ -16,7 +16,7 @@
 
 - Linux 支持范围:amd64 / arm64,glibc ≥ 2.31(systemd 发行版);SELinux enforcing(Fedora/RHEL 系)未测不在支持内。
 - `macos_x86_64` 产物已构建,尚未在 Intel Mac 实机验证。
-- Windows:安装级验证通过(Win11 实机,2026-11-02,离线安装路径);实机现运行 v0.2.0-beta.1 release 正式产物。线上 iex 安装未完整实测:下载段依赖仓库/资产匿名可达,当前仓库私有(raw/api/资产匿名 404,与 mac install.sh 同等限制),网络连通性已确认(404 为正常 HTTP 响应);安装段逻辑与离线版共用已实测。NRPT 建规则路径未实测(测试网络未下发 DNS 配置,`dnsMode=network` 下空 servers 正确不建规则,NRPT 清理幂等已实测);纸面支持 Win10+(按支持面收敛),未实测,结论按 Win11 记录。已知平台边界:设备面 IPv6 帧静默丢弃、IPv6 地址/托管路由不安装(L3 + ARP 垫层);Windows 服务日志不落盘(`service logs` 不支持);不做代码签名,SmartScreen 拦截属预期;进程/服务/系统重启后网络恢复有约 1-3 分钟等待期(ARP 解析与路径重建,期间 ping 超时属预期)。
+- Windows:安装级验证通过(Win11 实机,2026-11-02,离线与线上安装路径);实机现运行 v0.2.0-beta.2(线上安装升级,beta.1→beta.2 覆盖升级后网络自动恢复)。线上安装实测(2026-11-02,仓库已公开):github.com 资产下载与 api.github.com 匿名可达,安装链路全通;raw.githubusercontent.com 引导下载在家宽出口被阻断(与仓库公开无关),此时可改为浏览器直下 release zip 走离线安装;`/releases/latest` 尚无正式版返回 404 属语义正确,Windows 线上安装须显式 `-Version <beta 版本>`。NRPT 建规则路径未实测(测试网络未下发 DNS 配置,`dnsMode=network` 下空 servers 正确不建规则,NRPT 清理幂等已实测);纸面支持 Win10+(按支持面收敛),未实测,结论按 Win11 记录。已知平台边界:设备面 IPv6 帧静默丢弃、IPv6 地址/托管路由不安装(L3 + ARP 垫层);Windows 服务日志不落盘(`service logs` 不支持);不做代码签名,SmartScreen 拦截属预期;进程/服务/系统重启后网络恢复有约 1-3 分钟等待期(ARP 解析与路径重建,期间 ping 超时属预期)。
 - 与官方 zerotier-one 共存:五台均验证互不干扰(接口、端口独立;Windows 侧为官方 app 与本产品双装全程并行)。
 
 e2e 验证脚本步骤:install → status → info → journalctl 日志 → stop/start → 开机自启 → 幂等重装 → uninstall(unit 删除、数据保留)→ 重装留运行。
