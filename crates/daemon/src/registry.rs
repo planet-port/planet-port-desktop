@@ -8,6 +8,17 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+/// planet 的节点身份绑定:Own = dataDir 内独立身份(存量/缺省语义);
+/// Global = 共享 config 根的全局身份(identity.public/secret)。
+/// 存量 registry.json 无此字段,反序列化回落 Own。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IdentityBinding {
+    #[default]
+    Own,
+    Global,
+}
+
 /// 一条已导入的 planet 记录
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +57,9 @@ pub struct RegistryEntry {
     /// 优雅退出/teardown 时清空
     #[serde(default)]
     pub ifaces: Vec<String>,
+    /// 节点身份绑定(own/global);缺省 Own 兼容存量注册表
+    #[serde(default)]
+    pub identity: IdentityBinding,
 }
 
 /// 单个网络的本地配置(route/dns 策略)
