@@ -6,7 +6,11 @@
 //!
 //! - registry 锁短临界区取克隆/改写后即放,不跨 await;
 //! - 官方服务停用是子进程阻塞操作,一律 spawn_blocking(红线);
-//! - 切换绑定要求 planet stopped:registry.running 与 planets 运行时表都查。
+//! - 切换绑定要求 planet stopped:先取 runtime_gate 再判 runtime_of。
+//!   仅查运行时表不够——start_planet 全程持 gate 且「先插 map 再置
+//!   running=true」,启动窗口内 map 已有记录而 running 仍为 false,若此时
+//!   放行改写 registry,实例会继续用旧身份而登记却是新身份;持 gate 后
+//!   与并发 start 串行化,该半途态不再出现。
 
 use std::fs;
 #[cfg(unix)]
@@ -149,6 +153,19 @@ pub async fn identity_import(
     })?;
     let addr_s = identity_addr(&secret)
         .ok_or_else(|| bad_request("invalidIdentity", "cannot parse identity.secret address"))?;
+    // secret 必须是「address:publicKey:privateKey」三段格式(public 只有两段):
+    // 误传 identity.public 时双文件同名同内容、地址校验全过,公钥一旦落盘会
+    // 污染 config 根的 identity.secret,故此处校验确实含私钥段。
+    if std::str::from_utf8(&secret)
+        .ok()
+        .and_then(|s| s.split(':').nth(2))
+        .is_none_or(|priv_part| priv_part.trim().is_empty())
+    {
+        return Err(bad_request(
+            "invalidIdentity",
+            "file looks like identity.public, not identity.secret",
+        ));
+    }
     let addr_p = identity_addr(&public)
         .ok_or_else(|| bad_request("invalidIdentity", "cannot parse identity.public address"))?;
     if addr_s != addr_p {
@@ -225,7 +242,11 @@ pub async fn planet_identity_set(
             ))
         }
     };
-    // 运行中拒绝:registry 标志与运行时表双查(与 DELETE 同款防御)
+    // 先取启停门闩(与 DELETE 对齐):start_planet 先插运行时表再置
+    // running=true,启动窗口内只查运行时表会漏判运行中,持 gate 后判定
+    // 与 registry 改写都被串行化,不会与并发 start 交错。门闩内不做 await。
+    let _gate = st.runtime_gate.lock().await;
+    // 运行中拒绝(临界区内无 await)
     if runtime_of(&st, &id).is_some() {
         return Err(err(
             StatusCode::CONFLICT,
