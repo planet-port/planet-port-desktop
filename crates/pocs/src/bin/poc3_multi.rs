@@ -209,7 +209,12 @@ fn spawn_node(
         frames_to_dev: Arc::clone(&frames_to_dev),
     };
     let h = NodeHandle::start(
-        NodeParams { data_dir: data_dir.clone(), planet_file: planet.clone(), bind_port: port },
+        NodeParams {
+            data_dir: data_dir.clone(),
+            planet_file: planet.clone(),
+            bind_port: port,
+            identity_dir: None,
+        },
         sink,
     )
     .map_err(|e| format!("node {tag} start 失败: {e}"))?;

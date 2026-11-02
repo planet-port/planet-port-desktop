@@ -450,6 +450,7 @@ pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(),
         data_dir: entry.data_dir.clone(),
         planet_file,
         bind_port: entry.port,
+        identity_dir: None,
     };
     // start 含首次 processBackgroundTasks(阻塞),放阻塞线程池
     let node = tokio::task::spawn_blocking(move || {

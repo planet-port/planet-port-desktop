@@ -18,6 +18,9 @@ pub struct NodeParams {
     /// 注入的 planet 文件(必填:本项目语义即以自定义 planet 接入,不用核心内置 world)
     pub planet_file: PathBuf,
     pub bind_port: u16,
+    /// 身份文件目录(None = data_dir 根,每 planet 独立身份;
+    /// Some = 全局身份目录,daemon 侧按 registry 绑定注入)
+    pub identity_dir: Option<PathBuf>,
 }
 
 /// 上层接收 Node 事件/网络配置/虚拟网帧的出口(Task 3 起由驱动线程转发)。
@@ -158,6 +161,7 @@ impl NetConfig {
             mtu: c.mtu as u16,
             // netconfRevision 为 c_ulong:mac/linux 64 位,Win32 下 32 位,
             // u64::from 收敛到固定宽度(mac/linux 上为恒等,零行为改动)
+            #[allow(clippy::useless_conversion)] // mac/linux 上 c_ulong == u64,恒等;Win32 下必须转换
             netconf_revision: u64::from(c.netconfRevision),
             assigned,
             routes,

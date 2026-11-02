@@ -336,7 +336,12 @@ impl NodeHandle {
         #[cfg(windows)]
         let wake_tx_rd = wake_tx.clone();
         let inner = Box::into_raw(Box::new(Inner {
-            store: StateStore::new(params.data_dir.clone(), world_id, params.planet_file.clone()),
+            store: StateStore::new(
+                params.data_dir.clone(),
+                world_id,
+                params.planet_file.clone(),
+                params.identity_dir.clone(),
+            ),
             udp,
             frame_out: frame_tx,
             frame_in: frame_in_tx,

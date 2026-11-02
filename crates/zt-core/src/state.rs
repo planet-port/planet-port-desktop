@@ -1,5 +1,6 @@
 //! dataStore 对象 ↔ 落盘文件。语义平移 Android NodeRuntime.stateFile:
-//! identity 跨 planet 共享于根;moon/peer/netconf 按 planet worldId 分目录;
+//! identity 落 data_dir 根(独立)或注入的全局身份目录(identity_dir);
+//! moon/peer/netconf 按 planet worldId 分目录;
 //! planet 重定向到注入文件(get)/根下 planet(put 回写)。
 //!
 //! # 架构红线
@@ -17,23 +18,40 @@ use std::path::PathBuf;
 
 pub struct StateStore {
     root: PathBuf,
+    /// Some = identity 落注入的全局身份目录;None = 落 root(data_dir 根,独立身份)
+    identity_dir: Option<PathBuf>,
     world_dir: PathBuf,
     planet_in: PathBuf,
 }
 
 impl StateStore {
     /// planet_in 必填:node 启动即校验 planet 文件可读,StateStore 不再处理未注入分支。
-    pub fn new(root: PathBuf, world_id: u64, planet_in: PathBuf) -> Self {
+    pub fn new(
+        root: PathBuf,
+        world_id: u64,
+        planet_in: PathBuf,
+        identity_dir: Option<PathBuf>,
+    ) -> Self {
         let world_dir = root.join(world_id.to_string());
-        Self { root, world_dir, planet_in }
+        Self { root, identity_dir, world_dir, planet_in }
     }
 
     /// 返回 None = 未知对象(get/put 各按错误码上报)。
     fn file_for(&self, obj: zt_obj, id: &[u64; 2]) -> Option<PathBuf> {
         use zt_obj::*;
         match obj {
-            IdentityPublic => Some(self.root.join("identity.public")),
-            IdentitySecret => Some(self.root.join("identity.secret")),
+            IdentityPublic => Some(
+                self.identity_dir
+                    .clone()
+                    .unwrap_or_else(|| self.root.clone())
+                    .join("identity.public"),
+            ),
+            IdentitySecret => Some(
+                self.identity_dir
+                    .clone()
+                    .unwrap_or_else(|| self.root.clone())
+                    .join("identity.secret"),
+            ),
             // get 读注入的 planet 副本(start 已保证存在);put 回写根下 planet
             PlanetGet => Some(self.planet_in.clone()),
             PlanetPut => Some(self.root.join("planet")),

@@ -130,6 +130,7 @@ fn main() {
             data_dir: args.data_dir.clone(),
             planet_file: args.planet.clone(),
             bind_port: args.port,
+            identity_dir: None,
         },
         DeviceSink {
             plane: Arc::clone(&plane),

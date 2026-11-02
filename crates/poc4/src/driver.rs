@@ -260,7 +260,7 @@ impl PocNode {
         // 读线程的唤醒克隆:物理包投进 udp_rx 后即唤醒驱动线程(对齐 poll 语义)
         let wake_tx_rd = wake_tx.clone();
         let inner = Box::into_raw(Box::new(Inner {
-            store: StateStore::new(data_dir.clone(), world_id, planet_file.clone()),
+            store: StateStore::new(data_dir.clone(), world_id, planet_file.clone(), None),
             udp,
             frame_out: frame_tx,
             frame_in: frame_in_tx,
