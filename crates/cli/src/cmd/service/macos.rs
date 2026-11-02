@@ -150,9 +150,8 @@ pub(crate) fn install_cli(cli_src: &Path, daemon_src: &Path, installed: bool, js
 
 /// 建软链,目标位置已有任何东西(旧软链/普通文件)先移除
 fn replace_symlink(target: &str, link: &str) -> std::io::Result<()> {
-    match std::fs::symlink_metadata(link) {
-        Ok(_) => std::fs::remove_file(link)?,
-        Err(_) => {}
+    if std::fs::symlink_metadata(link).is_ok() {
+        std::fs::remove_file(link)?;
     }
     if let Some(dir) = std::path::Path::new(link).parent() {
         std::fs::create_dir_all(dir)?;
