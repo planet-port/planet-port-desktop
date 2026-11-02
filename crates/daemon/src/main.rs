@@ -11,6 +11,7 @@ mod dns;
 mod events;
 mod registry;
 mod runtime;
+mod service_control;
 #[cfg(windows)]
 mod service_win;
 mod state;
