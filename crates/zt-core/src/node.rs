@@ -63,6 +63,8 @@ use zt_sys as zt;
 const PHY_BUF: usize = (zt::ZT_MAX_PHYSPAYLOAD + zt::ZT_MAX_HEADROOM) as usize;
 /// 组播订阅扫描周期(ms)
 const MCAST_SCAN_MS: i64 = 5000;
+/// 设备健康巡检周期(ms):驱动线程以此节拍回调 sink.on_tick
+const HEALTH_TICK_MS: i64 = 10_000;
 /// poll 单次阻塞上限(ms)
 #[cfg(not(windows))]
 const POLL_MAX_MS: i32 = 500;
@@ -655,6 +657,7 @@ unsafe fn run_driver(mut d: Driver) {
     #[cfg(not(windows))]
     let udp_fd = inner.udp.as_raw_fd();
     let mut last_mcast_ms: i64 = i64::MIN / 4; // 首圈立即做一次订阅
+    let mut last_health_ms: i64 = i64::MIN / 4; // 首圈立即做一次巡检
     // 已 join 的网络(来自 vnet_config 回调的 UP/UPDATE/DOWN/DESTROY)
     let mut current_networks: Vec<u64> = Vec::new();
     #[cfg(not(windows))]
@@ -715,6 +718,13 @@ unsafe fn run_driver(mut d: Driver) {
                 }
                 Ok(Cmd::Stop) => return,
                 Err(_) => break,
+            }
+        }
+        // 设备健康巡检节拍:Windows 侧检测适配器被外部重启等设备失效并自愈
+        if now - last_health_ms >= HEALTH_TICK_MS {
+            last_health_ms = now;
+            if call_sink(&mut d.sink, &inner.running, "on_tick", |s| s.on_tick()).is_none() {
+                return;
             }
         }
         // 网络配置回调 → 维护已 join 集合 + 送达 sink

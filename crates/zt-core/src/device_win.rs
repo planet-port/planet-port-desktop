@@ -40,6 +40,9 @@ use crate::routes::RouteApplier;
 const READER_POLL: Duration = Duration::from_millis(20);
 /// reader 读错误退避重试间隔
 const READER_BACKOFF: Duration = Duration::from_millis(200);
+/// 适配器连续多少个巡检周期不健康才触发重建(3×10s=30s:给 enable 后
+/// 瞬态 Down 与服务启动期留余量,避免误重建)
+const DEAD_TICKS_TO_REBUILD: u32 = 3;
 /// wintun 适配器名前缀(便于实测时 netsh 查找;多网络并存按 nwid 区分)
 const ADAPTER_PREFIX: &str = "planet-port";
 
@@ -112,6 +115,11 @@ struct NetDevice {
     arp: Arc<Mutex<ArpShim>>,
     /// 回喂核心的发送端槽位(reader 出向帧与 ARP 应答共用)
     frame_tx: FrameInTxSlot,
+    /// 最近一次 apply 的最终 netconf(自愈重建用:外部重启适配器后 ring 失效,
+    /// 按此 cfg 拆旧建新,地址/路由原样重放)
+    last_cfg: NetConfig,
+    /// 连续不健康巡检计数(适配器存在且 UP 即清零)
+    dead_ticks: u32,
 }
 
 /// 多网络设备表:每网络一张 wintun 适配器、各自 reader 线程、ArpShim 与
@@ -171,10 +179,13 @@ impl DevicePlane {
     /// 地址/路由差分应用。(Down/Destroy 由调用方走 `teardown`。)
     pub fn apply(&mut self, cfg: &NetConfig, frame_tx: &FrameInTxSlot) -> io::Result<()> {
         if !self.devices.contains_key(&cfg.nwid) {
-            let d = self.create_device(cfg, frame_tx)?;
+            let d = build_adapter(cfg, frame_tx)?;
             self.devices.insert(cfg.nwid, d);
         }
         let d = self.devices.get_mut(&cfg.nwid).expect("上方已插入");
+        // 缓存最终 cfg:自愈重建按它拆旧建新(daemon 可能已按 routeViaZeroTier
+        // 清空 routes,设备面存的就是事实,重建不走 netconf)
+        d.last_cfg = cfg.clone();
         // 本网虚拟 MAC 必须等于核心分配值,垫层的 ARP 应答/学习语义才与核心一致
         lock_arp(&d.arp).local_mac = cfg.mac;
         // 只对 Ok 状态应用地址/路由(REQUESTING 等阶段 assigned/routes 无意义)
@@ -183,51 +194,6 @@ impl DevicePlane {
             d.apply_routes(cfg);
         }
         Ok(())
-    }
-
-    fn create_device(&mut self, cfg: &NetConfig, frame_tx: &FrameInTxSlot) -> io::Result<NetDevice> {
-        let mtu = cfg.mtu.max(1280);
-        // wintun 同名适配器会复用 ring,多网络并存按 nwid 区分命名;需要管理员权限
-        let want_name = format!("{ADAPTER_PREFIX}{:016x}", cfg.nwid);
-        let dev = tun_rs::DeviceBuilder::new()
-            .layer(tun_rs::Layer::L3)
-            .name(&want_name)
-            .mtu(mtu)
-            .enable(true)
-            .build_sync()?;
-        let name = dev.name()?;
-        let if_index = dev
-            .if_index()
-            .map_err(|e| io::Error::other(format!("获取 {name} if_index 失败: {e}")))?;
-        let stop = Arc::new(AtomicBool::new(false));
-        let frames_in = Arc::new(AtomicU64::new(0));
-        let v6drop = Arc::new(AtomicU64::new(0));
-        let dev = Arc::new(dev);
-        let arp = Arc::new(Mutex::new(ArpShim::new(cfg.mac)));
-        let reader = spawn_reader(
-            Arc::clone(&dev),
-            Arc::clone(&arp),
-            Arc::clone(frame_tx),
-            Arc::clone(&stop),
-            cfg.nwid,
-            Arc::clone(&frames_in),
-            Arc::clone(&v6drop),
-        );
-        eprintln!("[device] {:016x} wintun L3 适配器已建立:{} mtu={}", cfg.nwid, name, mtu);
-        Ok(NetDevice {
-            dev,
-            if_name: name,
-            if_index,
-            mtu,
-            applied_addrs: Vec::new(),
-            routes: None,
-            stop,
-            reader,
-            frames_in,
-            v6drop,
-            arp,
-            frame_tx: Arc::clone(frame_tx),
-        })
     }
 
     /// 核心产出的帧入(方向:核心→设备)。设备未建或网络不符时静默丢弃。
@@ -289,6 +255,77 @@ impl DevicePlane {
         for (_, mut d) in self.devices.drain() {
             d.teardown();
         }
+    }
+
+    /// 设备健康巡检(驱动线程 on_tick 调用,Windows 专有自愈路径):
+    /// 按 if_name 在系统接口表查 UP 标志,连续 DEAD_TICKS_TO_REBUILD 次
+    /// 不健康(适配器消失/被外部重启致 ring 失效)即拆旧建新。
+    /// 返回本轮触发重建的 nwid 列表(供上层记事件)。
+    pub fn health_tick(&mut self, frame_tx: &FrameInTxSlot) -> Vec<u64> {
+        // 系统接口表一次性快照:name → 是否 UP
+        let mut up_names: HashMap<String, bool> = HashMap::new();
+        if let Ok(iters) = getifaddrs::getifaddrs() {
+            for ifa in iters {
+                up_names
+                    .insert(ifa.name.clone(), ifa.flags.contains(getifaddrs::InterfaceFlags::UP));
+            }
+        }
+        // 枚举失败(快照为空)视作「信息不足」:不计数,绝不据此重建
+        if up_names.is_empty() {
+            return Vec::new();
+        }
+        let mut rebuilt = Vec::new();
+        let nwids: Vec<u64> = self.devices.keys().copied().collect();
+        for nwid in nwids {
+            // 早拷贝巡检所需字段:if_name 的借用不能跨 teardown/apply 的
+            // &mut self(借用检查不可表达,且 teardown 会清空 if_name)
+            let (if_name, healthy) = match self.devices.get(&nwid) {
+                Some(d) => {
+                    let h = up_names.get(&d.if_name).copied().unwrap_or(false);
+                    (d.if_name.clone(), h)
+                }
+                None => continue,
+            };
+            if healthy {
+                if let Some(d) = self.devices.get_mut(&nwid) {
+                    d.dead_ticks = 0;
+                }
+                continue;
+            }
+            let (cfg, ticks) = {
+                let d = self.devices.get_mut(&nwid).expect("上方已查到");
+                d.dead_ticks += 1;
+                (d.last_cfg.clone(), d.dead_ticks)
+            };
+            if ticks < DEAD_TICKS_TO_REBUILD {
+                continue;
+            }
+            // 拆旧建新:teardown 停 reader/删路由/销毁适配器,apply 按
+            // last_cfg 重建(新 ring、新 if_index,地址/路由重放)。失败仅记
+            // 日志并兜底塞回占位(dead_ticks 置阈值-1,下个 tick 继续重试)
+            eprintln!(
+                "[device] {:016x} 适配器 {if_name} 连续 {ticks} 次巡检不健康,拆除重建",
+                nwid
+            );
+            self.teardown(nwid);
+            match self.apply(&cfg, frame_tx) {
+                Ok(()) => rebuilt.push(nwid),
+                Err(e) => {
+                    eprintln!("[device] {:016x} 适配器重建失败(下周期重试): {e}", nwid);
+                    // apply 失败时设备可能已插入(部分成功)也可能不在表:
+                    // 统一兜底——不在表则塞回占位由后续 ConfigUpdate 收敛;
+                    // 连设备都建不出来只能等 on_net_config 的 Up/ConfigUpdate
+                    // 走常规 apply 恢复
+                    if !self.devices.contains_key(&nwid) {
+                        if let Ok(mut d) = build_adapter(&cfg, frame_tx) {
+                            d.dead_ticks = DEAD_TICKS_TO_REBUILD - 1;
+                            self.devices.insert(nwid, d);
+                        }
+                    }
+                }
+            }
+        }
+        rebuilt
     }
 }
 
@@ -379,6 +416,55 @@ impl Drop for DevicePlane {
         // 兜底:调用方漏 teardown 时仍保证停线程、删路由、销毁适配器
         self.teardown_all();
     }
+}
+
+/// 新建 wintun 适配器并起 reader(常规 apply 首建与健康巡检重建共用;
+/// wintun 同名复用会沿用旧 ring,重建必须先 teardown 再调本函数才能拿到新 ring)。
+fn build_adapter(cfg: &NetConfig, frame_tx: &FrameInTxSlot) -> io::Result<NetDevice> {
+    let mtu = cfg.mtu.max(1280);
+    // wintun 同名适配器会复用 ring,多网络并存按 nwid 区分命名;需要管理员权限
+    let want_name = format!("{ADAPTER_PREFIX}{:016x}", cfg.nwid);
+    let dev = tun_rs::DeviceBuilder::new()
+        .layer(tun_rs::Layer::L3)
+        .name(&want_name)
+        .mtu(mtu)
+        .enable(true)
+        .build_sync()?;
+    let name = dev.name()?;
+    let if_index = dev
+        .if_index()
+        .map_err(|e| io::Error::other(format!("获取 {name} if_index 失败: {e}")))?;
+    let stop = Arc::new(AtomicBool::new(false));
+    let frames_in = Arc::new(AtomicU64::new(0));
+    let v6drop = Arc::new(AtomicU64::new(0));
+    let dev = Arc::new(dev);
+    let arp = Arc::new(Mutex::new(ArpShim::new(cfg.mac)));
+    let reader = spawn_reader(
+        Arc::clone(&dev),
+        Arc::clone(&arp),
+        Arc::clone(frame_tx),
+        Arc::clone(&stop),
+        cfg.nwid,
+        Arc::clone(&frames_in),
+        Arc::clone(&v6drop),
+    );
+    eprintln!("[device] {:016x} wintun L3 适配器已建立:{} mtu={}", cfg.nwid, name, mtu);
+    Ok(NetDevice {
+        dev,
+        if_name: name,
+        if_index,
+        mtu,
+        applied_addrs: Vec::new(),
+        routes: None,
+        stop,
+        reader,
+        frames_in,
+        v6drop,
+        arp,
+        frame_tx: Arc::clone(frame_tx),
+        last_cfg: cfg.clone(),
+        dead_ticks: 0,
+    })
 }
 
 /// 设备读线程:wintun `try_recv` 20ms 轮询(Windows 专有,WouldBlock = 无包),

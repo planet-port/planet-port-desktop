@@ -26,6 +26,10 @@ pub trait NodeSink: Send + 'static {
     fn on_net_config(&mut self, nwid: u64, op: NetConfigOp, cfg: NetConfig);
     fn on_frame(&mut self, nwid: u64, src_mac: u64, dst_mac: u64, ether_type: u16, payload: &[u8]);
     fn local_ipv4s(&self) -> Vec<std::net::Ipv4Addr>;
+    /// 驱动线程周期节拍(默认空实现;Windows 设备面健康巡检消费,见
+    /// device_win.rs health_tick。频率约 HEALTH_TICK_MS,语义为「巡检机会」,
+    /// 不承诺精确周期)。
+    fn on_tick(&mut self) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

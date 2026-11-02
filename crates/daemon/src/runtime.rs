@@ -231,6 +231,24 @@ impl NodeSink for DaemonSink {
     fn local_ipv4s(&self) -> Vec<std::net::Ipv4Addr> {
         lock(&self.plane).applied_v4s()
     }
+
+    /// 设备健康巡检(驱动线程 10s 节拍):适配器被外部重启等失效时设备面
+    /// 自愈重建,重建发生记事件供排查(stop 收尾期不巡检,与 on_net_config 同
+    /// 语义)。仅 Windows 覆写:Unix 设备面无 health_tick,沿用 trait 默认空实现
+    #[cfg(windows)]
+    fn on_tick(&mut self) {
+        if self.stopping.load(Ordering::SeqCst) {
+            return;
+        }
+        let rebuilt = lock(&self.plane).health_tick(&self.frame_tx);
+        for nwid in rebuilt {
+            self.events.push(
+                &self.planet_id,
+                "deviceRebuilt",
+                &format!("网络 {nwid:016x} 适配器失效,已自动重建"),
+            );
+        }
+    }
 }
 
 impl DaemonSink {
