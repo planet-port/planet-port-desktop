@@ -72,16 +72,46 @@ pub fn stop_and_disable() -> OfficialServiceAction {
 
 #[cfg(target_os = "windows")]
 pub fn stop_and_disable() -> OfficialServiceAction {
-    let installed = Command::new("sc.exe")
-        .args(["query", "ZeroTierOneService"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if !installed {
-        return OfficialServiceAction::NotInstalled;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    /// sc stop 是异步的:命令返回时服务多为 STOP_PENDING,官方进程可能仍
+    /// 持同一身份运行(正是身份导入要消除的双开互踢)。因此 stop 后必须
+    /// 轮询 sc query 直到出现 STOPPED 才算停干净。
+    const POLL_TIMES: usize = 30;
+    const POLL_INTERVAL_MS: u64 = 500;
+
+    // query 对已存在服务成功返回状态文本,对不存在的服务失败返回非零
+    let query = || -> Result<String, String> {
+        run(Command::new("sc.exe").args(["query", "ZeroTierOneService"]))
+    };
+    let status = match query() {
+        Ok(out) => out,
+        Err(_) => return OfficialServiceAction::NotInstalled,
+    };
+    if !status.contains("STOPPED") {
+        // 已停止时 stop 报非运行错误,忽略其错误继续轮询确认
+        let _ = run(Command::new("sc.exe").args(["stop", "ZeroTierOneService"]));
+        let mut stopped = false;
+        for _ in 0..POLL_TIMES {
+            sleep(Duration::from_millis(POLL_INTERVAL_MS));
+            match query() {
+                Ok(out) if out.contains("STOPPED") => {
+                    stopped = true;
+                    break;
+                }
+                Ok(_) => {}
+                Err(e) => return OfficialServiceAction::Failed(e),
+            }
+        }
+        if !stopped {
+            return OfficialServiceAction::Failed(
+                "service did not stop within 15s; official ZeroTier may still \
+                 hold the same identity"
+                    .to_string(),
+            );
+        }
     }
-    // 已停止时 stop 报非运行错误,忽略继续 disable
-    let _ = run(Command::new("sc.exe").args(["stop", "ZeroTierOneService"]));
     match run(Command::new("sc.exe").args(["config", "ZeroTierOneService", "start=", "disabled"])) {
         Ok(_) => OfficialServiceAction::StoppedAndDisabled,
         Err(e) => OfficialServiceAction::Failed(e),

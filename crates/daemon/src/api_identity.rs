@@ -95,9 +95,15 @@ pub async fn identity_list(State(st): State<AppState>) -> Result<Json<Value>, Ap
     let planets: Vec<Value> = entries
         .iter()
         .map(|e| {
-            // own 绑定看自己的 last_node_id;global 绑定即全局身份地址
+            // own 绑定读 dataDir 内 identity.public(显式 stop 后 last_node_id
+            // 会被置 None,身份本体留盘可解析,列表不丢地址);都取不到回落
+            // last_node_id,再无则 null。global 绑定即全局身份地址。
             let node_id = match e.identity {
-                IdentityBinding::Own => e.last_node_id.clone(),
+                IdentityBinding::Own => fs::read(e.data_dir.join("identity.public"))
+                    .ok()
+                    .as_deref()
+                    .and_then(identity_addr)
+                    .or_else(|| e.last_node_id.clone()),
                 IdentityBinding::Global => g_node.clone(),
             };
             json!({
@@ -153,12 +159,14 @@ pub async fn identity_import(
     })?;
     let addr_s = identity_addr(&secret)
         .ok_or_else(|| bad_request("invalidIdentity", "cannot parse identity.secret address"))?;
-    // secret 必须是「address:publicKey:privateKey」三段格式(public 只有两段):
+    // ZeroTier 身份串格式(vendored Core/node/Identity.cpp toString):
+    // identity.public = 「addr:0:<pubhex>」3 段;identity.secret =
+    // 「addr:0:<pubhex>:<privhex>」4 段。第 4 段(下标 3)是私钥段:
     // 误传 identity.public 时双文件同名同内容、地址校验全过,公钥一旦落盘会
     // 污染 config 根的 identity.secret,故此处校验确实含私钥段。
     if std::str::from_utf8(&secret)
         .ok()
-        .and_then(|s| s.split(':').nth(2))
+        .and_then(|s| s.split(':').nth(3))
         .is_none_or(|priv_part| priv_part.trim().is_empty())
     {
         return Err(bad_request(
@@ -185,6 +193,36 @@ pub async fn identity_import(
             None,
         ));
     }
+    // 3.5 运行态守卫:global 绑定的 planet 仍在运行时导入(尤其 --force 覆盖)
+    // 会出现「实例用旧地址、列表显新地址」的分裂,先拒绝并指引逐个 stop。
+    // 判定 = runtime_of(实际运行)+ registry.running(期望状态,启动窗口内
+    // runtime 表可能有空档)。锁纪律:短临界区——锁内只取 id/name/布尔即放,
+    // runtime_of 另锁 planets 表,不嵌套持锁;全程无 await。
+    let global_bound: Vec<(String, bool, String)> = {
+        let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        reg.planets
+            .iter()
+            .filter(|e| e.identity == IdentityBinding::Global)
+            .map(|e| (e.id.clone(), e.running, crate::api_planet::name_of(e)))
+            .collect()
+    };
+    let busy: Vec<String> = global_bound
+        .into_iter()
+        .filter(|(id, running, _)| *running || runtime_of(&st, id).is_some())
+        .map(|(id, _, name)| format!("{name}(id {id})"))
+        .collect();
+    if !busy.is_empty() {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "globalIdentityInUse",
+            &format!(
+                "global identity is in use by running planet(s): {}; \
+                 stop them first (`planet-port stop <planet>`) and retry",
+                busy.join(", ")
+            ),
+            None,
+        ));
+    }
     // 4. 停+禁官方服务(子进程,放阻塞线程池);失败即中止导入
     let action = tokio::task::spawn_blocking(service_control::stop_and_disable)
         .await
@@ -200,13 +238,31 @@ pub async fn identity_import(
             None,
         ));
     }
-    // 5. 写盘(先 tmp 后 rename,对齐 StateStore/registry 原子写模式)
-    for (dest, bytes) in [(&dest_secret, &secret), (&dest_public, &public)] {
-        let tmp = dest.with_extension("tmp");
-        fs::write(&tmp, bytes)
-            .map_err(|e| internal(format!("cannot write {}: {e}", tmp.display())))?;
-        if let Err(e) = fs::rename(&tmp, dest) {
-            let _ = fs::remove_file(&tmp);
+    // 5. 写盘:secret/public 两文件必须成对生效。先各自写好不同名的 tmp
+    // (不能用 with_extension("tmp"),它会把 identity.secret/public 都变成
+    // identity.tmp 而互相覆盖),两个 tmp 都落定后再依次 rename;任一 rename
+    // 失败清理两个 tmp 并中止,避免留下「新 secret 配旧 public」的半态。
+    let tmp_for = |dest: &std::path::Path| -> PathBuf {
+        let name = dest.file_name().and_then(|n| n.to_str()).unwrap_or("identity");
+        dest.with_file_name(format!("{name}.tmp"))
+    };
+    let tmp_secret = tmp_for(&dest_secret);
+    let tmp_public = tmp_for(&dest_public);
+    let cleanup_tmps = || {
+        let _ = fs::remove_file(&tmp_secret);
+        let _ = fs::remove_file(&tmp_public);
+    };
+    if let Err(e) = fs::write(&tmp_secret, &secret) {
+        cleanup_tmps();
+        return Err(internal(format!("cannot write {}: {e}", tmp_secret.display())));
+    }
+    if let Err(e) = fs::write(&tmp_public, &public) {
+        cleanup_tmps();
+        return Err(internal(format!("cannot write {}: {e}", tmp_public.display())));
+    }
+    for (tmp, dest) in [(&tmp_secret, &dest_secret), (&tmp_public, &dest_public)] {
+        if let Err(e) = fs::rename(tmp, dest) {
+            cleanup_tmps();
             return Err(internal(format!("cannot rename to {}: {e}", dest.display())));
         }
         #[cfg(unix)]
@@ -267,7 +323,10 @@ pub async fn planet_identity_set(
         };
         e.identity = binding;
         if let Err(e) = reg.save(&st.config_dir) {
+            // 半态可见:绑定已改在内存生效但未落盘,事件留痕供 events 排查
             eprintln!("[identity] registry 写盘失败: {e}");
+            st.events
+                .push(&id, "identitySwitchPersistFailed", &e.to_string());
         }
     }
     st.events.push(
