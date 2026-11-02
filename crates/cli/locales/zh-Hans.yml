@@ -17,6 +17,15 @@
   cli.planet.removeAborted: 已取消
   cli.planet.shareLoopHint: "注意: 链接为回环地址,仅本机可打开;发给他人请改用本机的局域网 IP"
 
+  # ---- identity ----
+  cli.identity.global: "全局身份: %{node}"
+  cli.identity.globalNone: "全局身份: (未建立,可 identity import 导入官方身份)"
+  cli.identity.imported: "已导入全局身份: %{node}"
+  cli.identity.importedStopped: "已导入全局身份: %{node}(官方服务已停止并禁用自启)"
+  cli.identity.officialAbsent: 本机未检测到官方 ZeroTier 客户端(身份文件可能来自其它机器)
+  cli.identity.switchOwnWarn: "注意: 切到独立身份后该 planet 将使用新节点地址,原有网络成员资格需重新授权"
+  cli.identity.switched: "planet %{planet} 身份绑定已切换为 %{mode}(下次启动生效)"
+
   # ---- service 子命令 ----
   cli.service.needRoot: "该操作需要 root 权限,请加 sudo 重新运行"
   cli.service.exeNotFound: "无法定位当前可执行文件: %{e}"

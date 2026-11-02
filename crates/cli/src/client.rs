@@ -212,6 +212,10 @@ impl Client {
         let (c, t) = self.request("PATCH", path, Some(body))?;
         self.parse(c, t)
     }
+    pub fn put_json(&self, path: &str, body: &Value) -> Result<Value, CliError> {
+        let (c, t) = self.request("PUT", path, Some(body))?;
+        self.parse(c, t)
+    }
     pub fn delete(&self, path: &str) -> Result<Value, CliError> {
         let (c, t) = self.request("DELETE", path, None)?;
         self.parse(c, t)

@@ -90,6 +90,11 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::planet::PlanetCmd,
     },
+    /// Identity mode, identity list, official identity import, binding switch
+    Identity {
+        #[command(subcommand)]
+        cmd: Option<cmd::identity::IdentityCmd>,
+    },
     /// Moon import
     Moon {
         #[command(subcommand)]
@@ -297,6 +302,7 @@ fn dispatch(
         Command::Start { id } => cmd::planet::start(client, id, json),
         Command::Stop { id } => cmd::planet::stop(client, id, json),
         Command::Planet { cmd } => cmd::planet::run(client, cmd, json),
+        Command::Identity { cmd } => cmd::identity::run(client, cmd, json),
         Command::Moon { cmd } => cmd::mutate::run_moon(client, cmd, planet_flag, json),
         Command::Use { planet } => cmd::misc::use_planet(client, planet, json),
         Command::Events { limit, follow } => cmd::misc::events(client, planet_flag, *limit, *follow, json),

@@ -13,6 +13,15 @@
   cli.planet.removeAborted: 已取消
   cli.planet.shareLoopHint: "注意: 連結為回環位址,僅本機可開啟;發給他人請改用本機的區域網路 IP"
 
+  # ---- identity ----
+  cli.identity.global: "全局身份: %{node}"
+  cli.identity.globalNone: "全局身份: (未建立,可 identity import 導入官方身份)"
+  cli.identity.imported: "已導入全局身份: %{node}"
+  cli.identity.importedStopped: "已導入全局身份: %{node}(官方服務已停止並停用自啟)"
+  cli.identity.officialAbsent: 本機未偵測到官方 ZeroTier 用戶端(身份檔案可能來自其它機器)
+  cli.identity.switchOwnWarn: "注意: 切到獨立身份後該 planet 將使用新節點位址,原有網路成員資格需重新授權"
+  cli.identity.switched: "planet %{planet} 身份綁定已切換為 %{mode}(下次啟動生效)"
+
   cli.service.needRoot: "該操作需要 root 權限,請加 sudo 重新運行"
   cli.service.exeNotFound: "無法定位當前可執行文件: %{e}"
   cli.service.daemonMissing: "在 %{dir} 旁未找到 daemon 二進位 %{name},請先構建 daemon"
