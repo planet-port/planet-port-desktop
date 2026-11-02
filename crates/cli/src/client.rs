@@ -5,6 +5,9 @@ use std::time::Duration;
 
 /// 常规请求全局超时;events --follow 的轮询请求走无超时 agent,长挂不受影响
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+/// identity import 专用长超时:daemon 侧要停禁官方服务,systemctl stop
+/// 有 90s 默认等待,Windows 侧另有 15s stop 轮询,10s 常规超时必炸
+const IMPORT_TIMEOUT: Duration = Duration::from_secs(120);
 /// service status 的活性探测超时:仅判断在线与否,长超时会让 status 卡 10s
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -50,6 +53,8 @@ impl CliError {
 pub struct Client {
     agent: ureq::Agent,
     poll_agent: ureq::Agent,
+    /// identity import 等长耗时请求专用
+    long_agent: ureq::Agent,
     base: String,
     token: String,
 }
@@ -87,9 +92,11 @@ impl Client {
     fn build(base: String, token: String, timeout: Option<Duration>) -> Self {
         let agent = Self::make_agent(timeout);
         let poll_agent = Self::make_agent(None);
+        let long_agent = Self::make_agent(Some(IMPORT_TIMEOUT));
         Self {
             agent,
             poll_agent,
+            long_agent,
             base,
             token,
         }
@@ -115,12 +122,23 @@ impl Client {
         path: &str,
         body: Option<&Value>,
     ) -> Result<(u16, Vec<u8>), CliError> {
-        self.send(&self.agent, method, path, body)
+        self.send(&self.agent, Some(REQUEST_TIMEOUT), method, path, body)
+    }
+
+    /// 与 request_bytes 同语义但走长超时 agent(identity import 等长耗时请求)
+    fn request_bytes_long(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<(u16, Vec<u8>), CliError> {
+        self.send(&self.long_agent, Some(IMPORT_TIMEOUT), method, path, body)
     }
 
     fn send(
         &self,
         agent: &ureq::Agent,
+        timeout: Option<Duration>,
         method: &str,
         path: &str,
         body: Option<&Value>,
@@ -141,10 +159,13 @@ impl Client {
         let req = builder.body(bytes).map_err(|e| CliError::Io(e.to_string()))?;
         // 连接失败统一视为 daemon 不在线(退出码 3);超时单独提示,避免误报"未运行"
         let mut resp = agent.run(req).map_err(|e| match e {
-            ureq::Error::Timeout(_) => CliError::Io(format!(
-                "request to {method} {url} timed out after {}s",
-                REQUEST_TIMEOUT.as_secs()
-            )),
+            ureq::Error::Timeout(_) => match timeout {
+                Some(t) => CliError::Io(format!(
+                    "request to {method} {url} timed out after {}s",
+                    t.as_secs()
+                )),
+                None => CliError::Io(format!("request to {method} {url} timed out")),
+            },
             _ => CliError::Offline,
         })?;
         let status = resp.status().as_u16();
@@ -180,7 +201,7 @@ impl Client {
     }
     /// events --follow 专用的轮询 GET:无全局超时,daemon 偶发阻塞不会中断长挂
     pub fn get_json_polling(&self, path: &str) -> Result<Value, CliError> {
-        let (c, buf) = self.send(&self.poll_agent, "GET", path, None)?;
+        let (c, buf) = self.send(&self.poll_agent, None, "GET", path, None)?;
         self.parse(c, String::from_utf8_lossy(&buf).into_owned())
     }
     /// GET 纯文本端点(如 /dump),2xx 返回正文,非 2xx 仍走 ApiError 解析
@@ -207,6 +228,12 @@ impl Client {
     pub fn post_json(&self, path: &str, body: &Value) -> Result<Value, CliError> {
         let (c, t) = self.request("POST", path, Some(body))?;
         self.parse(c, t)
+    }
+    /// 长超时版 post_json(identity import):daemon 侧要停禁官方服务,
+    /// systemctl stop 最长约 90s,常规 10s 超时不够
+    pub fn post_json_timeout(&self, path: &str, body: &Value) -> Result<Value, CliError> {
+        let (c, buf) = self.request_bytes_long("POST", path, Some(body))?;
+        self.parse(c, String::from_utf8_lossy(&buf).into_owned())
     }
     pub fn patch_json(&self, path: &str, body: &Value) -> Result<Value, CliError> {
         let (c, t) = self.request("PATCH", path, Some(body))?;

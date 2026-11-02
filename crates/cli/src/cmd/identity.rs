@@ -1,10 +1,11 @@
 //! identity 子命令:身份模式与身份列表(缺省)、官方身份导入、切换绑定。
 
 use clap::{Subcommand, ValueEnum};
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::client::{CliError, Client};
 use planet_port_api::endpoints;
+use planet_port_api::types::{GlobalIdentity, PlanetIdentity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum IdentityMode {
@@ -69,23 +70,25 @@ fn list(client: &Client, json: bool) -> Result<(), CliError> {
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
         return Ok(());
     }
-    let g = &v["global"];
-    match g["nodeId"].as_str() {
+    let g: Option<GlobalIdentity> = serde_json::from_value(
+        v.get("global").cloned().unwrap_or(Value::Null),
+    )
+    .ok();
+    let rows: Vec<PlanetIdentity> = serde_json::from_value(
+        v.get("planets").cloned().unwrap_or(Value::Null),
+    )
+    .unwrap_or_default();
+    match g.and_then(|g| g.node_id) {
         Some(node) => println!("{}", rust_i18n::t!("cli.identity.global", node = node)),
         None => println!("{}", rust_i18n::t!("cli.identity.globalNone")),
     }
-    for p in v["planets"].as_array().unwrap_or(&Vec::new()) {
-        let node = p["nodeId"].as_str().unwrap_or("-");
+    for p in rows {
         println!(
             "{}  {}  {}  {}",
-            p["name"].as_str().unwrap_or("-"),
-            p["identity"].as_str().unwrap_or("-"),
-            node,
-            if p["running"].as_bool().unwrap_or(false) {
-                "running"
-            } else {
-                "stopped"
-            },
+            p.name,
+            p.identity,
+            p.node_id.as_deref().unwrap_or("-"),
+            if p.running { "running" } else { "stopped" },
         );
     }
     Ok(())
@@ -99,7 +102,8 @@ fn import(client: &Client, path: Option<&str>, force: bool, json: bool) -> Resul
     if force {
         body["force"] = json!(true);
     }
-    let resp = client.post_json(endpoints::identity_import(), &body)?;
+    // 长超时路径:daemon 侧要停禁官方服务,systemctl stop 最长约 90s
+    let resp = client.post_json_timeout(endpoints::identity_import(), &body)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&resp).unwrap_or_default());
         return Ok(());
