@@ -262,12 +262,20 @@ impl DevicePlane {
     /// 不健康(适配器消失/被外部重启致 ring 失效)即拆旧建新。
     /// 返回本轮触发重建的 nwid 列表(供上层记事件)。
     pub fn health_tick(&mut self, frame_tx: &FrameInTxSlot) -> Vec<u64> {
-        // 系统接口表一次性快照:name → 是否 UP
+        // 系统接口表一次性快照:FriendlyName → 是否健康。两个字段陷阱(实机
+        // 踩过):
+        // 1. getifaddrs 的 `name` 是 if_indextoname 的 NDIS 别名(eth4/wlan_0
+        //    之类),适配器显示名在 `description` 字段(= GetAdaptersAddresses
+        //    的 FriendlyName,与 tun-rs dev.name() 同源)——匹配错字段恒判死
+        //    引发重建风暴;
+        // 2. `UP` 标志会被 Ipv4Enabled/Ipv6Enabled 位污染(适配器 Disconnected
+        //    时这些残留位仍置 UP),不能判活;`RUNNING` 仅在 OperStatus==1
+        //    (IfOperStatusUp)时设置,是干净的媒体态信号。
         let mut up_names: HashMap<String, bool> = HashMap::new();
         if let Ok(iters) = getifaddrs::getifaddrs() {
             for ifa in iters {
                 up_names
-                    .insert(ifa.name.clone(), ifa.flags.contains(getifaddrs::InterfaceFlags::UP));
+                    .insert(ifa.description.clone(), ifa.flags.contains(getifaddrs::InterfaceFlags::RUNNING));
             }
         }
         // 枚举失败(快照为空)视作「信息不足」:不计数,绝不据此重建
