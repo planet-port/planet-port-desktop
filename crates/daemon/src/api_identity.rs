@@ -10,6 +10,10 @@
 //!   running=true」,启动窗口内 map 已有记录而 running 仍为 false,若此时
 //!   放行改写 registry,实例会继续用旧身份而登记却是新身份;持 gate 后
 //!   与并发 start 串行化,该半途态不再出现。
+//! - 身份导入同样受启动窗口影响(身份恰在 NodeHandle::start 内被读/生成),
+//!   但停禁官方服务最长 90s,全程持 gate 会把并发 start/stop 一并堵死;
+//!   时序为先做覆盖保护与停服务,再持 gate 在门闩内完成 busy 检查与双文件
+//!   原子落盘(全程无 await),把 90s 窗口从竞态暴露面里摘掉。
 
 use std::fs;
 #[cfg(unix)]
@@ -192,12 +196,33 @@ pub async fn identity_import(
             None,
         ));
     }
+    // 4. 停+禁官方服务(子进程,放阻塞线程池);失败即中止导入。
+    //    放在持 gate 之前:该操作最长 90s,门闩内做会把并发 start/stop
+    //    一并堵死;停完再进门闩,运行态判定与落盘之间不再有可插入窗口。
+    let action = tokio::task::spawn_blocking(service_control::stop_and_disable)
+        .await
+        .map_err(|e| internal(format!("service stop 任务失败: {e}")))?;
+    if let OfficialServiceAction::Failed(e) = &action {
+        return Err(err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "officialServiceStopFailed",
+            &format!(
+                "cannot stop official ZeroTier service ({e}); import aborted, \
+                 stop it manually and retry"
+            ),
+            None,
+        ));
+    }
     // 3.5 运行态守卫:任何 planet 运行中都不允许导入(尤其 --force 覆盖
     // 共享身份)——否则出现「实例用旧地址、列表显新地址」的分裂,先拒绝
     // 并指引逐个 stop。判定 = runtime_of(实际运行)+ registry.running
-    // (期望状态,启动窗口内 runtime 表可能有空档)。锁纪律:短临界区——
+    // (期望状态,启动窗口内 runtime 表可能有空档)。此时正持 runtime_gate:
+    // start_planet 全程持 gate 且身份在 NodeHandle::start 内被读/生成,仅查
+    // 运行态会在整个启动窗口双盲,持 gate 后与并发 start 串行化,从根上
+    // 消除「实例用旧身份、config 根已是新身份」的分裂。锁纪律:短临界区——
     // 锁内只取 id/name/布尔即放,runtime_of 另锁 planets 表,不嵌套持锁;
-    // 全程无 await。
+    // 门闩内(含后续落盘)全程无 await。
+    let _gate = st.runtime_gate.lock().await;
     let all_planets: Vec<(String, bool, String)> = {
         let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         reg.planets
@@ -222,25 +247,13 @@ pub async fn identity_import(
             None,
         ));
     }
-    // 4. 停+禁官方服务(子进程,放阻塞线程池);失败即中止导入
-    let action = tokio::task::spawn_blocking(service_control::stop_and_disable)
-        .await
-        .map_err(|e| internal(format!("service stop 任务失败: {e}")))?;
-    if let OfficialServiceAction::Failed(e) = &action {
-        return Err(err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "officialServiceStopFailed",
-            &format!(
-                "cannot stop official ZeroTier service ({e}); import aborted, \
-                 stop it manually and retry"
-            ),
-            None,
-        ));
-    }
     // 5. 写盘:secret/public 两文件必须成对生效。先各自写好不同名的 tmp
     // (不能用 with_extension("tmp"),它会把 identity.secret/public 都变成
-    // identity.tmp 而互相覆盖),两个 tmp 都落定后再依次 rename;任一 rename
-    // 失败清理两个 tmp 并中止,避免留下「新 secret 配旧 public」的半态。
+    // identity.tmp 而互相覆盖),每个 tmp 写完立即收紧到 0600(rename 保留
+    // 权限),消除「先 0644 落盘、后补 chmod」的明文窗口;chmod 失败不留
+    // 半态:清理 tmp、events 留痕并以 internal 错误中止。两个 tmp 都落定后
+    // 再依次 rename;任一 rename 失败清理两个 tmp 并中止,避免留下
+    // 「新 secret 配旧 public」的半态。
     let tmp_for = |dest: &std::path::Path| -> PathBuf {
         let name = dest.file_name().and_then(|n| n.to_str()).unwrap_or("identity");
         dest.with_file_name(format!("{name}.tmp"))
@@ -251,21 +264,40 @@ pub async fn identity_import(
         let _ = fs::remove_file(&tmp_secret);
         let _ = fs::remove_file(&tmp_public);
     };
-    if let Err(e) = fs::write(&tmp_secret, &secret) {
-        cleanup_tmps();
-        return Err(internal(format!("cannot write {}: {e}", tmp_secret.display())));
-    }
-    if let Err(e) = fs::write(&tmp_public, &public) {
-        cleanup_tmps();
-        return Err(internal(format!("cannot write {}: {e}", tmp_public.display())));
+    let tighten = |tmp: &std::path::Path| -> Result<(), std::io::Error> {
+        #[cfg(unix)]
+        {
+            fs::set_permissions(tmp, fs::Permissions::from_mode(0o600))
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tmp;
+            Ok(())
+        }
+    };
+    for (tmp, payload) in [(&tmp_secret, &secret), (&tmp_public, &public)] {
+        if let Err(e) = fs::write(tmp, payload) {
+            cleanup_tmps();
+            return Err(internal(format!("cannot write {}: {e}", tmp.display())));
+        }
+        if let Err(e) = tighten(tmp) {
+            cleanup_tmps();
+            st.events.push(
+                "global",
+                "identitySecretPermFailed",
+                &format!("cannot tighten {} to 0600: {e}", tmp.display()),
+            );
+            return Err(internal(format!(
+                "cannot tighten {} to 0600: {e}",
+                tmp.display()
+            )));
+        }
     }
     for (tmp, dest) in [(&tmp_secret, &dest_secret), (&tmp_public, &dest_public)] {
         if let Err(e) = fs::rename(tmp, dest) {
             cleanup_tmps();
             return Err(internal(format!("cannot rename to {}: {e}", dest.display())));
         }
-        #[cfg(unix)]
-        let _ = fs::set_permissions(dest, fs::Permissions::from_mode(0o600));
     }
     st.events
         .push("global", "identityImported", &format!("global identity imported: {addr_s}"));
