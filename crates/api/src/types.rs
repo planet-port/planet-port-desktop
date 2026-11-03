@@ -133,14 +133,22 @@ pub struct GlobalIdentity {
     pub node_id: Option<String>,
 }
 
+/// GET /identity 顶层:模式 + 全局身份 + 各 planet 身份
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityOverview {
+    /// "shared" | "independent"
+    pub mode: String,
+    pub global: GlobalIdentity,
+    pub planets: Vec<PlanetIdentity>,
+}
+
 /// GET /identity 的单 planet 段
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanetIdentity {
     pub id: String,
     pub name: String,
-    /// "own" | "global"
-    pub identity: String,
     pub node_id: Option<String>,
     pub running: bool,
 }

@@ -19,8 +19,11 @@
   cli.identity.imported: "global identity imported: %{node}"
   cli.identity.importedStopped: "global identity imported: %{node} (official service stopped & disabled)"
   cli.identity.officialAbsent: official ZeroTier client not detected on this machine (identity file may come from another machine)
-  cli.identity.switchOwnWarn: "note: switching to own identity changes this planet's node address; network memberships need re-authorization"
-  cli.identity.switched: "planet %{planet} identity binding switched to %{mode} (effective on next start)"
+  cli.identity.mode: "identity mode: %{mode}"
+  cli.identity.modeShared: shared (all planets share the global identity)
+  cli.identity.modeIndependent: independent (per-planet identity)
+  cli.identity.switchWarn: "note: switching identity mode may change node addresses of some or all planets; affected network memberships need re-authorization"
+  cli.identity.switched: "identity mode switched to %{mode} (effective on next planet start)"
 
   cli.service.needRoot: "This operation requires root; re-run with sudo"
   cli.service.exeNotFound: "Failed to locate the current executable: %{e}"

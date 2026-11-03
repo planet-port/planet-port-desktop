@@ -1,23 +1,32 @@
-//! identity 子命令:身份模式与身份列表(缺省)、官方身份导入、切换绑定。
+//! identity 子命令:身份模式与身份列表(缺省)、官方身份导入、全局模式切换。
 
 use clap::{Subcommand, ValueEnum};
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::client::{CliError, Client};
 use planet_port_api::endpoints;
-use planet_port_api::types::{GlobalIdentity, PlanetIdentity};
+use planet_port_api::types::{GlobalIdentity, IdentityOverview};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum IdentityMode {
-    Own,
-    Global,
+    Shared,
+    Independent,
 }
 
 impl IdentityMode {
     fn as_str(&self) -> &'static str {
         match self {
-            IdentityMode::Own => "own",
-            IdentityMode::Global => "global",
+            IdentityMode::Shared => "shared",
+            IdentityMode::Independent => "independent",
+        }
+    }
+
+    fn label(&self) -> String {
+        match self {
+            IdentityMode::Shared => rust_i18n::t!("cli.identity.modeShared").to_string(),
+            IdentityMode::Independent => {
+                rust_i18n::t!("cli.identity.modeIndependent").to_string()
+            }
         }
     }
 }
@@ -35,33 +44,16 @@ pub enum IdentityCmd {
         #[arg(long)]
         force: bool,
     },
-    /// Switch a planet's identity binding
-    Use {
-        planet: String,
-        mode: IdentityMode,
-    },
+    /// Switch global identity mode (shared | independent)
+    Use { mode: IdentityMode },
 }
 
 pub fn run(client: &Client, cmd: &Option<IdentityCmd>, json: bool) -> Result<(), CliError> {
     match cmd.as_ref().unwrap_or(&IdentityCmd::List) {
         IdentityCmd::List => list(client, json),
         IdentityCmd::Import { path, force } => import(client, path.as_deref(), *force, json),
-        IdentityCmd::Use { planet, mode } => switch(client, planet, *mode, json),
+        IdentityCmd::Use { mode } => switch(client, *mode, json),
     }
-}
-
-/// /identity 的 planets 段里按 id 或 name(忽略大小写)找 canonical id
-fn resolve_id(client: &Client, planet: &str) -> Result<String, CliError> {
-    let v = client.get_json(endpoints::identity())?;
-    for p in v["planets"].as_array().unwrap_or(&Vec::new()) {
-        if p["id"].as_str() == Some(planet)
-            || p["name"].as_str().map(|n| n.eq_ignore_ascii_case(planet)) == Some(true)
-        {
-            return Ok(p["id"].as_str().unwrap_or(planet).to_string());
-        }
-    }
-    // 未命中也透传,由 daemon 404 planetNotFound 统一报错
-    Ok(planet.to_string())
 }
 
 fn list(client: &Client, json: bool) -> Result<(), CliError> {
@@ -70,23 +62,28 @@ fn list(client: &Client, json: bool) -> Result<(), CliError> {
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
         return Ok(());
     }
-    let g: Option<GlobalIdentity> = serde_json::from_value(
-        v.get("global").cloned().unwrap_or(Value::Null),
-    )
-    .ok();
-    let rows: Vec<PlanetIdentity> = serde_json::from_value(
-        v.get("planets").cloned().unwrap_or(Value::Null),
-    )
-    .unwrap_or_default();
-    match g.and_then(|g| g.node_id) {
+    let ov: IdentityOverview = serde_json::from_value(v).unwrap_or(IdentityOverview {
+        mode: "-".into(),
+        global: GlobalIdentity {
+            exists: false,
+            node_id: None,
+        },
+        planets: Vec::new(),
+    });
+    let mode_label = match ov.mode.as_str() {
+        "shared" => rust_i18n::t!("cli.identity.modeShared").to_string(),
+        "independent" => rust_i18n::t!("cli.identity.modeIndependent").to_string(),
+        other => other.to_string(),
+    };
+    println!("{}", rust_i18n::t!("cli.identity.mode", mode = mode_label));
+    match ov.global.node_id {
         Some(node) => println!("{}", rust_i18n::t!("cli.identity.global", node = node)),
         None => println!("{}", rust_i18n::t!("cli.identity.globalNone")),
     }
-    for p in rows {
+    for p in ov.planets {
         println!(
-            "{}  {}  {}  {}",
+            "{}  {}  {}",
             p.name,
-            p.identity,
             p.node_id.as_deref().unwrap_or("-"),
             if p.running { "running" } else { "stopped" },
         );
@@ -123,21 +120,18 @@ fn import(client: &Client, path: Option<&str>, force: bool, json: bool) -> Resul
     Ok(())
 }
 
-fn switch(client: &Client, planet: &str, mode: IdentityMode, json: bool) -> Result<(), CliError> {
-    let id = resolve_id(client, planet)?;
-    if mode == IdentityMode::Own {
-        // 独立身份 = 新节点地址(或复用留盘旧 own 身份),成员资格需重新授权
-        eprintln!("{}", rust_i18n::t!("cli.identity.switchOwnWarn"));
-    }
-    let body = json!({ "identity": mode.as_str() });
-    let resp = client.put_json(&endpoints::planet_identity(&id), &body)?;
+fn switch(client: &Client, mode: IdentityMode, json: bool) -> Result<(), CliError> {
+    // 模式翻转影响全部 planet:节点地址可能变化,受影响网络需重新授权
+    eprintln!("{}", rust_i18n::t!("cli.identity.switchWarn"));
+    let body = json!({ "mode": mode.as_str() });
+    let resp = client.put_json(endpoints::identity(), &body)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&resp).unwrap_or_default());
         return Ok(());
     }
     println!(
         "{}",
-        rust_i18n::t!("cli.identity.switched", planet = planet, mode = mode.as_str())
+        rust_i18n::t!("cli.identity.switched", mode = mode.label())
     );
     Ok(())
 }

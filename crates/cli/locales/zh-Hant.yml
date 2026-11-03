@@ -19,8 +19,11 @@
   cli.identity.imported: "已導入全局身份: %{node}"
   cli.identity.importedStopped: "已導入全局身份: %{node}(官方服務已停止並停用自啟)"
   cli.identity.officialAbsent: 本機未偵測到官方 ZeroTier 用戶端(身份檔案可能來自其它機器)
-  cli.identity.switchOwnWarn: "注意: 切到獨立身份後該 planet 將使用新節點位址,原有網路成員資格需重新授權"
-  cli.identity.switched: "planet %{planet} 身份綁定已切換為 %{mode}(下次啟動生效)"
+  cli.identity.mode: "身份模式: %{mode}"
+  cli.identity.modeShared: 共享(全部 planet 複用全局身份)
+  cli.identity.modeIndependent: 獨立(每 planet 各自身份)
+  cli.identity.switchWarn: "注意: 切換身份模式後部分或全部 planet 將變更節點位址,受影響網路的成員資格需重新授權"
+  cli.identity.switched: "身份模式已切換為 %{mode}(planet 重新啟動後生效)"
 
   cli.service.needRoot: "該操作需要 root 權限,請加 sudo 重新運行"
   cli.service.exeNotFound: "無法定位當前可執行文件: %{e}"

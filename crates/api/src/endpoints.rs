@@ -82,9 +82,6 @@ pub fn identity() -> &'static str {
 pub fn identity_import() -> &'static str {
     "/identity/import"
 }
-pub fn planet_identity(id: &str) -> String {
-    format!("/planets/{}/identity", enc(id))
-}
 pub fn dump(planet: Option<&str>) -> String {
     format!("/dump{}", q(planet))
 }
