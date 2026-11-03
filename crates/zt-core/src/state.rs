@@ -9,6 +9,9 @@
 //!   失败以返回值表达;identity.secret 与 planet 落盘必须 0600(Windows 无
 //!   POSIX 权限位,权限收敛由数据目录 ACL 承担,代码层跳过);
 //! - 每 Node 的 StateStore 独立目录,节点间不得共享(隔离红线,见 POC3)。
+//!   该红线限定 world 数据(moons/peers/networks/planet);identity 目录是
+//!   例外:daemon shared 模式下跨节点共享同一全局身份,其首启生成由 daemon
+//!   侧 runtime_gate 串行化。
 
 use std::fs;
 use std::io;

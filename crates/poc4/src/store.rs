@@ -8,6 +8,8 @@
 //! - 本模块只在核心回调 glue(state_get/state_put)内被调用:禁止 panic/unwrap,
 //!   失败以返回值表达;
 //! - 每 Node 的 StateStore 独立目录,节点间不得共享(隔离红线,见 POC3);
+//!   该红线限定 world 数据,identity 目录在 daemon shared 模式下跨节点共享
+//!   (首启生成由 daemon 侧 runtime_gate 串行化);
 //! - **POC 简化**:identity.secret/planet 的 0600 权限收敛留正式实现(Windows
 //!   侧应换 ACL,POC 不做),`put` 的 `secure` 形参保留但忽略,签名不破。
 

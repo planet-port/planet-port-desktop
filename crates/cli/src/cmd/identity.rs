@@ -20,15 +20,6 @@ impl IdentityMode {
             IdentityMode::Independent => "independent",
         }
     }
-
-    fn label(&self) -> String {
-        match self {
-            IdentityMode::Shared => rust_i18n::t!("cli.identity.modeShared").to_string(),
-            IdentityMode::Independent => {
-                rust_i18n::t!("cli.identity.modeIndependent").to_string()
-            }
-        }
-    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -131,7 +122,7 @@ fn switch(client: &Client, mode: IdentityMode, json: bool) -> Result<(), CliErro
     }
     println!(
         "{}",
-        rust_i18n::t!("cli.identity.switched", mode = mode.label())
+        rust_i18n::t!("cli.identity.switched", mode = mode.as_str())
     );
     Ok(())
 }
