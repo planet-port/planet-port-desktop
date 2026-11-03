@@ -30,7 +30,7 @@ Ubuntu 20.04+ / Mint 21+ 等主流发行版,需 systemd)、Windows(x86_64;纸面
 
 | 路径 | 内容 |
 |---|---|
-| `C:\Program Files\planet-port\planet-port.exe` | CLI(不自动写入 PATH,建议手动加入) |
+| `C:\Program Files\planet-port\planet-port.exe` | CLI(自动注册 Machine PATH,重开终端直接可用) |
 | `C:\Program Files\planet-port\planet-portd.exe` | daemon |
 | `C:\Program Files\planet-port\wintun.dll` | wintun 0.14.1(随装,再分发许可见 third_party/wintun/README.md) |
 | `C:\ProgramData\planet-port\` | 数据目录(安装时以 icacls 收敛为 SYSTEM/Administrators 可写) |
@@ -93,7 +93,8 @@ sudo PLANET_PORT_TARBALL=./planet-port_0.1.0_linux_amd64.tar.gz ./install.sh
 
 支持 Windows 10+(纸面,按支持面收敛),实测基线为 Windows 11
 build 26200,Win10 未实测。产物为 zip(`planet-port_<ver>_windows_x86_64.zip`,
-内含 planet-port.exe / planet-portd.exe / wintun.dll / install-offline.ps1)。
+内含 planet-port.exe / planet-portd.exe / wintun.dll / install-offline.ps1),
+安装时含 Machine PATH 注册。
 本版本**不做代码签名**,SmartScreen 拦截属预期,见下文「故障排查」。
 
 ### 在线安装
@@ -105,6 +106,10 @@ Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/planet-port
 powershell -ExecutionPolicy Bypass -File .\install.ps1                 # 装 latest(最新非 prerelease)
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version 0.1.3  # 指定版本:0.1.3 / v0.1.3 / 0.1.3-beta.1 均可
 ```
+
+在 cmd(旧命令行)中同样可装:cmd 不识别 .ps1,但上面的
+`powershell -ExecutionPolicy Bypass -File ...` 命令在 cmd 里原样可用,
+无需切换到 PowerShell 窗口(管理员 cmd:开始菜单搜 cmd → 右键 → 以管理员身份运行)。
 
 脚本行为:强制 TLS 1.2 → 管理员校验 → GitHub API 解析版本 → 下载
 `planet-port_<ver>_windows_x86_64.zip` 并解压 → 包内容完整性预检(三件套
@@ -122,7 +127,9 @@ powershell -ExecutionPolicy Bypass -File .\install-offline.ps1   # 方式一:随
 .\planet-port.exe install                                        # 方式二:CLI 一键自安装(同目录须有 planet-portd.exe 与 wintun.dll)
 ```
 
-两条路径最终都走 `service install`:三件套拷到 `C:\Program Files\planet-port\`,
+cmd 中同样可执行(特例同上文在线安装节)。
+
+两条路径最终都走 `service install`:三件套拷到 `C:\Program Files\planet-port\` 并注册 Machine PATH,
 数据目录 `C:\ProgramData\planet-port\` 以 icacls 收敛(里面存 authtoken.secret,
 不该对 Users 开放写位),再 `sc.exe create` 注册服务 `planetportd`
 (`start= auto` 开机自启)+ `sc failure` 置失败自拉起(异常死亡 5s 后由 SCM
@@ -130,8 +137,9 @@ powershell -ExecutionPolicy Bypass -File .\install-offline.ps1   # 方式一:随
 
 ### 与 macOS/Linux 的差异
 
-- **PATH 不自动写入**:CLI 落 `C:\Program Files\planet-port\planet-port.exe`,
-  无软链层;建议手动把该目录加入 PATH,否则需全路径调用;
+- **PATH 自动注册(Machine 级)**:安装时自动把 `C:\Program Files\planet-port`
+  写入系统 PATH 并广播环境变更,重开终端后 `planet-port` 可直接使用;卸载时
+  自动移除。已开着的终端读的是启动时环境快照,需重开窗口。
 - **无 sudo,用管理员令牌**:install / uninstall / start / stop 校验管理员
   权限,非管理员提示并退出码 2(对齐 unix 的 root 校验);
 - **升级会先停旧服务**:运行中的 daemon 锁着 exe 映像,install 自动

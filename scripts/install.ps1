@@ -79,5 +79,5 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "安装完成:$Version(服务 planetportd 已启动)"
-Write-Host "  CLI: C:\Program Files\planet-port\planet-port.exe(建议加入 PATH)"
+Write-Host "  CLI: C:\Program Files\planet-port\planet-port.exe(已加入 PATH,重开终端后 planet-port 可直接使用)"
 Write-Host "  卸载: & 'C:\Program Files\planet-port\planet-port.exe' service uninstall"

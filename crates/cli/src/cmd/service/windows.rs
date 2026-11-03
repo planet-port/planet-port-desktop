@@ -19,6 +19,9 @@
 use super::{json_done, probe_online, progress, wait_online};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use windows_sys::Win32::System::Registry::{
+    RegQueryValueExW, RegSetValueExW, HKEY, REG_EXPAND_SZ, REG_VALUE_TYPE,
+};
 
 const SERVICE_NAME: &str = "planetportd";
 const SERVICE_DISPLAY: &str = "Planet Port Daemon";
@@ -139,6 +142,9 @@ pub(crate) fn install(json: bool) {
         progress(json, rust_i18n::t!("cli.service.startTimeoutWin", name = SERVICE_NAME).to_string());
     }
 
+    // 6. Machine PATH 注册:新开终端可直接敲 planet-port(失败仅警告)
+    machine_path_add(json);
+
     progress(json, rust_i18n::t!("cli.service.winInstalled", name = SERVICE_NAME).to_string());
     progress(json, rust_i18n::t!("cli.service.installedBin", path = BIN_PATH).to_string());
     progress(json, rust_i18n::t!("cli.service.installedData", dir = DATA_DIR).to_string());
@@ -179,6 +185,9 @@ pub(crate) fn uninstall(json: bool) {
 
     // NRPT 清理(Task 8 落地前前缀未定,函数内直接跳过)
     cleanup_nrpt_rules(json);
+
+    // Machine PATH 对称移除(失败仅警告)
+    machine_path_remove(json);
 
     progress(json, rust_i18n::t!("cli.service.winRemoved", name = SERVICE_NAME, dir = BIN_DIR).to_string());
     progress(json, rust_i18n::t!("cli.service.dataKept", dir = DATA_DIR).to_string());
@@ -563,5 +572,187 @@ fn cleanup_nrpt_rules(json: bool) {
         Err(e) => {
             eprintln!("{}", rust_i18n::t!("cli.service.nrptCleanFailed", e = e));
         }
+    }
+}
+
+// ===== Machine PATH 注册 =====
+//
+// install 把安装目录幂等追加进 HKLM Session Manager\Environment 的 Path,
+// uninstall 对称移除;写后广播 WM_SETTINGCHANGE,新开终端无需注销即可拿到
+// 新值(cmd/PowerShell 均生效,注册表层与环境变量读取方无关)。
+// PATH 属便利性而非安装本体,任何失败只打 warning,不阻断不回滚——
+// 服务装好而 PATH 没写,远好于反过来。
+//
+// 细节:注册表 Path 值类型 REG_EXPAND_SZ / REG_SZ 均可能(系统镜像默认
+// 前者),写回必须保留原类型,否则 %SystemRoot% 等展开引用会被冻结成字面量;
+// 条目比较忽略大小写(Windows 路径不区分大小写);追加用纯字符串拼接,
+// 不触碰任何既有条目。
+
+/// 系统环境变量注册表子键(Machine 级 PATH 的唯一真源)
+const ENV_SUBKEY: &str = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
+
+/// UTF-8 → NUL 结尾的 UTF-16(注册表 API 的统一入参形态)
+fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// 读 Machine Path 值。Ok(None) = 值不存在(全新系统状态,按需新建);
+/// Err = 注册表操作失败(键被组策略锁定等)
+fn read_machine_path(key: HKEY) -> Result<Option<(String, REG_VALUE_TYPE)>, String> {
+    use windows_sys::Win32::Foundation::ERROR_FILE_NOT_FOUND;
+
+    let name = wide("Path");
+    let mut vtype: REG_VALUE_TYPE = 0;
+    let mut len: u32 = 0;
+    // 两段式:先探长度(缓冲 null)再取值——单次调用无法预知长度
+    let rc = unsafe {
+        RegQueryValueExW(
+            key, name.as_ptr(), std::ptr::null(),
+            &mut vtype, std::ptr::null_mut(), &mut len,
+        )
+    };
+    if rc == ERROR_FILE_NOT_FOUND {
+        return Ok(None);
+    }
+    if rc != 0 {
+        return Err(format!("RegQueryValueExW 探长失败 rc={rc}"));
+    }
+    let mut buf = vec![0u8; len as usize];
+    let rc = unsafe {
+        RegQueryValueExW(
+            key, name.as_ptr(), std::ptr::null(),
+            &mut vtype, buf.as_mut_ptr(), &mut len,
+        )
+    };
+    if rc != 0 {
+        return Err(format!("RegQueryValueExW 读取失败 rc={rc}"));
+    }
+    // 字节流按本机序还原为 UTF-16 再转字符串(REG_*_SZ 系列即 UTF-16LE)
+    let units: Vec<u16> = buf[..len as usize]
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_ne_bytes(*c))
+        .collect();
+    // 尾部 NUL 终止符经 lossy 转换成 \0 字符,统一在此去除
+    let value = String::from_utf16_lossy(&units)
+        .trim_end_matches('\0')
+        .to_string();
+    Ok(Some((value, vtype)))
+}
+
+/// 原类型写回并广播环境变更。REG_EXPAND_SZ 写入须显式带 NUL 终止,
+/// 长度按字节数(UTF-16 单元数 × 2)
+fn write_machine_path(key: HKEY, value: &str, vtype: REG_VALUE_TYPE) -> Result<(), String> {
+    let units = wide(value);
+    let bytes = unsafe {
+        std::slice::from_raw_parts(units.as_ptr().cast::<u8>(), units.len() * 2)
+    };
+    let name = wide("Path");
+    let rc = unsafe {
+        RegSetValueExW(key, name.as_ptr(), 0, vtype, bytes.as_ptr(), bytes.len() as u32)
+    };
+    if rc != 0 {
+        return Err(format!("RegSetValueExW 失败 rc={rc}"));
+    }
+    broadcast_env_change();
+    Ok(())
+}
+
+/// 广播 WM_SETTINGCHANGE:explorer 收到后刷新其环境副本,此后新开的
+/// 终端直接拿到新 PATH;已开终端读的是启动时快照,Windows 机制无热刷新
+fn broadcast_env_change() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SendMessageTimeoutW, HWND_BROADCAST, SMTO_ABORTIFHUNG, WM_SETTINGCHANGE,
+    };
+    // lParam 指向 "Environment" 宽字符串,告诉接收方刷新的是环境变量
+    let param = wide("Environment");
+    unsafe {
+        SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            0,
+            param.as_ptr() as isize,
+            SMTO_ABORTIFHUNG,
+            2000,
+            std::ptr::null_mut(),
+        );
+    }
+}
+
+/// 打开环境键执行编辑,确保句柄在所有路径上都被关闭。
+/// edit 返回 Some(新值) 才写回(None 表示无需变更,跳过写入)
+fn edit_machine_path(edit: impl FnOnce(String) -> Option<String>) -> Result<(), String> {
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegOpenKeyExW, HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_SET_VALUE,
+    };
+
+    let subkey = wide(ENV_SUBKEY);
+    let mut key: HKEY = std::ptr::null_mut();
+    let rc = unsafe {
+        RegOpenKeyExW(
+            HKEY_LOCAL_MACHINE,
+            subkey.as_ptr(),
+            0,
+            KEY_QUERY_VALUE | KEY_SET_VALUE,
+            &mut key,
+        )
+    };
+    if rc != 0 {
+        return Err(format!("RegOpenKeyExW 失败 rc={rc}"));
+    }
+    struct CloseKeyOnDrop(HKEY);
+    impl Drop for CloseKeyOnDrop {
+        fn drop(&mut self) {
+            unsafe { RegCloseKey(self.0) };
+        }
+    }
+    let _guard = CloseKeyOnDrop(key);
+
+    // 值不存在时按 (空串, REG_EXPAND_SZ) 新建——系统默认类型,与镜像行为一致
+    let (old, vtype) = read_machine_path(key)?.unwrap_or((String::new(), REG_EXPAND_SZ));
+    if let Some(new) = edit(old) {
+        write_machine_path(key, &new, vtype)?;
+    }
+    Ok(())
+}
+
+/// install 尾部调用:安装目录幂等追加进 Machine PATH
+fn machine_path_add(json: bool) {
+    let result = edit_machine_path(|old| {
+        let exists = old
+            .split(';')
+            .any(|e| e.trim_end_matches('\0').eq_ignore_ascii_case(BIN_DIR));
+        if exists {
+            return None; // 幂等:重装/升级不产生重复条目
+        }
+        let joined = if old.is_empty() {
+            BIN_DIR.to_string()
+        } else {
+            format!("{old};{BIN_DIR}")
+        };
+        Some(joined)
+    });
+    match result {
+        Ok(()) => progress(json, rust_i18n::t!("cli.service.pathAdded", dir = BIN_DIR).to_string()),
+        Err(e) => progress(json, rust_i18n::t!("cli.service.pathFailed", action = "add", e = e).to_string()),
+    }
+}
+
+/// uninstall 调用:从 Machine PATH 移除安装目录(同样幂等)
+fn machine_path_remove(json: bool) {
+    let result = edit_machine_path(|old| {
+        let kept: Vec<&str> = old
+            .split(';')
+            .filter(|e| !e.trim_end_matches('\0').eq_ignore_ascii_case(BIN_DIR))
+            .collect();
+        if kept.len() == old.split(';').count() {
+            return None; // 没有条目可移,无需写回
+        }
+        Some(kept.join(";"))
+    });
+    match result {
+        Ok(()) => progress(json, rust_i18n::t!("cli.service.pathRemoved", dir = BIN_DIR).to_string()),
+        Err(e) => progress(json, rust_i18n::t!("cli.service.pathFailed", action = "remove", e = e).to_string()),
     }
 }

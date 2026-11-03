@@ -26,4 +26,7 @@ windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_System_Threading",
+    # Machine PATH 注册(service/windows.rs):注册表读写 + WM_SETTINGCHANGE 广播
+    "Win32_System_Registry",
+    "Win32_UI_WindowsAndMessaging",
 ] }

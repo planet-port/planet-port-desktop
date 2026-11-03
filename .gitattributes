@@ -1,0 +1,12 @@
+# 文本文件仓库内统一 LF
+* text=auto eol=lf
+
+# Windows 脚本工作区强制 CRLF(cmd 批处理对 LF 敏感会吃行首字符)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 明确标记二进制,防误判
+*.dll binary
+*.zip binary
+*.png binary
