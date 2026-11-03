@@ -1,12 +1,11 @@
 //! 身份端点:GET /identity(模式与身份列表)、POST /identity/import
-//! (官方身份导入,含停禁官方服务)、PUT /planets/{id}/identity(切换绑定)。
-//! 语义见 docs/superpowers/specs/2026-11-02-identity-management-design.md。
+//! (官方身份导入,含停禁官方服务)、PUT /identity(切换全局身份模式)。
 //!
 //! # 锁与线程纪律
 //!
 //! - registry 锁短临界区取克隆/改写后即放,不跨 await;
 //! - 官方服务停用是子进程阻塞操作,一律 spawn_blocking(红线);
-//! - 切换绑定要求 planet stopped:先取 runtime_gate 再判 runtime_of。
+//! - 模式切换要求全部 planet stopped:先取 runtime_gate 再判运行态。
 //!   仅查运行时表不够——start_planet 全程持 gate 且「先插 map 再置
 //!   running=true」,启动窗口内 map 已有记录而 running 仍为 false,若此时
 //!   放行改写 registry,实例会继续用旧身份而登记却是新身份;持 gate 后
@@ -18,14 +17,14 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::StatusCode,
-    routing::{get, post, put},
+    routing::{get, post},
     Json, Router,
 };
 use serde_json::{json, Value};
 
-use crate::registry::IdentityBinding;
+use crate::registry::IdentityMode;
 use crate::service_control::{self, OfficialServiceAction};
 use crate::state::{err, runtime_of, AppState};
 
@@ -76,46 +75,46 @@ fn global_node_id(config_dir: &std::path::Path) -> Option<String> {
         })
 }
 
-fn binding_str(b: IdentityBinding) -> &'static str {
-    match b {
-        IdentityBinding::Own => "own",
-        IdentityBinding::Global => "global",
+fn mode_str(m: IdentityMode) -> &'static str {
+    match m {
+        IdentityMode::Shared => "shared",
+        IdentityMode::Independent => "independent",
     }
 }
 
 // ---- GET /identity ----
 
 pub async fn identity_list(State(st): State<AppState>) -> Result<Json<Value>, ApiErr> {
-    let entries = {
+    let (entries, mode) = {
         let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        reg.planets.clone()
+        (reg.planets.clone(), reg.identity_mode)
     };
     let exists = st.config_dir.join("identity.secret").exists();
     let g_node = global_node_id(&st.config_dir);
     let planets: Vec<Value> = entries
         .iter()
         .map(|e| {
-            // own 绑定读 dataDir 内 identity.public(显式 stop 后 last_node_id
-            // 会被置 None,身份本体留盘可解析,列表不丢地址);都取不到回落
-            // last_node_id,再无则 null。global 绑定即全局身份地址。
-            let node_id = match e.identity {
-                IdentityBinding::Own => fs::read(e.data_dir.join("identity.public"))
+            // independent 读 dataDir 内 identity.public(显式 stop 后
+            // last_node_id 会被置 None,身份本体留盘可解析,列表不丢地址);
+            // 取不到回落 last_node_id,再无则 null。shared 即全局身份地址。
+            let node_id = match mode {
+                IdentityMode::Independent => fs::read(e.data_dir.join("identity.public"))
                     .ok()
                     .as_deref()
                     .and_then(identity_addr)
                     .or_else(|| e.last_node_id.clone()),
-                IdentityBinding::Global => g_node.clone(),
+                IdentityMode::Shared => g_node.clone(),
             };
             json!({
                 "id": e.id,
                 "name": crate::api_planet::name_of(e),
-                "identity": binding_str(e.identity),
                 "nodeId": node_id,
                 "running": e.running,
             })
         })
         .collect();
     Ok(Json(json!({
+        "mode": mode_str(mode),
         "global": { "exists": exists, "nodeId": g_node },
         "planets": planets,
     })))
@@ -193,20 +192,20 @@ pub async fn identity_import(
             None,
         ));
     }
-    // 3.5 运行态守卫:global 绑定的 planet 仍在运行时导入(尤其 --force 覆盖)
-    // 会出现「实例用旧地址、列表显新地址」的分裂,先拒绝并指引逐个 stop。
-    // 判定 = runtime_of(实际运行)+ registry.running(期望状态,启动窗口内
-    // runtime 表可能有空档)。锁纪律:短临界区——锁内只取 id/name/布尔即放,
-    // runtime_of 另锁 planets 表,不嵌套持锁;全程无 await。
-    let global_bound: Vec<(String, bool, String)> = {
+    // 3.5 运行态守卫:任何 planet 运行中都不允许导入(尤其 --force 覆盖
+    // 共享身份)——否则出现「实例用旧地址、列表显新地址」的分裂,先拒绝
+    // 并指引逐个 stop。判定 = runtime_of(实际运行)+ registry.running
+    // (期望状态,启动窗口内 runtime 表可能有空档)。锁纪律:短临界区——
+    // 锁内只取 id/name/布尔即放,runtime_of 另锁 planets 表,不嵌套持锁;
+    // 全程无 await。
+    let all_planets: Vec<(String, bool, String)> = {
         let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         reg.planets
             .iter()
-            .filter(|e| e.identity == IdentityBinding::Global)
             .map(|e| (e.id.clone(), e.running, crate::api_planet::name_of(e)))
             .collect()
     };
-    let busy: Vec<String> = global_bound
+    let busy: Vec<String> = all_planets
         .into_iter()
         .filter(|(id, running, _)| *running || runtime_of(&st, id).is_some())
         .map(|(id, _, name)| format!("{name}(id {id})"))
@@ -281,66 +280,71 @@ pub async fn identity_import(
     ))
 }
 
-// ---- PUT /planets/{id}/identity ----
+// ---- PUT /identity ----
 
-pub async fn planet_identity_set(
+pub async fn identity_mode_set(
     State(st): State<AppState>,
-    Path(id): Path<String>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiErr> {
-    let binding = match body.get("identity").and_then(|v| v.as_str()) {
-        Some("own") => IdentityBinding::Own,
-        Some("global") => IdentityBinding::Global,
+    let mode = match body.get("mode").and_then(|v| v.as_str()) {
+        Some("shared") => IdentityMode::Shared,
+        Some("independent") => IdentityMode::Independent,
         _ => {
             return Err(bad_request(
                 "badRequest",
-                "body must contain \"identity\": \"own\" | \"global\"",
+                "body must contain \"mode\": \"shared\" | \"independent\"",
             ))
         }
     };
-    // 先取启停门闩(与 DELETE 对齐):start_planet 先插运行时表再置
+    // 先取启停门闩(与原行星级切换同理):start_planet 先插运行时表再置
     // running=true,启动窗口内只查运行时表会漏判运行中,持 gate 后判定
     // 与 registry 改写都被串行化,不会与并发 start 交错。门闩内不做 await。
     let _gate = st.runtime_gate.lock().await;
-    // 运行中拒绝(临界区内无 await)
-    if runtime_of(&st, &id).is_some() {
+    // 模式影响全部 planet 的身份来源:任何 planet 运行中即拒绝
+    let all_planets: Vec<(String, bool, String)> = {
+        let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        reg.planets
+            .iter()
+            .map(|e| (e.id.clone(), e.running, crate::api_planet::name_of(e)))
+            .collect()
+    };
+    let busy: Vec<String> = all_planets
+        .into_iter()
+        .filter(|(id, running, _)| *running || runtime_of(&st, id).is_some())
+        .map(|(id, _, name)| format!("{name}(id {id})"))
+        .collect();
+    if !busy.is_empty() {
         return Err(err(
             StatusCode::CONFLICT,
             "planetRunning",
-            &format!("planet \"{id}\" is running; stop it before switching identity"),
+            &format!(
+                "planet(s) running: {}; stop them before switching identity mode",
+                busy.join(", ")
+            ),
             None,
         ));
     }
     {
         let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(e) = reg.planets.iter_mut().find(|e| e.id == id) else {
-            return Err(err(
-                StatusCode::NOT_FOUND,
-                "planetNotFound",
-                &format!("planet \"{id}\" not found"),
-                None,
-            ));
-        };
-        e.identity = binding;
+        reg.identity_mode = mode;
         if let Err(e) = reg.save(&st.config_dir) {
-            // 半态可见:绑定已改在内存生效但未落盘,事件留痕供 events 排查
+            // 半态可见:模式已改在内存生效但未落盘,事件留痕供 events 排查
             eprintln!("[identity] registry 写盘失败: {e}");
             st.events
-                .push(&id, "identitySwitchPersistFailed", &e.to_string());
+                .push("global", "identityModePersistFailed", &e.to_string());
         }
     }
     st.events.push(
-        &id,
-        "identitySwitch",
-        &format!("identity binding switched to {}", binding_str(binding)),
+        "global",
+        "identityModeSwitched",
+        &format!("identity mode switched to {}", mode_str(mode)),
     );
-    Ok(Json(json!({ "result": "ok", "id": id, "identity": binding_str(binding) })))
+    Ok(Json(json!({ "result": "ok", "mode": mode_str(mode) })))
 }
 
-/// 身份路由:/identity、/identity/import、/planets/{id}/identity
+/// 身份路由:/identity(GET 列表 + PUT 模式切换)、/identity/import
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/identity", get(identity_list))
+        .route("/identity", get(identity_list).put(identity_mode_set))
         .route("/identity/import", post(identity_import))
-        .route("/planets/{id}/identity", put(planet_identity_set))
 }

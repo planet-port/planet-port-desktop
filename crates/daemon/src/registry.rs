@@ -8,15 +8,15 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-/// planet 的节点身份绑定:Own = dataDir 内独立身份(存量/缺省语义);
-/// Global = 共享 config 根的全局身份(identity.public/secret)。
-/// 存量 registry.json 无此字段,反序列化回落 Own。
+/// daemon 级身份模式:Shared = 所有 planet 共享 config 根的全局身份
+/// (identity.public/secret,缺省);Independent = 每 planet 用各自
+/// dataDir 内的独立身份。全局开关,不按 planet 单独设置。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum IdentityBinding {
+pub enum IdentityMode {
     #[default]
-    Own,
-    Global,
+    Shared,
+    Independent,
 }
 
 /// 一条已导入的 planet 记录
@@ -57,9 +57,6 @@ pub struct RegistryEntry {
     /// 优雅退出/teardown 时清空
     #[serde(default)]
     pub ifaces: Vec<String>,
-    /// 节点身份绑定(own/global);缺省 Own 兼容存量注册表
-    #[serde(default)]
-    pub identity: IdentityBinding,
 }
 
 /// 单个网络的本地配置(route/dns 策略)
@@ -89,6 +86,9 @@ pub struct MoonRecord {
 pub struct Registry {
     #[serde(default)]
     pub planets: Vec<RegistryEntry>,
+    /// daemon 级身份模式;save 恒写此字段,缺字段仅见于旧格式文件(load 迁移)
+    #[serde(default)]
+    pub identity_mode: IdentityMode,
 }
 
 impl Registry {
@@ -99,7 +99,23 @@ impl Registry {
             Ok(b) => b,
             Err(_) => return Self::default(),
         };
-        serde_json::from_slice(&bytes).unwrap_or_else(|_| Self::default())
+        let v: serde_json::Value = match serde_json::from_slice(&bytes) {
+            Ok(v) => v,
+            Err(_) => return Self::default(),
+        };
+        let mode_missing = v.get("identityMode").is_none();
+        let mut reg: Self = serde_json::from_value(v).unwrap_or_else(|_| Self::default());
+        // 旧格式迁移(identityMode 缺失):planets 空或 config 根已有全局
+        // 身份 → Shared(缺省语义);否则 → Independent——老 planet 各持
+        // dataDir 独立身份,按 Independent 保持节点地址不变,不隐式换地址。
+        if mode_missing {
+            reg.identity_mode = if reg.planets.is_empty() || dir.join("identity.secret").exists() {
+                IdentityMode::Shared
+            } else {
+                IdentityMode::Independent
+            };
+        }
+        reg
     }
 
     /// 原子写盘:tmp → rename(同 zt-core StateStore 模式);Task 3 起的变更端点调用

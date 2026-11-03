@@ -21,7 +21,7 @@ type ApiErr = (StatusCode, Json<planet_port_api::types::ApiError>);
 use planet_port_api::types::{PlanetDetail, PlanetKind, PlanetStatus, ShareLink};
 use serde_json::{json, Value};
 
-use crate::registry::{IdentityBinding, Registry, RegistryEntry};
+use crate::registry::{Registry, RegistryEntry};
 use crate::runtime;
 use crate::state::{err, AppState, LiveInfo, ShareRecord};
 use crate::world;
@@ -392,12 +392,6 @@ pub async fn planets_import(
         net_local: Default::default(),
         moons: Vec::new(),
         ifaces: Vec::new(),
-        // 存在全局身份则新 planet 默认绑定它
-        identity: if st.config_dir.join("identity.secret").exists() {
-            IdentityBinding::Global
-        } else {
-            IdentityBinding::Own
-        },
     };
     reg.planets.push(entry);
     reg.save(&st.config_dir)

@@ -28,7 +28,7 @@ use zt_core::{
 
 use crate::dns;
 use crate::events::Ring;
-use crate::registry::{IdentityBinding, NetLocal, RegistryEntry};
+use crate::registry::{IdentityMode, NetLocal, RegistryEntry};
 use crate::state::{AppState, LiveInfo, NetCache, NetSnapshot, PlanetRuntime};
 
 /// nwid → NetLocal 的运行时镜像(sink 读,handler 写)
@@ -446,13 +446,20 @@ pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(),
         app: state.clone(),
         fatal_done: AtomicBool::new(false),
     };
+    let identity_mode = {
+        let reg = state
+            .registry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        reg.identity_mode
+    };
     let params = NodeParams {
         data_dir: entry.data_dir.clone(),
         planet_file,
         bind_port: entry.port,
-        identity_dir: match entry.identity {
-            IdentityBinding::Global => Some(state.config_dir.clone()),
-            IdentityBinding::Own => None,
+        identity_dir: match identity_mode {
+            IdentityMode::Shared => Some(state.config_dir.clone()),
+            IdentityMode::Independent => None,
         },
     };
     // start 含首次 processBackgroundTasks(阻塞),放阻塞线程池
