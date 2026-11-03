@@ -14,3 +14,4 @@ crates/pocs/fixtures/
 # 构建产物与本地会话文件
 /dist/
 /claude-session*
+docs/superpowers/
