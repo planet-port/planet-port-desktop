@@ -247,13 +247,27 @@ pub async fn identity_import(
             None,
         ));
     }
+    // 4.5 gate 内重判覆盖保护:步骤 3 的判定发生在停服务(最长 90s)之前,
+    // 并发的两个非 force 导入都可能先过守卫再先后进门闩,后者会静默覆盖
+    // 前者。此处正持门闩、紧邻落盘,重判一次把窗口封死;前置判定保留作
+    // fail-fast,避免无谓停官方服务。
+    if dest_secret.exists() && !force {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "identityExists",
+            "global identity already exists; pass force to overwrite",
+            None,
+        ));
+    }
     // 5. 写盘:secret/public 两文件必须成对生效。先各自写好不同名的 tmp
     // (不能用 with_extension("tmp"),它会把 identity.secret/public 都变成
     // identity.tmp 而互相覆盖),每个 tmp 写完立即收紧到 0600(rename 保留
     // 权限),消除「先 0644 落盘、后补 chmod」的明文窗口;chmod 失败不留
-    // 半态:清理 tmp、events 留痕并以 internal 错误中止。两个 tmp 都落定后
-    // 再依次 rename;任一 rename 失败清理两个 tmp 并中止,避免留下
-    // 「新 secret 配旧 public」的半态。
+    // 半态:清理 tmp、events 留痕并以 internal 错误中止。rename 前先把旧
+    // dest 各自挪成 .bak(secret 成功而 public 失败时旧 public 仍可整对
+    // 复原),两个 tmp 都 rename 成功才删 .bak;任一 rename 失败则把已
+    // rename 的 dest 与 .bak 复原回原名、清理 tmp 并以 internal 错误中止,
+    // 磁盘不留「新 secret 配旧 public」的半态。
     let tmp_for = |dest: &std::path::Path| -> PathBuf {
         let name = dest.file_name().and_then(|n| n.to_str()).unwrap_or("identity");
         dest.with_file_name(format!("{name}.tmp"))
@@ -293,12 +307,90 @@ pub async fn identity_import(
             )));
         }
     }
-    for (tmp, dest) in [(&tmp_secret, &dest_secret), (&tmp_public, &dest_public)] {
-        if let Err(e) = fs::rename(tmp, dest) {
-            cleanup_tmps();
-            return Err(internal(format!("cannot rename to {}: {e}", dest.display())));
+    // rename 前备份旧 dest:rename 是覆盖式语义,旧 identity.secret/public
+    // 一旦被第一个 rename 吃掉就无法凭自身复原,只能靠 .bak
+    let bak_for = |dest: &std::path::Path| -> PathBuf {
+        let name = dest.file_name().and_then(|n| n.to_str()).unwrap_or("identity");
+        dest.with_file_name(format!("{name}.bak"))
+    };
+    let bak_secret = bak_for(&dest_secret);
+    let bak_public = bak_for(&dest_public);
+    let stage_bak =
+        |dest: &std::path::Path, bak: &std::path::Path| -> Result<(), std::io::Error> {
+            if dest.exists() {
+                fs::rename(dest, bak)
+            } else {
+                Ok(())
+            }
+        };
+    // 归位单个 dest:.bak 存在才 rename 回原名;归位失败不吞错,留痕
+    // identityRestoreFailed 并返回 false,让调用方如实上报回滚结果
+    let restore = |bak: &std::path::Path, dest: &std::path::Path| -> bool {
+        if !bak.exists() {
+            return true;
         }
+        match fs::rename(bak, dest) {
+            Ok(()) => true,
+            Err(e) => {
+                st.events.push(
+                    "global",
+                    "identityRestoreFailed",
+                    &format!("cannot restore {} from {}: {e}", dest.display(), bak.display()),
+                );
+                false
+            }
+        }
+    };
+    let restore_all = || {
+        let secret_ok = restore(&bak_secret, &dest_secret);
+        let public_ok = restore(&bak_public, &dest_public);
+        secret_ok && public_ok
+    };
+    if let Err(e) = stage_bak(&dest_secret, &bak_secret).and_then(|()| stage_bak(&dest_public, &bak_public)) {
+        // secret 已挪成 .bak 而原名缺位,不归位会让下次 start 读不到
+        // secret 而生成全新身份、静默换地址,必须先复原再中止
+        restore_all();
+        cleanup_tmps();
+        return Err(internal(format!("cannot back up existing identity: {e}")));
     }
+    // 各 dest 是否有旧身份(即有 .bak):回滚时 .bak 归位会覆盖掉已写入
+    // 的新文件;首次导入无 .bak,已写入的 dest 是孤儿新文件,须删除
+    let had_bak = [bak_secret.exists(), bak_public.exists()];
+    let mut written: Vec<(&std::path::Path, bool)> = Vec::new();
+    for (i, (tmp, dest)) in [(&tmp_secret, &dest_secret), (&tmp_public, &dest_public)]
+        .into_iter()
+        .enumerate()
+    {
+        if let Err(e) = fs::rename(tmp, dest) {
+            // 失败复原:有 .bak 的 dest 用 .bak 归位覆盖新文件,无 .bak
+            // 的已写入 dest 删除孤儿,tmp 一并清理不留垃圾
+            let rollback_ok = restore_all();
+            for (d, bak) in &written {
+                if !*bak {
+                    if let Err(del_err) = fs::remove_file(d) {
+                        st.events.push(
+                            "global",
+                            "identityRestoreFailed",
+                            &format!("cannot remove orphaned {}: {del_err}", d.display()),
+                        );
+                    }
+                }
+            }
+            cleanup_tmps();
+            return Err(internal(format!(
+                "cannot rename to {} ({e}); {}",
+                dest.display(),
+                if rollback_ok {
+                    "previous identity restored"
+                } else {
+                    "rollback attempted; check events / identityRestoreFailed"
+                }
+            )));
+        }
+        written.push((dest, had_bak[i]));
+    }
+    let _ = fs::remove_file(&bak_secret);
+    let _ = fs::remove_file(&bak_public);
     st.events
         .push("global", "identityImported", &format!("global identity imported: {addr_s}"));
     let action_str = match action {
