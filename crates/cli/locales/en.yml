@@ -23,7 +23,7 @@
   cli.identity.modeShared: shared (all planets share the global identity)
   cli.identity.modeIndependent: independent (per-planet identity)
   cli.identity.switchWarn: "note: switching identity mode may change node addresses of some or all planets; affected network memberships need re-authorization"
-  cli.identity.switched: "identity mode switched to %{mode} (effective on next planet start)"
+  cli.identity.switched: "identity mode switched to %{mode}; effective on next planet start"
 
   cli.service.needRoot: "This operation requires root; re-run with sudo"
   cli.service.exeNotFound: "Failed to locate the current executable: %{e}"

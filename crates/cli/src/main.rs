@@ -90,7 +90,7 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::planet::PlanetCmd,
     },
-    /// Identity mode, identity list, official identity import, binding switch
+    /// Identity mode, identity list, official identity import, mode switch
     Identity {
         #[command(subcommand)]
         cmd: Option<cmd::identity::IdentityCmd>,
