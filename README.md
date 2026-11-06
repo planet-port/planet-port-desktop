@@ -1,6 +1,6 @@
 # Planet Port Desktop 🪐
 
-**Planet Port Desktop** 是一款开源的桌面端 ZeroTier 客户端，基于 ZeroTier 1.16 官方核心（Rust FFI 直链）打造。它让你在 Mac 上轻松完成异地组网与虚拟局域网管理：多 Planet 并存（官方 + 自建私有 Planet），默认路由与 DNS 全自由掌控。采用「特权 daemon + 薄客户端」架构：`planet-portd` 守护进程持核心与虚拟网卡，`planet-port` CLI 与规划中的 GUI 都是纯 API 客户端，GUI 不开、隧道照跑。
+**Planet Port Desktop** 是一款开源的桌面端 ZeroTier 客户端，基于 ZeroTier 1.16 官方核心（Rust FFI 直链）打造。它让你在 macOS / Linux / Windows 上轻松完成异地组网与虚拟局域网管理：多 Planet 并存（官方 + 自建私有 Planet），默认路由与 DNS 全自由掌控。采用「特权 daemon + 薄客户端」架构：`planet-portd` 守护进程持核心与虚拟网卡，`planet-port` CLI 与规划中的 GUI 都是纯 API 客户端，GUI 不开、隧道照跑。
 
 > 非官方客户端，与 ZeroTier, Inc. 无隶属关系。
 
@@ -9,10 +9,10 @@
 | 平台 | CLI | GUI |
 |---|---|---|
 | macOS | ✅ | 📐 |
-| Linux | 🚧 | 📐 |
-| Windows | 🚧 | 📐 |
+| Linux | ✅ | 📐 |
+| Windows | ✅ | 📐 |
 
-✅ 可用 · 🚧 进行中 · 📐 规划中
+✅ 可用 · 📐 规划中
 
 CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（托盘常驻），daemon + CLI 已覆盖全部功能，GUI 不开、隧道照跑。
 
@@ -23,9 +23,9 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 | 系统 | 产物类型 | 完成程度 | 最低系统版本 |
 |---|---|---|---|
 | macOS（Apple Silicon / Intel） | tar.xz + 安装脚本 | ✅ 已发布可用（launchd 服务、feth 数据面、DNS 托管完整） | macOS 12+ |
-| Ubuntu / Linux Mint 等 Debian 系 | tar.xz + 安装脚本（后续 deb） | 🚧 适配中：数据面已通（Ubuntu 24.04 实机验证多 planet 上线、join/netconf/路由、跨节点连通与 LAN 直连）；服务层（launchd→systemd）与安装脚本待适配 | Ubuntu 20.04+ / Mint 20+ |
-| Debian | 同上（与 Ubuntu 共用 Linux 产物） | 🚧 同上 | Debian 11+ |
-| Windows | zip + 安装脚本（后续 MSI） | 🚧 实现完成：wintun 数据面、SCM 服务化、CLI 全命令、DNS NRPT、install.ps1 / 离线 zip 安装链路；Win11 实机安装级验收进行中，Win10 纸面支持未实测 | Windows 10+ |
+| Ubuntu / Linux Mint 等 Debian 系 | tar.xz + 安装脚本（后续 deb） | ✅ 已发布可用（systemd 服务全流程 e2e：多机实测覆盖 amd64 / arm64、升级后数据保留与 planet 自动恢复、与官方 zerotier-one 共存） | Ubuntu 20.04+ / Mint 20+ |
+| Debian | 同上（与 Ubuntu 共用 Linux 产物） | ✅ 同上 | Debian 11+ |
+| Windows | zip + 安装脚本（后续 MSI） | ✅ 已发布可用：wintun 数据面、SCM 服务化、CLI 全命令、DNS NRPT、install.ps1 / 离线 zip 安装链路；Win11 实机安装级 e2e 通过，Win10 纸面支持未实测 | Windows 10+ |
 | Termux（Android） | 待定 | 📐 待定（zerotier-one 官方亦不发布 Termux 包，仅社区仓库有） | 待定 |
 | 其它（FreeBSD / RHEL 系等） | 待定 | 📐 待定 | 待定 |
 
@@ -39,26 +39,26 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 - **默认路由与 DNS 自由掌控**：`routeViaZeroTier` 开关、`dnsMode=none|network|custom`，全部陈述式配置，脚本友好
 - **Moon 支持**：orbit / deorbit / 导入 `.moon` 文件
 - **身份模式**：daemon 级全局开关，默认共享——所有 planet 复用 config 根全局身份（`identity.public/secret`，同一节点地址）；`identity use shared|independent` 一键切换，independent 下每 planet 各用 dataDir 独立身份；`identity import` 导入官方 ZeroTier 身份（自动停禁官方服务，沿用原节点地址与网络成员资格）
-- **服务化常驻**：launchd 一键安装，开机自启、崩溃自动拉起；SIGTERM 优雅退出（逐 planet 红线收尾，保留期望状态，`service start` 后自动恢复）；重启后自动 re-join 已加入网络
+- **服务化常驻**：launchd（macOS）/ systemd（Linux）/ Windows 服务一键安装，开机自启、崩溃自动拉起；SIGTERM 优雅退出（逐 planet 红线收尾，保留期望状态，`service start` 后自动恢复）；重启后自动 re-join 已加入网络
 - **事件日志**：`events --follow` 按 ts 游标增量跟踪状态变更
 - **多语言 CLI**：简中 / 繁中 / 英语，跟随系统语言自动选择（无需配置），语言文件可扩展
 
 ## 快速开始
 
-> **系统要求**：macOS（Apple Silicon / Intel）；Windows（x86_64）安装见 [docs/install.md](docs/install.md) 的 Windows 章节。各系统支持程度与最低版本见上方「系统支持与最低版本」。
+> **系统要求**：macOS（Apple Silicon / Intel）、Linux（amd64 / arm64，glibc ≥ 2.31，需 systemd）、Windows（x86_64）。安装细节见 [docs/install.md](docs/install.md) ，各系统支持程度与最低版本见上方「系统支持与最低版本」。
 
 ```bash
 # 一条命令:下载二进制 + 装软链 + 装 launchd 服务并启动
 curl -fsSL https://raw.githubusercontent.com/planet-port/planet-port-desktop/main/scripts/install.sh | sudo bash
 
 # 指定版本 / 只装二进制不装服务
-curl -fsSL https://raw.githubusercontent.com/planet-port/planet-port-desktop/main/scripts/install.sh | sudo bash -s -- v0.1.1 --no-service
+curl -fsSL https://raw.githubusercontent.com/planet-port/planet-port-desktop/main/scripts/install.sh | sudo bash -s -- v0.3.0 --no-service
 
 # 卸载(数据目录默认保留;--purge 彻底清除)
 sudo bash scripts/uninstall.sh [--purge]
 ```
 
-二进制落在 `/Library/Application Support/planet-portd/bin/`，`/usr/local/bin/planet-port` 为软链；升级重跑安装脚本即可（停止前记录运行中的 planet，装完自动拉回）。
+二进制落在 `/Library/Application Support/planet-portd/bin/`，`/usr/local/bin/planet-port` 为软链（Linux 上直接落 `/usr/local/bin/`，服务为 `/etc/systemd/system/planet-portd.service`；Windows 安装见 [docs/install.md](docs/install.md) 的 Windows 章节）；升级重跑安装脚本即可（停止前记录运行中的 planet，装完自动拉回）。
 
 首次使用：
 
@@ -77,7 +77,7 @@ GUI 挂了 / 不开不影响隧道——daemon 独立常驻，全部功能均可
 ### 服务管理
 
 ```bash
-sudo planet-port service install     # 拷贝二进制 + 写 LaunchDaemon + bootstrap(开机自启/崩溃拉起)
+sudo planet-port service install     # 拷贝二进制 + 写系统服务(launchd / systemd / Windows 服务) + bootstrap(开机自启/崩溃拉起)
 sudo planet-port service start       # 拉起,并按期望状态自动恢复 planet
 planet-port service status           # 无需 root 查看状态
 sudo planet-port service stop        # SIGTERM 优雅退出;保留期望状态,start 后恢复
@@ -95,11 +95,11 @@ sudo planet-port service stop        # SIGTERM 优雅退出;保留期望状态,s
 flowchart LR
     CLI["planet-port(CLI 薄客户端)"]
     GUI["Planet Port GUI(规划中)"]
-    subgraph DAEMON["planet-portd(root daemon,launchd 常驻)"]
+    subgraph DAEMON["planet-portd(root daemon,系统服务常驻)"]
         API["本地 REST API(127.0.0.1:port,X-ZT1-Auth 鉴权)"]
         REG["registry(planet 登记:数据目录/UDP 端口/本地网络配置)"]
         INST["planet 实例 × N(zt-core FFI 直链 libzerotiercore 1.16.2)"]
-        DEV["feth 虚拟网卡 + managed IP/路由/DNS 应用器"]
+        DEV["虚拟网卡(feth / tap / wintun) + managed IP/路由/DNS 应用器"]
     end
     CLI -- "port/authtoken 文件协商地址与鉴权" --> API
     GUI -.-> API
@@ -107,7 +107,7 @@ flowchart LR
     API --> INST --> DEV
 ```
 
-- **特权收敛**：提权只有一次 `service install`；daemon 以 root 建 feth 网卡、装路由，CLI / GUI 永不提权（ZeroTier / Tailscale 同款模式）
+- **特权收敛**：提权只有一次 `service install`；daemon 以 root 建虚拟网卡、装路由，CLI / GUI 永不提权（ZeroTier / Tailscale 同款模式）
 - **Planet 隔离**：每 planet 一个 zt-core Node 实例，独立身份、独立数据目录、独立 UDP 端口
 - **活性协商**：daemon 启动写 `port` 文件（实际监听端口）与 `authtoken.secret`；port 文件存在即活性信号，daemon 退出时最后删除它。CLI 未显式指定 URL 时靠它协商地址
 - **自动恢复**：registry 的 `running` 是**期望状态**——`service stop`（SIGTERM 优雅退出）保留它，daemon 启动时自动拉起全部期望运行的 planet 并按登记的本地网络配置逐网络 re-join（zt-core 的 `networks.d/<nwid>.conf` 只是 netconf 缓存，不承载成员关系）；用户显式 `planet-port stop` 落 `running=false`，重启后不拉起
