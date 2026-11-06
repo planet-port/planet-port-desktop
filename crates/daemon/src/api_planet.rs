@@ -33,6 +33,15 @@ fn now_unix() -> u64 {
         .as_secs()
 }
 
+/// worldId 命中官方常量即 Official(展示标签;world 签名不校验,见常量注释)
+fn planet_kind(world_id: u64) -> PlanetKind {
+    if world_id == planet_port_api::types::OFFICIAL_WORLD_ID {
+        PlanetKind::Official
+    } else {
+        PlanetKind::Custom
+    }
+}
+
 /// 取 n 字节加密随机数并 hex 编码为 2n 字符(不引入 getrandom 依赖;
 /// 随机源平台分叉见 main.rs 的 fill_random)
 fn random_hex(n: usize) -> std::io::Result<String> {
@@ -53,8 +62,7 @@ fn not_found(id: &str) -> ApiErr {
 // ---- 投影 ----
 
 /// 列表项投影:online/core_version/latency/node_id 取自运行时实时数据
-/// (无运行时一律 false/None,offline 分支同样形态);
-/// source=builtin 视为官方 planet
+/// (无运行时一律 false/None,offline 分支同样形态)
 pub(crate) fn to_status(e: &RegistryEntry, live: Option<&LiveInfo>) -> PlanetStatus {
     let online = live.map(|l| l.online).unwrap_or(false);
     PlanetStatus {
@@ -62,11 +70,7 @@ pub(crate) fn to_status(e: &RegistryEntry, live: Option<&LiveInfo>) -> PlanetSta
         name: name_of(e),
         icon: e.icon.clone().unwrap_or_default(),
         color: e.color.clone().unwrap_or_default(),
-        kind: if e.source == "builtin" {
-            PlanetKind::Official
-        } else {
-            PlanetKind::Custom
-        },
+        kind: planet_kind(e.world_id),
         status: if e.running { "running" } else { "stopped" }.into(),
         online,
         node_id: if online { Some(live.unwrap().node_id.clone()) } else { None },
@@ -84,11 +88,7 @@ fn to_detail(e: &RegistryEntry, live: Option<&LiveInfo>) -> PlanetDetail {
         name: name_of(e),
         icon: e.icon.clone().unwrap_or_default(),
         color: e.color.clone().unwrap_or_default(),
-        kind: if e.source == "builtin" {
-            PlanetKind::Official
-        } else {
-            PlanetKind::Custom
-        },
+        kind: planet_kind(e.world_id),
         world_id: e.world_id,
         roots: e.roots.clone(),
         file_size: e.file_size,

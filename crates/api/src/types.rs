@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+/// ZeroTier 官方 planet 的 worldId(官方源码写死的常量,与 revision/roots
+/// 变更无关)。用于把 planet 标记为 Official——仅是展示标签,world 文件
+/// 的签名不校验,不可作为信任依据。
+pub const OFFICIAL_WORLD_ID: u64 = 149_604_618;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum PlanetKind {

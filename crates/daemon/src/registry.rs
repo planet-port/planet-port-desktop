@@ -32,7 +32,8 @@ pub struct RegistryEntry {
     pub icon: Option<String>,
     #[serde(default)]
     pub color: Option<String>,
-    /// builtin | file | qr | url …(导入来源)
+    /// file | url …(导入来源;官方/自定义判定不看来源,按 worldId 见
+    /// api_planet::planet_kind)
     pub source: String,
     /// 各根稳定端点("ip:port"),来自导入时解析的 world(Task 3 起填充)
     #[serde(default)]

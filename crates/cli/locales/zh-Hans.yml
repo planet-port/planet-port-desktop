@@ -28,6 +28,10 @@
   cli.identity.modeIndependent: 独立(每 planet 各自身份)
   cli.identity.switchWarn: "注意: 切换身份模式后部分或全部 planet 将变更节点地址,受影响网络的成员资格需重新授权"
   cli.identity.switched: "身份模式已切换为 %{mode},planet 重新启动后生效"
+  cli.identity.planetKindOfficial: 官方 planet
+  cli.identity.planetKindCustom: 自定义 planet
+  cli.identity.planetRegistered: "官方客户端当前 planet 已导入为 %{name};原已加入的网络直接 join 即可恢复,无需重新授权"
+  cli.identity.planetMissing: "官方客户端当前 %{kind}(worldId %{worldId})尚未导入;恢复原网络请先执行: planet-port add %{path}"
 
   # ---- service 子命令 ----
   cli.service.needRoot: "该操作需要 root 权限,请加 sudo 重新运行"

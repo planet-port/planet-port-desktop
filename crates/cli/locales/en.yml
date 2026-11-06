@@ -24,6 +24,10 @@
   cli.identity.modeIndependent: independent (per-planet identity)
   cli.identity.switchWarn: "note: switching identity mode may change node addresses of some or all planets; affected network memberships need re-authorization"
   cli.identity.switched: "identity mode switched to %{mode}; effective on next planet start"
+  cli.identity.planetKindOfficial: official planet
+  cli.identity.planetKindCustom: custom planet
+  cli.identity.planetRegistered: "the official client's current planet is already imported as \"%{name}\"; join your previous networks to restore membership without re-authorization"
+  cli.identity.planetMissing: "the official client's current %{kind} (worldId %{worldId}) is not imported yet; run `planet-port add %{path}` first to restore previous networks"
 
   cli.service.needRoot: "This operation requires root; re-run with sudo"
   cli.service.exeNotFound: "Failed to locate the current executable: %{e}"

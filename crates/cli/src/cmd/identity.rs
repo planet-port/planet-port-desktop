@@ -115,18 +115,51 @@ fn import(client: &Client, path: Option<&str>, force: bool, json: bool) -> Resul
         }
         _ => println!("{}", rust_i18n::t!("cli.identity.imported", node = node)),
     }
+    // 官方客户端当前 planet 的处置提示:身份迁移保留原节点地址、成员
+    // 资格随之保留,但网络挂在哪个 planet 需要指引用户(已导入 → 直接
+    // join;未导入 → 先 add 官方目录里的 planet 文件)
+    if let Some(p) = resp["officialPlanet"].as_object() {
+        let world_id = p
+            .get("worldId")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+            .to_string();
+        let kind = if p.get("official").and_then(|v| v.as_bool()).unwrap_or(false) {
+            rust_i18n::t!("cli.identity.planetKindOfficial").to_string()
+        } else {
+            rust_i18n::t!("cli.identity.planetKindCustom").to_string()
+        };
+        match p.get("registeredName").and_then(|v| v.as_str()) {
+            Some(name) => println!(
+                "{}",
+                rust_i18n::t!("cli.identity.planetRegistered", name = name)
+            ),
+            None => {
+                let path = p.get("path").and_then(|v| v.as_str()).unwrap_or("-");
+                println!(
+                    "{}",
+                    rust_i18n::t!(
+                        "cli.identity.planetMissing",
+                        kind = kind,
+                        worldId = world_id,
+                        path = path
+                    )
+                );
+            }
+        }
+    }
     Ok(())
 }
 
 fn switch(client: &Client, mode: IdentityMode, json: bool) -> Result<(), CliError> {
-    // 模式翻转影响全部 planet:节点地址可能变化,受影响网络需重新授权
-    eprintln!("{}", rust_i18n::t!("cli.identity.switchWarn"));
     let body = json!({ "mode": mode.as_str() });
     let resp = client.put_json(endpoints::identity(), &body)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&resp).unwrap_or_default());
         return Ok(());
     }
+    // 成功后再提示:切换被 409 拒绝时打印警告会误导(什么都没发生)
+    eprintln!("{}", rust_i18n::t!("cli.identity.switchWarn"));
     println!(
         "{}",
         rust_i18n::t!("cli.identity.switched", mode = mode.label())

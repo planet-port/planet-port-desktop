@@ -51,18 +51,25 @@ fn identity_addr(bytes: &[u8]) -> Option<String> {
         .filter(|a| a.len() == 10 && a.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
-/// 官方客户端数据目录(以 identity.secret 存在为准);未安装返回 None
+/// 官方客户端数据目录(以 identity.secret 存在为准);未安装返回 None。
+/// macOS 官方客户端(pkg/Homebrew cask)的工作目录在 .../ZeroTier/One,
+/// 兼容历史/变体布局按序探测候选目录。
 fn official_dir() -> Option<PathBuf> {
-    let dir = if cfg!(target_os = "macos") {
-        PathBuf::from("/Library/Application Support/ZeroTier")
+    let candidates: Vec<PathBuf> = if cfg!(target_os = "macos") {
+        vec![
+            PathBuf::from("/Library/Application Support/ZeroTier/One"),
+            PathBuf::from("/Library/Application Support/ZeroTier"),
+        ]
     } else if cfg!(target_os = "linux") {
-        PathBuf::from("/var/lib/zerotier-one")
+        vec![PathBuf::from("/var/lib/zerotier-one")]
     } else if cfg!(target_os = "windows") {
-        PathBuf::from(r"C:\ProgramData\ZeroTier\One")
+        vec![PathBuf::from(r"C:\ProgramData\ZeroTier\One")]
     } else {
         return None;
     };
-    dir.join("identity.secret").exists().then_some(dir)
+    candidates
+        .into_iter()
+        .find(|d| d.join("identity.secret").exists())
 }
 
 /// 全局身份节点地址:优先 identity.public,回落 identity.secret
@@ -122,6 +129,23 @@ pub async fn identity_list(State(st): State<AppState>) -> Result<Json<Value>, Ap
         "global": { "exists": exists, "nodeId": g_node },
         "planets": planets,
     })))
+}
+
+/// 解析官方客户端当前使用的 planet 文件(身份同目录下的 `planet`),供
+/// 导入响应提示"原网络挂在哪个 planet、是否已导入"。缺失/非 planet
+/// (如 moon)/解析失败一律 None,不影响导入主流程。
+fn official_planet_info(secret_path: &std::path::Path) -> Option<Value> {
+    let path = secret_path.with_file_name("planet");
+    let bytes = fs::read(&path).ok()?;
+    let info = crate::world::parse_world(&bytes).ok()?;
+    if info.kind != crate::world::WorldKind::Planet {
+        return None;
+    }
+    Some(json!({
+        "worldId": info.world_id,
+        "official": info.world_id == planet_port_api::types::OFFICIAL_WORLD_ID,
+        "path": path,
+    }))
 }
 
 // ---- POST /identity/import ----
@@ -398,9 +422,26 @@ pub async fn identity_import(
         OfficialServiceAction::NotInstalled => "notInstalled",
         OfficialServiceAction::Failed(_) => unreachable!("failed 已在上方拦截"),
     };
+    // 官方客户端当前 planet 的识别与已注册比对:身份迁移保留了原节点
+    // 地址,成员资格随之保留,但"原网络挂在哪个 planet"只有官方目录里
+    // 的 `planet` 文件知道。报给 CLI 才能提示"直接 join 恢复"还是
+    // "先 add 该 planet"。锁纪律:短临界区取名字即放,不嵌套锁。
+    let official_planet = official_planet_info(&secret_path).map(|mut v| {
+        let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(w) = v["worldId"].as_u64() {
+            if let Some(e) = reg.planets.iter().find(|e| e.world_id == w) {
+                v["registeredName"] = json!(crate::api_planet::name_of(e));
+            }
+        }
+        v
+    });
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "nodeId": addr_s, "serviceAction": action_str })),
+        Json(json!({
+            "nodeId": addr_s,
+            "serviceAction": action_str,
+            "officialPlanet": official_planet,
+        })),
     ))
 }
 
