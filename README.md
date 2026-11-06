@@ -1,6 +1,6 @@
 # Planet Port Desktop 🪐
 
-**Planet Port Desktop** 是一款开源的桌面端 ZeroTier 客户端，基于 ZeroTier 1.16 官方核心（Rust FFI 直链）打造。它让你在 Mac 上轻松完成异地组网与虚拟局域网管理：多 Planet 并存（官方 + 自建私有 Planet），多网络同时连接，默认路由与 DNS 全自由掌控。采用「特权 daemon + 薄客户端」架构：`planet-portd` 守护进程持核心与虚拟网卡，`planet-port` CLI 与规划中的 GUI 都是纯 API 客户端，GUI 不开、隧道照跑。
+**Planet Port Desktop** 是一款开源的桌面端 ZeroTier 客户端，基于 ZeroTier 1.16 官方核心（Rust FFI 直链）打造。它让你在 Mac 上轻松完成异地组网与虚拟局域网管理：多 Planet 并存（官方 + 自建私有 Planet），默认路由与 DNS 全自由掌控。采用「特权 daemon + 薄客户端」架构：`planet-portd` 守护进程持核心与虚拟网卡，`planet-port` CLI 与规划中的 GUI 都是纯 API 客户端，GUI 不开、隧道照跑。
 
 > 非官方客户端，与 ZeroTier, Inc. 无隶属关系。
 
@@ -35,8 +35,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 
 ## 特色
 
-- **多 Planet 管理**：官方与多份私有 Planet 同机并存，本地文件 / URL 导入，别名、启停、导出、临时分享链接一站管理
-- **多网络同时连接**：每 planet 独立身份与数据目录；join / leave、跨 planet 聚合查询（网络 / peers / moons）
+- **多 Planet 管理**：官方与多份私有 Planet 同机并存，每 planet 独立身份与数据目录；本地文件 / URL 导入，别名、启停、导出、临时分享链接一站管理；join / leave、跨 planet 聚合查询（网络 / peers / moons）
 - **默认路由与 DNS 自由掌控**：`routeViaZeroTier` 开关、`dnsMode=none|network|custom`，全部陈述式配置，脚本友好
 - **Moon 支持**：orbit / deorbit / 导入 `.moon` 文件
 - **身份模式**：daemon 级全局开关，默认共享——所有 planet 复用 config 根全局身份（`identity.public/secret`，同一节点地址）；`identity use shared|independent` 一键切换，independent 下每 planet 各用 dataDir 独立身份；`identity import` 导入官方 ZeroTier 身份（自动停禁官方服务，沿用原节点地址与网络成员资格）
