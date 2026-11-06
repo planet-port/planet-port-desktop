@@ -46,28 +46,17 @@ pub fn run(client: &Client, cmd: &PlanetCmd, json: bool) -> Result<(), CliError>
     }
 }
 
-// start/stop/remove 已提级为顶层命令(add/remove/start/stop,对齐用户习惯、
-// 减少层级),实现仍留在本模块
-pub fn start(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
-    let resp = client.post_empty(&endpoints::planet_action(id, "start"))?;
-    print_result(client, "start", id, json, &resp);
-    Ok(())
-}
-
-pub fn stop(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
-    let resp = client.post_empty(&endpoints::planet_action(id, "stop"))?;
-    print_result(client, "stop", id, json, &resp);
-    Ok(())
-}
-
-/// 启用(持久):非手动挂起且有网络 → daemon 侧自动拉起
+// remove 已提级为顶层命令(add/remove,对齐用户习惯、减少层级),实现仍
+// 留在本模块;start/stop 语义已并入 enable/disable(派生运行规则下启停
+// 不再是独立操作),命令移除
+/// 启用(持久):有网络 → daemon 侧按派生规则自动拉起
 pub fn enable(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
     let resp = client.post_empty(&endpoints::planet_action(id, "enable"))?;
     print_result(client, "enable", id, json, &resp);
     Ok(())
 }
 
-/// 禁用(持久):在跑立即停;禁用期间 join/start/boot 一律不运行
+/// 禁用(持久):在跑立即停;禁用期间 join/enable 恢复前/boot 一律不运行
 pub fn disable(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
     let resp = client.post_empty(&endpoints::planet_action(id, "disable"))?;
     print_result(client, "disable", id, json, &resp);

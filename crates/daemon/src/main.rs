@@ -514,8 +514,7 @@ async fn daemon_main(args: Args) {
             .ok();
     }
 
-    // 5. 恢复(派生运行规则):enabled ∧ 非手动挂起 ∧ 有网络 即期望运行。
-    //    running=true 含优雅退出保留的状态;手动 stop(manual_stop)与禁用
+    // 5. 恢复(派生运行规则):enabled ∧ 有网络 即期望运行。禁用
     //    (enabled=false)不拉起;无网络的不空跑核心
     let recover: Vec<registry::RegistryEntry> = state
         .registry
@@ -523,12 +522,12 @@ async fn daemon_main(args: Args) {
         .unwrap()
         .planets
         .iter()
-        .filter(|e| e.enabled && !e.manual_stop && !e.net_local.is_empty())
+        .filter(|e| e.enabled && !e.net_local.is_empty())
         .cloned()
         .collect();
     for e in recover {
         eprintln!("[boot] 恢复 planet {}(port {})", e.id, e.port);
-        if let Err(m) = runtime::start_planet(&state, &e).await {
+        if let Err(m) = runtime::start_planet(&state, &e.id).await {
             eprintln!("[boot] planet {} 启动失败: {m}", e.id);
         }
     }

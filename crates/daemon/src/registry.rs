@@ -50,14 +50,10 @@ pub struct RegistryEntry {
     pub port: u16,
     pub running: bool,
     /// 持久启用开关:禁用后即使有网络也不运行,join 报 planetDisabled。
-    /// 与 running(实际运行登记)和 manual_stop(手动挂起)正交
+    /// 与 running(实际运行登记)正交;旧文件可能残留 manualStop 字段,
+    /// serde 忽略未知键,自然淘汰
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// 手动挂起标记:用户显式 stop 置 true、start 清除。为 true 时 join
-    /// 不自动拉起(报 planetNotRunning)、boot 不恢复——手动挂起是用户
-    /// 明确的"别跑"意志,资源性停止(leave 清空/disable)不置位
-    #[serde(default)]
-    pub manual_stop: bool,
     /// nwid hex → 本地网络配置
     #[serde(default)]
     pub net_local: HashMap<String, NetLocal>,
@@ -119,11 +115,6 @@ impl Registry {
             Err(_) => return Self::default(),
         };
         let mode_missing = v.get("identityMode").is_none();
-        let stop_missing = v
-            .get("planets")
-            .and_then(|p| p.as_array())
-            .map(|a| a.first().map(|e| e.get("manualStop").is_none()).unwrap_or(false))
-            .unwrap_or(false);
         let mut reg: Self = serde_json::from_value(v).unwrap_or_else(|_| Self::default());
         // 旧格式迁移(identityMode 缺失):planets 空或 config 根已有全局
         // 身份 → Shared(缺省语义);否则 → Independent——老 planet 各持
@@ -134,14 +125,6 @@ impl Registry {
             } else {
                 IdentityMode::Independent
             };
-        }
-        // 旧格式迁移(manualStop 缺失):running=false 只可能是用户显式
-        // stop 落的(旧语义),视为手动挂起——否则新规则下 boot/join 会把
-        // 老用户 stop 的 planet 悄悄拉起来
-        if stop_missing {
-            for e in &mut reg.planets {
-                e.manual_stop = !e.running;
-            }
         }
         reg
     }

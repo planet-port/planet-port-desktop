@@ -42,15 +42,29 @@ pub fn planet_label(client: &Client, flag: &Option<String>) -> Option<String> {
 /// 409 planetNotRunning;未命中的输入(如 worldId)透传给 daemon 判定);
 /// 无 flag 时按**登记数**自动选——登记 1 个即选中(stopped 则报
 /// planetNotRunning),登记 ≥2 报 planetAmbiguous,不看连接状态。
-/// 供 CLI 侧自行取数的命令用:dump -j / get / network show
+/// 供 CLI 侧自行取数的命令用:dump -j / get / networkinfo
 pub fn resolve_single(client: &Client, flag: &Option<String>) -> Result<String, CliError> {
+    resolve_inner(client, flag, true).map(|(id, _)| id)
+}
+
+/// 与 resolve_single 同定位规则但**不校验 running**:networkinfo 查看未运行
+/// 行星下的网络时取 STOPPED 占位详情,由调用方反馈原因,而非直接拒绝
+pub fn resolve_registered(client: &Client, flag: &Option<String>) -> Result<String, CliError> {
+    resolve_inner(client, flag, false).map(|(id, _)| id)
+}
+
+fn resolve_inner(
+    client: &Client,
+    flag: &Option<String>,
+    require_running: bool,
+) -> Result<(String, String), CliError> {
     let rows = statuses(client).ok_or(CliError::Offline)?;
     if let Some(f) = flag {
         if let Some(p) = rows
             .iter()
             .find(|p| p.id == *f || p.name.eq_ignore_ascii_case(f))
         {
-            if p.status != "running" {
+            if require_running && p.status != "running" {
                 return Err(CliError::Api(
                     409,
                     ApiError {
@@ -60,14 +74,15 @@ pub fn resolve_single(client: &Client, flag: &Option<String>) -> Result<String, 
                     },
                 ));
             }
-            return Ok(p.id.clone());
+            return Ok((p.id.clone(), p.status.clone()));
         }
-        return Ok(f.clone());
+        // 未命中登记的输入(如 worldId)透传给 daemon 判定
+        return Ok((f.clone(), String::new()));
     }
     // 自动选择按**登记数**计,不看连接状态:登记 1 个(即使未启用)自动选中,
-    // 由上面的 running 校验兜底报 planetNotRunning;登记 ≥2 一律要求显式指定
+    // 由 require_running 校验兜底报 planetNotRunning;登记 ≥2 一律要求显式指定
     match rows.as_slice() {
-        [one] if one.status != "running" => Err(CliError::Api(
+        [one] if require_running && one.status != "running" => Err(CliError::Api(
             409,
             ApiError {
                 error: "planetNotRunning".into(),
@@ -75,7 +90,7 @@ pub fn resolve_single(client: &Client, flag: &Option<String>) -> Result<String, 
                 candidates: None,
             },
         )),
-        [one] => Ok(one.id.clone()),
+        [one] => Ok((one.id.clone(), one.status.clone())),
         [] => Err(CliError::Api(
             409,
             ApiError {

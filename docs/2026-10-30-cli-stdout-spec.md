@@ -39,9 +39,11 @@ official  未连接  —           —        —
 }
 ```
 
-### list — 按行星分组的网络列表 ❇
+### listnetworks — 按行星分组的网络列表 ❇
 
-覆盖**全部登记行星**(不只在线的);多 managed IP 在 MANAGED-IPS 列内逐行堆叠:
+覆盖**全部登记行星**(不只在线的);多 managed IP 在 MANAGED-IPS 列内逐行堆叠;
+停止/禁用行星下的网络以 STOPPED 占位行展示(名称/MAC 等动态字段为 —);
+`--planet`(别名:id/name/worldId)只看指定行星:
 
 ```
 planet: 3530253632 (gozi25) [已连接]
@@ -51,51 +53,54 @@ NETWORK           NAME                    MAC                STATUS             
 
 
 planet: 149604618 (official) [未连接]
-  (无网络)
+NETWORK           NAME  MAC  STATUS   TYPE  DEV  MANAGED-IPS
+633e31d8a29d9c97  —     —    STOPPED  —     —
 
 ```
 
-`-j`(分组结构,平铺数组是 listnetworks 的职责):
+`-j`(分组结构,与文本模式同口径):
 
 ```json
 {
   "planets": [
     { "id": "3530253632", "name": "gozi25", "status": "running", "online": true,
-      "networks": [ { "...NetworkEntry 全字段": "见 network show -j" } ] }
+      "networks": [ { "...NetworkEntry 全字段": "planet/nwid/name/status/mac/..." } ] }
   ]
 }
 ```
 
-### listnetworks — 跨行星平铺网络表 ❇
-
-```
-PLANET               NETWORK           NAME                    MAC                STATUS                    TYPE     DEV    MANAGED-IPS
-3530253632 (gozi25)  5cf54f181554090f  Planet Port Desktop 开  0e:9b:92:95:f0:c0  OK                        PRIVATE  feth2  10.121.16.1/24
-3530253632 (gozi25)  1234567890abcdef  —                       ee:5f:6d:10:90:d9  REQUESTING_CONFIGURATION  PRIVATE  feth0
-```
-
-`-j`:`{ "networks": [ NetworkEntry, ... ] }`(平铺,含 planet 字段)。
-
 ### listpeers — 按行星分组 ❇
 
+分组覆盖全部登记行星,停止/离线的行星占位 `(无 peer)`:
+
 ```
-planet: 3530253632 (gozi25)
+planet: 3530253632 (gozi25) [已连接]
 ROLE    ADDRESS     LATENCY  VERSION  PATH
 LEAF    264cab0ce3  —        1.16.2   (relay)
 PLANET  5cf54f1815  59ms     1.14.2   udp/124.222.91.224:9993
 LEAF    618857da15  37ms     1.16.2   udp/122.193.195.143:10003
 
-```
 
-`-j`:`{ "peers": [ PeerEntry, ... ] }`。
-
-### listmoons — 聚合 moon 表 ❇
+planet: 149604618 (official) [未连接]
+  (无 peer)
 
 ```
-PLANET  MOONID  SEED  SOURCE  CACHED
+
+`-j`:分组结构 `{ "planets": [ { "id", "name", "status", "online", "peers": [ PeerEntry ] } ] }`。
+
+### listmoons — 按行星分组 ❇
+
+```
+planet: 3530253632 (gozi25) [已连接]
+MOONID  SEED  SOURCE  CACHED
+
+planet: 149604618 (official) [未连接]
+  (无 moon)
+
 ```
 
-`-j`:`{ "moons": [] }`(字段:planet / moonId / seed / fromFile / cached)。
+`-j`:分组结构 `{ "planets": [ { ..., "moons": [ MoonEntry ] } ] }`
+(字段:planet / moonId / seed / fromFile / cached)。
 
 ### dump — 单行星状态汇总(zerotier-cli dump 对位)❇
 
@@ -179,7 +184,7 @@ none
 `-j`:该值的 JSON 字面量(如 `"none"`)。未知 key 退出码 2 并提示合法 key
 (ZeroTier 旧 key `allowDefault` 等附等价映射提示)。
 
-### network show — 单网络详情视图 ❇
+### networkinfo — 单网络详情视图 ❇
 
 ```
 network   5cf54f181554090f
@@ -196,17 +201,19 @@ dns       mode=none servers=[] custom=[]
 routeVia  true
 ```
 
-`-j`(完整 NetworkEntry):
+`-j`(完整 NetworkEntry)。原 `network show` 子命令改为顶层 `networkinfo <nwid>`。
 
-```json
-{
-  "planet": "3530253632", "nwid": "5cf54f181554090f", "name": "Planet Port Desktop 开",
-  "status": "OK", "type": "PRIVATE", "mac": "0e:9b:92:95:f0:c0", "interface": "feth2",
-  "mtu": 2800, "assignedAddrs": ["10.121.16.1/24"],
-  "managedRoutes": [ { "target": "10.121.16.0/24", "via": null } ],
-  "dnsServers": [], "routeViaZeroTier": true, "routeViaLocked": false,
-  "dnsMode": "none", "customDns": [], "conflict": null
-}
+行星未运行时**不拒绝**:定位不校验 running,展示 STOPPED 占位详情
+(仅 registry 登记配置,name/mac/device/mtu 等动态字段为 —),
+并以 stderr 反馈原因:
+
+```
+# 提示: 所属行星未运行(已禁用或空闲停止),以下仅为登记配置; ...   ← stderr
+network   633e31d8a29d9c97
+planet    official(149604618)
+name      —
+status    STOPPED
+...
 ```
 
 ---
@@ -225,23 +232,25 @@ gozi25(3530253632) 201 moon import OK
 
 ## planet 生命周期
 
-### add — 导入并上线 ▣
+### add — 导入登记 ▣
 
 ```
-added planet "gozi25" (id 3530253632) → running
+added planet "gozi25" (id 3530253632) → stopped
 ```
 
 `-j`:PlanetDetail(同 `planet show -j` 内层对象)。容器导入返回 501。
+导入只登记不拉起(派生运行规则:enabled ∧ 有网络才运行),首次 join 时自动上线。
 
-### start / stop ▣
+### planet enable / disable ▣
 
 ```
-gozi25(3530253632) 200 start OK
-gozi25(3530253632) 200 stop OK
+gozi25(3530253632) 200 enable OK
+gozi25(3530253632) 200 disable OK
 ```
 
-`-j`:`{ "result": "ok" }`。stop 保留登记与期望状态,service start 后自动恢复;
-显式 `planet-port stop` 后需手动 start。
+`-j`:`{ "planet": PlanetDetail }`。enable/disable 是唯一的启停语义:
+disable 无条件停且 join/boot 不再运行;enable 对有网络的 planet 按派生
+规则自动拉起。原顶层 `start`/`stop` 命令已移除。
 
 ### remove — 删除登记 ▣
 

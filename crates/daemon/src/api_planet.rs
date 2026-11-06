@@ -392,7 +392,6 @@ pub async fn planets_import(
         port,
         running: false,
         enabled: true,
-        manual_stop: false,
         net_local: Default::default(),
         moons: Vec::new(),
         ifaces: Vec::new(),
@@ -405,20 +404,11 @@ pub async fn planets_import(
 
     st.events
         .push(&id, "planetImported", &format!("planet \"{name}\" imported"));
-    // 文档语义「导入并立即上线」:登记成功后自动拉起;启动失败不回滚登记
-    // (planetStartFailed 事件已记录),返回的 live 详情如实反映 stopped
-    let started = {
-        let reg = st.registry.lock().unwrap();
-        find_entry(&reg, &id)?.clone()
-    };
-    if let Err(m) = runtime::start_planet(&st, &started).await {
-        st.events
-            .push(&id, "importStartFailed", &format!("导入后自动上线失败: {m}"));
-    }
-    let live = live_of(&st, &id)?;
+    // 派生运行规则:导入只登记,不拉起(无网络不运行);首次 join 或显式
+    // enable 时按规则自然上线
     let reg = st.registry.lock().unwrap();
     let e = find_entry(&reg, &id)?;
-    let detail = to_detail(e, live.as_ref());
+    let detail = to_detail(e, None);
     Ok((StatusCode::CREATED, Json(json!({ "planet": detail }))))
 }
 
@@ -573,64 +563,8 @@ pub async fn planets_delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ---- start / stop ----
-
-pub async fn planet_start(
-    State(st): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<Value>, ApiErr> {
-    // 定位 + 克隆 entry 后即放锁:start 内部不再取 registry 锁之外的等待,
-    // 但失败登记会写 registry/事件,不能在持锁时做
-    let entry = {
-        let reg = st.registry.lock().unwrap();
-        find_entry(&reg, &id)?.clone()
-    };
-    // 禁用下 start 一律拒绝(要恢复先 enable);runtime::start_planet 内
-    // 另有同判定兜底防内部调用路径绕过
-    if !entry.enabled {
-        return Err(err(
-            StatusCode::CONFLICT,
-            "planetDisabled",
-            &format!(
-                "planet \"{}\" is disabled; enable it first",
-                name_of(&entry)
-            ),
-            None,
-        ));
-    }
-    // 已在运行 → 幂等,直接返回当前详情
-    runtime::start_planet(&st, &entry)
-        .await
-        .map_err(|m| err(StatusCode::INTERNAL_SERVER_ERROR, "startFailed", &m, None))?;
-    let live = live_of(&st, &entry.id)?;
-    let reg = st.registry.lock().unwrap();
-    let e = find_entry(&reg, &id)?;
-    Ok(Json(json!({ "planet": to_detail(e, live.as_ref()) })))
-}
-
-pub async fn planet_stop(
-    State(st): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<Value>, ApiErr> {
-    let pid = {
-        let mut reg = st.registry.lock().unwrap();
-        let pid = find_entry(&reg, &id)?.id.clone();
-        // 显式 stop 即手动挂起:join 不自动拉起、boot 不恢复,直到 start 清除
-        if let Some(e) = reg.planets.iter_mut().find(|x| x.id == pid) {
-            e.manual_stop = true;
-            if let Err(err) = reg.save(&st.config_dir) {
-                eprintln!("[planet] registry 写盘失败: {err}");
-            }
-        }
-        pid
-    };
-    runtime::stop_planet(&st, &pid, runtime::StopMark::ExplicitStop).await;
-    let reg = st.registry.lock().unwrap();
-    let e = find_entry(&reg, &id)?;
-    Ok(Json(json!({ "planet": to_detail(e, None) })))
-}
-
-// ---- enable / disable(持久启用开关,与 start/stop 的手动挂起正交) ----
+// ---- enable / disable(唯一的启停语义:启用 = 按派生规则运行,
+// ---- 禁用 = 无条件停且不再运行;start/stop 已并入本对) ----
 
 /// 禁用:落 enabled=false;在跑立即停(IdleStop,不产生挂起语义——
 /// enable 后按派生规则可自动恢复)。join/boot 在禁用下一律不运行
@@ -649,7 +583,7 @@ pub async fn planet_disable(
         reg.save(&st.config_dir)
             .map_err(|e| internal(format!("cannot save registry: {e}")))?;
     }
-    runtime::stop_planet(&st, &pid, runtime::StopMark::IdleStop).await;
+    runtime::stop_planet(&st, &pid, runtime::StopMark::Stop).await;
     st.events.push(&pid, "planetDisabled", "planet disabled (won't run until enabled)");
     let reg = st.registry.lock().unwrap();
     let e = find_entry(&reg, &id)?;
@@ -669,8 +603,8 @@ pub async fn planet_enable(
             .map_err(|e| internal(format!("cannot save registry: {e}")))?;
         reg.planets[e].clone()
     };
-    if !entry.manual_stop && !entry.net_local.is_empty() {
-        runtime::start_planet(&st, &entry)
+    if !entry.net_local.is_empty() {
+        runtime::start_planet(&st, &entry.id)
             .await
             .map_err(|m| err(StatusCode::INTERNAL_SERVER_ERROR, "startFailed", &m, None))?;
     }
@@ -772,7 +706,7 @@ pub async fn share_download(
     Ok(([("content-type", "application/octet-stream")], bytes).into_response())
 }
 
-/// planet 路由(GET/POST /planets、/planets/{id} 及 start/stop/export/share)
+/// planet 路由(GET/POST /planets、/planets/{id} 及 enable/disable/export/share)
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/planets", get(planets_list).post(planets_import))
@@ -780,8 +714,6 @@ pub fn router() -> Router<AppState> {
             "/planets/{id}",
             get(planets_show).patch(planets_patch).delete(planets_delete),
         )
-        .route("/planets/{id}/start", post(planet_start))
-        .route("/planets/{id}/stop", post(planet_stop))
         .route("/planets/{id}/enable", post(planet_enable))
         .route("/planets/{id}/disable", post(planet_disable))
         .route("/planets/{id}/export", get(planet_export))

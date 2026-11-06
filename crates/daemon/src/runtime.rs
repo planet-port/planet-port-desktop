@@ -28,7 +28,7 @@ use zt_core::{
 
 use crate::dns;
 use crate::events::Ring;
-use crate::registry::{IdentityMode, NetLocal, RegistryEntry};
+use crate::registry::{IdentityMode, NetLocal};
 use crate::state::{AppState, LiveInfo, NetCache, NetSnapshot, PlanetRuntime};
 
 /// nwid → NetLocal 的运行时镜像(sink 读,handler 写)
@@ -97,7 +97,7 @@ impl NodeSink for DaemonSink {
                         "autoStopped",
                         "因致命错误自动收尾:实例已停止",
                     );
-                    stop_planet(&app, &pid, StopMark::ExplicitStop).await;
+                    stop_planet(&app, &pid, StopMark::Stop).await;
                 });
                 drop(handle);
             }
@@ -410,20 +410,30 @@ pub fn status_name(s: &NetStatus) -> &'static str {
 /// registry.running=false),调用方拿 Err(message) 转 REST 错误即可。
 /// 已在运行则幂等成功。成功后按 registry net_local 逐网络 re-join
 /// (重启恢复;Core 不持久化成员关系,见函数尾部注释)。
-pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(), String> {
-    // 禁用是持久的"别跑"意志:start 一律拒绝(端点侧已挡,此处兜底防
-    // boot 恢复/join 拉起等内部调用路径绕过)
+pub async fn start_planet(state: &AppState, id: &str) -> Result<(), String> {
+    // 启停全程持门闩:防并发双 start 双实例(后者覆盖前者即泄漏线程/端口)
+    let _gate = state.runtime_gate.lock().await;
+    let pid = id.to_string();
+    if state.planets.lock().unwrap().contains_key(&pid) {
+        return Ok(());
+    }
+    // 门闩内重读 registry 取新鲜 entry:调用方的克隆可能与 disable 落盘
+    // 交错(读时 enabled=true、启动时已 false),陈旧克隆会放行已禁用的
+    // planet。禁用是持久的"别跑"意志,一律拒绝(enable/boot/join 全走这)
+    let entry = {
+        let reg = state.registry.lock().unwrap();
+        match reg.planets.iter().find(|e| e.id == pid) {
+            Some(e) => e.clone(),
+            None => {
+                return Err(format!("planet \"{pid}\" is not registered"));
+            }
+        }
+    };
     if !entry.enabled {
         return Err(format!(
             "planet \"{}\" is disabled; enable it first",
-            crate::api_planet::name_of(entry)
+            crate::api_planet::name_of(&entry)
         ));
-    }
-    // 启停全程持门闩:防并发双 start 双实例(后者覆盖前者即泄漏线程/端口)
-    let _gate = state.runtime_gate.lock().await;
-    let pid = entry.id.clone();
-    if state.planets.lock().unwrap().contains_key(&pid) {
-        return Ok(());
     }
     let planet_file = state.config_dir.join("planets").join(format!("{pid}.bin"));
     let plane = Arc::new(Mutex::new(DevicePlane::new()));
@@ -440,7 +450,7 @@ pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(),
     ));
     let sink = DaemonSink {
         planet_id: pid.clone(),
-        planet_name: crate::api_planet::name_of(entry),
+        planet_name: crate::api_planet::name_of(&entry),
         events: Arc::clone(&state.events),
         plane: Arc::clone(&plane),
         stopping: Arc::clone(&stopping),
@@ -497,8 +507,6 @@ pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(),
         let mut reg = state.registry.lock().unwrap();
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
             e.running = true;
-            // start 即手动恢复:清除挂起标记(join 自动拉起/boot 恢复由此放行)
-            e.manual_stop = false;
             e.last_node_id = Some(node_id);
         }
         if let Err(e) = reg.save(&state.config_dir) {
@@ -544,16 +552,17 @@ fn start_failed(state: &AppState, pid: &str, message: &str) -> String {
 }
 
 /// stop 的登记语义。registry 的 `running` 字段是**期望状态**:
-/// - [`StopMark::ExplicitStop`]:用户显式 stop / 致命自停 / 删除收尾,
-///   落 `running=false`,下次 daemon 启动不拉起;
-/// - [`StopMark::IdleStop`]:资源性停止(leave 清空全部网络 / disable),
-///   落 `running=false` 但**不置手动挂起**——join/boot 按派生规则可再拉起;
+/// - [`StopMark::Stop`]:无条件停(disable / 致命自停 / 删除收尾),
+///   落 `running=false`;
+/// - [`StopMark::Idle`]:资源性停止(leave 清空全部网络),持门闩后按
+///   派生规则重评——`enabled ∧ net_local 非空` 即**跳过停机**(并发 join
+///   恰在判空后补进网络时保住实例),disable 走 Stop 不受影响;
 /// - [`StopMark::ShutdownKeep`]:daemon 优雅退出(SIGTERM),保留 `running=true`,
-///   daemon 下次启动时按既有的恢复逻辑自动拉起——服务 stop/start 即暂停/恢复。
+///   daemon 下次启动时按既有的恢复逻辑自动拉起。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StopMark {
-    ExplicitStop,
-    IdleStop,
+    Stop,
+    Idle,
     ShutdownKeep,
 }
 
@@ -562,6 +571,22 @@ pub enum StopMark {
 pub async fn stop_planet(state: &AppState, id: &str, mark: StopMark) -> bool {
     // 与 start_planet 同一门闩,防启停交叠
     let _gate = state.runtime_gate.lock().await;
+    // Idle(资源性停止)在此重评派生规则:门闩已与 start_planet 互斥,
+    // 此刻 registry 的 enabled/net_local 即终局值——并发 join 已落盘的
+    // 网络保住实例,不再停机(disable 走 Stop 无条件停,不受此影响)
+    if mark == StopMark::Idle {
+        let should_run = {
+            let reg = state.registry.lock().unwrap();
+            reg.planets
+                .iter()
+                .find(|e| e.id == id)
+                .map(|e| e.enabled && !e.net_local.is_empty())
+                .unwrap_or(false)
+        };
+        if should_run {
+            return false;
+        }
+    }
     // 先短锁取运行时 Arc(不从 map 摘除,红线顺序见 teardown_runtime),锁即释放:
     // 后续任何路径都不得带着 planets 锁碰 registry
     // (net_join 等是 registry → planets 的取用序,反向嵌套会成环)
@@ -630,16 +655,10 @@ async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>, mark: StopMa
     {
         let mut reg = state.registry.lock().unwrap();
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == rt.planet_id) {
-            // 期望状态仅显式/资源性停止才落 false;优雅退出保留 true 供下次
-            // 启动恢复。last_node_id 是展示用的上次节点地址(身份本体在
-            // dataDir):显式 stop 清空(对齐 identity 列表语义),资源性停止
-            // 保留。manual_stop 只由显式 stop(端点)置位、start 清除,此处
-            // 不动——资源性停止不产生挂起语义
+            // 期望状态:优雅退出保留 true 供下次启动恢复,其余一律落 false。
+            // last_node_id 是展示用的上次节点地址(身份本体在 dataDir),保留
             if mark != StopMark::ShutdownKeep {
                 e.running = false;
-                if mark == StopMark::ExplicitStop {
-                    e.last_node_id = None;
-                }
             }
             // 设备已随 teardown 销毁,登记清空(sink 后续的登记任务见
             // running=false 也会自行跳过)
@@ -651,8 +670,8 @@ async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>, mark: StopMa
     }
     let stop_msg = match mark {
         StopMark::ShutdownKeep => "planet stopped (daemon 优雅退出,重启后自动恢复)",
-        StopMark::IdleStop => "planet idled (no networks / disabled)",
-        StopMark::ExplicitStop => "planet stopped",
+        StopMark::Idle => "planet idled (no networks)",
+        StopMark::Stop => "planet stopped",
     };
     state.events.push(&rt.planet_id, "planetStopped", stop_msg);
     // DNS:系统 resolver 若仍归本 planet 所有(stop/删除/shutdown 共用此路径)
@@ -679,7 +698,7 @@ pub async fn teardown_leftover(state: &AppState, id: &str) -> bool {
     let rt = state.planets.lock().unwrap().get(id).cloned();
     match rt {
         Some(rt) => {
-            teardown_runtime(state, rt, StopMark::ExplicitStop).await;
+            teardown_runtime(state, rt, StopMark::Stop).await;
             true
         }
         None => false,

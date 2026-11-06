@@ -23,7 +23,7 @@
   cli.identity.modeShared: shared (all planets share the global identity)
   cli.identity.modeIndependent: independent (per-planet identity)
   cli.identity.switchWarn: "note: switching identity mode may change node addresses of some or all planets; affected network memberships need re-authorization"
-  cli.identity.switched: "identity mode switched to %{mode}; effective on next planet start"
+  cli.identity.switched: "identity mode switched to %{mode}; effective next time the planet runs"
   cli.identity.planetKindOfficial: official planet
   cli.identity.planetKindCustom: custom planet
   cli.identity.planetRegistered: "the official client's current planet is already imported as \"%{name}\"; join your previous networks to restore membership without re-authorization"
@@ -117,3 +117,6 @@
 
   # ---- list/listnetworks auth-pending hint ----
   cli.list.authPending: "hint: network %{nwid} is awaiting controller authorization (tick Allow in ZeroTier Central)"
+  cli.listpeers.noPeers: "(no peers)"
+  cli.listmoons.noMoons: "(no moons)"
+  cli.networkinfo.stoppedPlanet: "note: the planet is not running (disabled or idle-stopped); only registered config is shown. Dynamic fields (name/IP/device) become visible once it runs — bring it up with planet-port planet enable"

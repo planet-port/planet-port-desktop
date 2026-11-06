@@ -316,10 +316,15 @@ pub async fn networks_list(
                 continue;
             }
         }
-        let Some(rt) = runtime_of(&st, &pid) else { continue };
         let entry = match entries.iter().find(|e| e.id == pid) {
             Some(e) => e.clone(),
             None => continue,
+        };
+        let Some(rt) = runtime_of(&st, &pid) else {
+            // 非运行(禁用/idle 停):按 registry net_local 出占位条目——
+            // "已添加的网络"仍是用户的资产,不可因行星停止而从列表消失
+            items.extend(placeholder_entries(&pid, &entry));
+            continue;
         };
         let conflicts = rt
             .conflicts
@@ -340,6 +345,41 @@ pub async fn networks_list(
     Ok(Json(json!({ "networks": items })))
 }
 
+/// 非运行 planet 的网络占位条目:核心不在,拿不到 name/mac/地址等动态
+/// 字段,只回 nwid + 本地配置;status=STOPPED 标识来源
+fn placeholder_entries(pid: &str, entry: &RegistryEntry) -> Vec<NetworkEntry> {
+    // HashMap 遍历无序:按 nwid 排序保证列表输出稳定
+    let mut keys: Vec<&String> = entry.net_local.keys().collect();
+    keys.sort();
+    keys.into_iter()
+        .map(|k| {
+            let nl = &entry.net_local[k];
+            placeholder_entry(pid, k, nl)
+        })
+        .collect()
+}
+
+fn placeholder_entry(pid: &str, nwid: &str, nl: &NetLocal) -> NetworkEntry {
+    NetworkEntry {
+        planet: pid.to_string(),
+        nwid: nwid.to_string(),
+        name: None,
+        status: "STOPPED".into(),
+        conflict: None,
+        kind: "—".into(),
+        mac: "—".into(),
+        interface: None,
+        mtu: 0,
+        assigned_addrs: Vec::new(),
+        managed_routes: Vec::new(),
+        dns_servers: Vec::new(),
+        route_via_zero_tier: nl.route_via_zero_tier,
+        route_via_locked: false,
+        dns_mode: nl.dns_mode.clone(),
+        custom_dns: nl.custom_dns.clone(),
+    }
+}
+
 // ---- POST /networks/{nwid}/join ----
 
 pub async fn net_join(
@@ -348,8 +388,8 @@ pub async fn net_join(
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiErr> {
     // 定位(registry 锁在 resolve_planet_entry 内短持)与运行时获取(planets
-    // 锁)分开:两锁不得嵌套。join 是明确的联网意图,目标未运行且非手动
-    // 挂起时自动拉起再加入;禁用与手动挂起是用户的"别跑"意志,报错指引
+    // 锁)分开:两锁不得嵌套。join 是明确的联网意图,目标未运行时自动拉起
+    // 再加入;禁用是用户的"别跑"意志,报错指引
     let (pid, entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
     if !entry.enabled {
         return Err(err(
@@ -362,22 +402,11 @@ pub async fn net_join(
             None,
         ));
     }
-    if entry.manual_stop {
-        return Err(err(
-            StatusCode::CONFLICT,
-            "planetNotRunning",
-            &format!(
-                "planet \"{}\" was stopped manually; start it first",
-                crate::api_planet::name_of(&entry)
-            ),
-            None,
-        ));
-    }
     // 未运行(running=false:leave 清空后的资源性停止等)→ 自动拉起;
     // running=true 但运行时缺失的残留(上次启动失败等)同样由幂等的
-    // start_planet 纠正
+    // start_planet 纠正(其内部在门闩内重读 registry,禁用竞态不放行)
     if !entry.running || runtime_of(&st, &pid).is_none() {
-        runtime::start_planet(&st, &entry)
+        runtime::start_planet(&st, &pid)
             .await
             .map_err(|m| err(StatusCode::INTERNAL_SERVER_ERROR, "startFailed", &m, None))?;
     }
@@ -506,7 +535,7 @@ pub async fn net_leave(
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .is_empty()
     {
-        runtime::stop_planet(&st, &rt.planet_id, runtime::StopMark::IdleStop).await;
+        runtime::stop_planet(&st, &rt.planet_id, runtime::StopMark::Idle).await;
     }
     Ok(Json(json!({"result": "ok"})))
 }

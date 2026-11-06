@@ -35,16 +35,12 @@ enum Command {
     /// Aggregate status of all planets
     Info,
     /// List networks grouped by planet
-    List,
-    /// Show one joined network's full detail
-    Network {
-        #[command(subcommand)]
-        cmd: cmd::query::NetworkCmd,
-    },
-    /// List networks across planets
     Listnetworks,
-    /// List peers, grouped by planet
+    /// List peers grouped by planet
     Listpeers,
+    /// Show one joined network's full detail (IP / routes / DNS / routeViaZeroTier)
+    #[command(name = "networkinfo")]
+    Networkinfo { nwid: String },
     /// Join a network
     Join { nwid: String },
     /// Leave a network
@@ -81,10 +77,6 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
-    /// Start a stopped planet
-    Start { id: String },
-    /// Stop a running planet (keep registered)
-    Stop { id: String },
     /// Planet management
     Planet {
         #[command(subcommand)]
@@ -202,7 +194,6 @@ enum PlanetNeed {
 fn planet_need(cmd: &Command) -> PlanetNeed {
     match cmd {
         Command::Info
-        | Command::List
         | Command::Listnetworks
         | Command::Listpeers
         | Command::Listmoons => PlanetNeed::Multi,
@@ -211,7 +202,7 @@ fn planet_need(cmd: &Command) -> PlanetNeed {
         | Command::Leave { .. }
         | Command::Set { .. }
         | Command::Get { .. }
-        | Command::Network { .. }
+        | Command::Networkinfo { .. }
         | Command::Orbit { .. }
         | Command::Deorbit { .. }
         | Command::Dump
@@ -278,10 +269,9 @@ fn dispatch(
             unreachable!("service/install 在 main 中单独分流")
         }
         Command::Info => cmd::query::info(client, query_filter, json),
-        Command::List => cmd::query::list(client, query_filter, json),
-        Command::Network { cmd } => cmd::query::run_network(client, cmd, planet_flag, json),
         Command::Listnetworks => cmd::query::listnetworks(client, query_filter, json),
         Command::Listpeers => cmd::query::listpeers(client, query_filter, json),
+        Command::Networkinfo { nwid } => cmd::query::networkinfo(client, nwid, planet_flag, json),
         Command::Listmoons => cmd::query::listmoons(client, query_filter, json),
         Command::Join { nwid } => cmd::mutate::join(client, nwid, planet_flag, json),
         Command::Leave { nwid } => cmd::mutate::leave(client, nwid, planet_flag, json),
@@ -299,8 +289,6 @@ fn dispatch(
             json,
         ),
         Command::Remove { id, yes } => cmd::planet::rm(client, id, *yes, json),
-        Command::Start { id } => cmd::planet::start(client, id, json),
-        Command::Stop { id } => cmd::planet::stop(client, id, json),
         Command::Planet { cmd } => cmd::planet::run(client, cmd, json),
         Command::Identity { cmd } => cmd::identity::run(client, cmd, json),
         Command::Moon { cmd } => cmd::mutate::run_moon(client, cmd, planet_flag, json),

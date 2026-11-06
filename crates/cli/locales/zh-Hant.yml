@@ -23,7 +23,7 @@
   cli.identity.modeShared: 共享(全部 planet 複用全局身份)
   cli.identity.modeIndependent: 獨立(每 planet 各自身份)
   cli.identity.switchWarn: "注意: 切換身份模式後部分或全部 planet 將變更節點位址,受影響網路的成員資格需重新授權"
-  cli.identity.switched: "身份模式已切換為 %{mode},planet 重新啟動後生效"
+  cli.identity.switched: "身份模式已切換為 %{mode},planet 下次運行時生效"
   cli.identity.planetKindOfficial: 官方 planet
   cli.identity.planetKindCustom: 自訂 planet
   cli.identity.planetRegistered: "官方用戶端當前 planet 已導入為 %{name};原已加入的網路直接 join 即可恢復,無需重新授權"
@@ -118,3 +118,6 @@
 
   # ---- list/listnetworks 授權等待提示 ----
   cli.list.authPending: "提示: 網路 %{nwid} 正在等待控制器授權(請在 ZeroTier Central 勾選 Allow)"
+  cli.listpeers.noPeers: "(無 peer)"
+  cli.listmoons.noMoons: "(無 moon)"
+  cli.networkinfo.stoppedPlanet: "提示: 所屬行星未運行(已禁用或空閒停止),以下僅為登記配置; 名稱/IP/設備等動態欄位需行星運行後可見, planet-port planet enable 可拉起"

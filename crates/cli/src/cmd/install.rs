@@ -88,11 +88,13 @@ pub fn run(yes: bool, json: bool) {
     //    写 plist + bootstrap,RunAtLoad 随装载拉起)
     service::install(json);
 
-    // 5. 升级兜底:等新 daemon 在线后拉回此前 running 的 planet
+    // 5. 升级兜底:等新 daemon 在线后拉回此前 running 的 planet。start
+    //    端点已移除,enable 等价覆盖:此前在跑 → 必然 enabled,重标无副作用,
+    //    且有网络即按派生规则拉起
     if !running.is_empty() && service::wait_online(std::time::Duration::from_secs(15)) {
         let client = Client::new_lenient(None);
         for id in running {
-            match client.post_empty(&endpoints::planet_action(&id, "start")) {
+            match client.post_empty(&endpoints::planet_action(&id, "enable")) {
                 Ok(_) => service::progress(
                     json,
                     rust_i18n::t!("cli.install.planetRestored", id = id).to_string(),

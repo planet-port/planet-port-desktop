@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use crate::client::{CliError, Client};
-use crate::cmd::{planet_label, resolve_single};
 use crate::output::{new_table, print_json};
-use clap::Subcommand;
 use planet_port_api::endpoints;
 use planet_port_api::types::{MoonEntry, NetworkEntry, PeerEntry, PlanetStatus};
 use serde_json::{json, Value};
@@ -108,68 +106,83 @@ pub fn info(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
     Ok(())
 }
 
-/// 按行星分组列出网络(listpeers 同款分组样式)。
-/// 分组覆盖**全部登记行星**(不只在线的):未连接的行星也列出并标注状态,
-/// 其下无网络表;`--planet` 过滤对分组生效
-pub fn list(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
-    let v = fetch_list(client, endpoints::networks, "networks", filter)?;
-    let rows: Vec<NetworkEntry> = serde_json::from_value(
-        v.get("networks").cloned().unwrap_or(Value::Null),
-    )
-    .unwrap_or_default();
-    if json {
-        // 分组结构(与文本模式同口径):planets[] 各带 networks[];
-        // 平铺数组是 listnetworks -j 的职责,两个入口不再同源重复。
-        // /status 失败时让错误冒出(退出码承载),不吞成「成功但零数据」
-        let sv = client.get_json(endpoints::status())?;
-        let planets: Vec<PlanetStatus> = serde_json::from_value(
-            sv.get("planets").cloned().unwrap_or(Value::Null),
-        )
-        .unwrap_or_default();
-        let arr: Vec<Value> = planets
+// ---- 分组列表(listnetworks / listpeers / listmoons 共用骨架) ----
+
+/// 过滤集是否命中该行星(id 精确 / name 忽略大小写;--planet 的别名在
+/// daemon 侧已解析为 canonical id 传回数据,这里只需对上分组维度)
+fn match_filter(filter: &Option<Vec<String>>, p: &PlanetStatus) -> bool {
+    filter.as_ref().is_none_or(|f| {
+        f.iter().any(|id| id == &p.id || p.name.eq_ignore_ascii_case(id))
+    })
+}
+
+/// 分组头:三态对齐 info(运行且根可达=已连接;运行但离线=连接中;停止=未连接)
+fn group_state(p: &PlanetStatus) -> String {
+    if p.status != "running" {
+        rust_i18n::t!("status.disconnected").to_string()
+    } else if p.online {
+        rust_i18n::t!("status.connected").to_string()
+    } else {
+        rust_i18n::t!("status.connecting").to_string()
+    }
+}
+
+/// 分组 JSON(planets[] 各带条目数组;文本模式同口径)
+fn grouped_json<T, F>(
+    planets: &[PlanetStatus],
+    filter: &Option<Vec<String>>,
+    rows: &[T],
+    key: &str,
+    row_planet: F,
+) -> Value
+where
+    T: serde::Serialize,
+    F: Fn(&T) -> &str,
+{
+    json!({
+        "planets": planets
             .iter()
-            .filter(|p| match filter {
-                Some(f) => f.iter().any(|id| id == &p.id || p.name.eq_ignore_ascii_case(id)),
-                None => true,
-            })
+            .filter(|p| match_filter(filter, p))
             .map(|p| {
                 json!({
                     "id": p.id,
                     "name": p.name,
                     "status": p.status,
                     "online": p.online,
-                    "networks": rows
+                    key: rows
                         .iter()
-                        .filter(|n| n.planet == p.id)
-                        .map(|n| serde_json::to_value(n).unwrap_or(Value::Null))
+                        .filter(|r| row_planet(r) == p.id)
+                        .map(|r| serde_json::to_value(r).unwrap_or(Value::Null))
                         .collect::<Vec<_>>(),
                 })
             })
-            .collect();
-        print_json(&json!({ "planets": arr }));
+            .collect::<Vec<_>>()
+    })
+}
+
+/// 按行星分组列出网络。分组覆盖**全部登记行星**(不只在线的):未连接的
+/// 行星也列出并标注状态,其下网络按 registry 出 STOPPED 占位行;
+/// `--planet` 过滤对分组生效
+pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
+    let v = fetch_list(client, endpoints::networks, "networks", filter)?;
+    let rows: Vec<NetworkEntry> = serde_json::from_value(
+        v.get("networks").cloned().unwrap_or(Value::Null),
+    )
+    .unwrap_or_default();
+    let planets = planet_statuses(client);
+    if json {
+        print_json(&grouped_json(&planets, filter, &rows, "networks", |n| &n.planet));
         return Ok(());
     }
-    // /status 只取一次:分组与名称展示共用,避免重复请求
-    let planets = planet_statuses(client);
     let names: HashMap<String, String> = planets
         .iter()
         .map(|p| (p.id.clone(), p.name.clone()))
         .collect();
-    for p in planets {
-        if let Some(f) = filter {
-            if !f.iter().any(|id| id == &p.id || p.name.eq_ignore_ascii_case(id)) {
-                continue;
-            }
+    for p in &planets {
+        if !match_filter(filter, p) {
+            continue;
         }
-        // 三态对齐 info:运行且根可达=已连接;运行但离线=连接中;停止=未连接
-        let state = if p.status != "running" {
-            rust_i18n::t!("status.disconnected")
-        } else if p.online {
-            rust_i18n::t!("status.connected")
-        } else {
-            rust_i18n::t!("status.connecting")
-        };
-        println!("planet: {} [{state}]", planet_display(&names, &p.id));
+        println!("planet: {} [{}]", planet_display(&names, &p.id), group_state(p));
         let nets: Vec<_> = rows.iter().filter(|n| n.planet == p.id).collect();
         if nets.is_empty() {
             println!("  {}\n", rust_i18n::t!("cli.list.noNetworks"));
@@ -203,76 +216,45 @@ fn auth_pending_hint(rows: &[NetworkEntry]) {
     }
 }
 
-pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
-    let v = fetch_list(client, endpoints::networks, "networks", filter)?;
-    if json {
-        print_json(&v);
-        return Ok(());
-    }
-    let rows: Vec<NetworkEntry> = serde_json::from_value(
-        v.get("networks").cloned().unwrap_or(Value::Null),
-    )
-    .unwrap_or_default();
-    let names = planet_names(client);
-    let mut t = new_table(&["PLANET", "NETWORK", "NAME", "MAC", "STATUS", "TYPE", "DEV", "MANAGED-IPS"]);
-    // rows 随后被 move 进循环,先取出待提示的授权等待网络
-    let pending: Vec<String> = rows
-        .iter()
-        .filter(|n| n.status == "AUTHENTICATION_REQUIRED")
-        .map(|n| n.nwid.clone())
-        .collect();
-    for n in rows {
-        t.add_row(vec![
-            planet_display(&names, &n.planet),
-            n.nwid,
-            n.name.unwrap_or_else(|| "—".into()),
-            n.mac,
-            n.status,
-            n.kind,
-            n.interface.unwrap_or_else(|| "—".into()),
-            // 多 managed IP 全量堆叠(换行续行对齐本列),与 list 同口径
-            n.assigned_addrs.join("\n"),
-        ]);
-    }
-    println!("{t}");
-    for nwid in pending {
-        eprintln!("{}", rust_i18n::t!("cli.list.authPending", nwid = nwid));
-    }
-    Ok(())
-}
-
+/// 按行星分组列出 peer。停止/离线的行星没有 peer,占位提示;`--planet`
+/// 过滤对分组生效
 pub fn listpeers(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
     let v = fetch_list(client, endpoints::peers, "peers", filter)?;
-    if json {
-        print_json(&v);
-        return Ok(());
-    }
     let rows: Vec<PeerEntry> = serde_json::from_value(
         v.get("peers").cloned().unwrap_or(Value::Null),
     )
     .unwrap_or_default();
-    // 按 planet 分组展示
-    let names = planet_names(client);
-    let mut order: Vec<String> = Vec::new();
-    for p in &rows {
-        if !order.contains(&p.planet) {
-            order.push(p.planet.clone());
-        }
+    let planets = planet_statuses(client);
+    if json {
+        print_json(&grouped_json(&planets, filter, &rows, "peers", |p| &p.planet));
+        return Ok(());
     }
-    for pid in order {
-        println!("planet: {}", planet_display(&names, &pid));
+    let names: HashMap<String, String> = planets
+        .iter()
+        .map(|p| (p.id.clone(), p.name.clone()))
+        .collect();
+    for p in &planets {
+        if !match_filter(filter, p) {
+            continue;
+        }
+        println!("planet: {} [{}]", planet_display(&names, &p.id), group_state(p));
+        let peers: Vec<_> = rows.iter().filter(|r| r.planet == p.id).collect();
+        if peers.is_empty() {
+            println!("  {}\n", rust_i18n::t!("cli.listpeers.noPeers"));
+            continue;
+        }
         let mut t = new_table(&["ROLE", "ADDRESS", "LATENCY", "VERSION", "PATH"]);
-        for p in rows.iter().filter(|p| p.planet == pid) {
-            let latency = p
+        for r in peers {
+            let latency = r
                 .latency_ms
                 .map(|l| format!("{l}ms"))
                 .unwrap_or_else(|| "—".into());
             t.add_row(vec![
-                p.role.clone(),
-                p.address.clone(),
+                r.role.clone(),
+                r.address.clone(),
                 latency,
-                dash(p.version.clone()),
-                p.path.clone().unwrap_or_else(|| "(relay)".into()),
+                dash(r.version.clone()),
+                r.path.clone().unwrap_or_else(|| "(relay)".into()),
             ]);
         }
         println!("{t}\n");
@@ -280,63 +262,70 @@ pub fn listpeers(client: &Client, filter: &Option<Vec<String>>, json: bool) -> R
     Ok(())
 }
 
+/// 按行星分组列出 moon。停止的行星没有 moon 数据,占位提示;`--planet`
+/// 过滤对分组生效
 pub fn listmoons(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result<(), CliError> {
     let v = fetch_list(client, endpoints::moons, "moons", filter)?;
-    if json {
-        print_json(&v);
-        return Ok(());
-    }
     let rows: Vec<MoonEntry> = serde_json::from_value(
         v.get("moons").cloned().unwrap_or(Value::Null),
     )
     .unwrap_or_default();
-    let names = planet_names(client);
-    let mut t = new_table(&["PLANET", "MOONID", "SEED", "SOURCE", "CACHED"]);
-    for m in rows {
-        t.add_row(vec![
-            planet_display(&names, &m.planet),
-            m.moon_id,
-            m.seed.unwrap_or_else(|| "—".into()),
-            if m.from_file { "file" } else { "manual" }.into(),
-            if m.cached { "yes" } else { "no" }.into(),
-        ]);
+    let planets = planet_statuses(client);
+    if json {
+        print_json(&grouped_json(&planets, filter, &rows, "moons", |m| &m.planet));
+        return Ok(());
     }
-    println!("{t}");
+    let names: HashMap<String, String> = planets
+        .iter()
+        .map(|p| (p.id.clone(), p.name.clone()))
+        .collect();
+    for p in &planets {
+        if !match_filter(filter, p) {
+            continue;
+        }
+        println!("planet: {} [{}]", planet_display(&names, &p.id), group_state(p));
+        let moons: Vec<_> = rows.iter().filter(|m| m.planet == p.id).collect();
+        if moons.is_empty() {
+            println!("  {}\n", rust_i18n::t!("cli.listmoons.noMoons"));
+            continue;
+        }
+        let mut t = new_table(&["MOONID", "SEED", "SOURCE", "CACHED"]);
+        for m in moons {
+            t.add_row(vec![
+                m.moon_id.clone(),
+                m.seed.clone().unwrap_or_else(|| "—".into()),
+                if m.from_file { "file" } else { "manual" }.into(),
+                if m.cached { "yes" } else { "no" }.into(),
+            ]);
+        }
+        println!("{t}\n");
+    }
     Ok(())
 }
 
-// ---- network show:单网络详情视图 ----
+// ---- networkinfo:单网络详情视图 ----
 
-#[derive(Subcommand)]
-pub enum NetworkCmd {
-    /// Show one joined network's full detail (IP / routes / DNS / routeViaZeroTier)
-    Show { nwid: String },
-}
-
-pub fn run_network(
-    client: &Client,
-    cmd: &NetworkCmd,
-    planet: &Option<String>,
-    json: bool,
-) -> Result<(), CliError> {
-    match cmd {
-        NetworkCmd::Show { nwid } => network_show(client, nwid, planet, json),
-    }
-}
-
-fn network_show(
+/// 单网络详情(IP / 路由 / DNS / routeViaZeroTier);planet 定位与 join/leave
+/// 同链(--planet 显式 > 环境变量 > daemon 自动选/报歧义)。行星未运行时
+/// 不拒绝:展示 STOPPED 占位详情(仅 registry 登记配置)并 stderr 反馈
+/// 动态字段缺失的原因
+pub fn networkinfo(
     client: &Client,
     nwid: &str,
     planet: &Option<String>,
     json: bool,
 ) -> Result<(), CliError> {
-    let pid = resolve_single(client, planet)?;
+    let pid = crate::cmd::resolve_registered(client, planet)?;
     let n = crate::cmd::mutate::find_network(client, nwid, &pid)?;
+    let stopped = n.status == "STOPPED";
+    if stopped {
+        eprintln!("{}", rust_i18n::t!("cli.networkinfo.stoppedPlanet"));
+    }
     if json {
         print_json(&serde_json::to_value(&n).map_err(|e| CliError::Io(e.to_string()))?);
         return Ok(());
     }
-    let label = planet_label(client, &Some(pid.clone()))
+    let label = crate::cmd::planet_label(client, &Some(pid.clone()))
         .unwrap_or_else(|| pid.clone());
     let routes = n
         .managed_routes
@@ -354,7 +343,8 @@ fn network_show(
     println!("type      {}", n.kind);
     println!("mac       {}", n.mac);
     println!("device    {}", n.interface.clone().unwrap_or_else(|| "—".into()));
-    println!("mtu       {}", n.mtu);
+    // 占位条目 mtu=0(核心不在拿不到),显示为 — 而非误导性的 0
+    println!("mtu       {}", if stopped { "—".into() } else { n.mtu.to_string() });
     println!("assigned  {}", n.assigned_addrs.join(", "));
     println!("routes    {}", if routes.is_empty() { "—".into() } else { routes });
     println!("dns       mode={} servers=[{}] custom=[{}]",

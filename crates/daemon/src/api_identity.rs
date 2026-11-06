@@ -265,7 +265,7 @@ pub async fn identity_import(
             "globalIdentityInUse",
             &format!(
                 "global identity is in use by running planet(s): {}; \
-                 stop them first (`planet-port stop <planet>`) and retry",
+                 disable them first (`planet-port planet disable <planet>`) and retry",
                 busy.join(", ")
             ),
             None,
