@@ -1,0 +1,16 @@
+# cargo-dist 构建作业注入步骤（github-build-setup 指向本文件）
+# dist 每次重新生成 release.yml 都会带上这里的内容，防投毒校验不丢失
+- name: 校验 wintun.dll SHA256
+  shell: bash
+  run: |
+    want="e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce"
+    got="$(sha256sum third_party/wintun/wintun.dll | awk '{print $1}')"
+    [ "$got" = "$want" ] || {
+      echo "wintun.dll SHA256 不符(期望 ${want:0:16}… 实际 ${got:0:16}…)，拒绝发布" >&2
+      exit 1
+    }
+
+- name: 设置 macOS 部署目标 12.0
+  if: runner.os == 'macOS'
+  shell: bash
+  run: echo "MACOSX_DEPLOYMENT_TARGET=12" >> "$GITHUB_ENV"

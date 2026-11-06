@@ -17,3 +17,7 @@ zt-sys = { path = "../zt-sys" }
 tun-rs = { version = "2", default-features = false, features = ["address-management"] }
 # route_manager:managed 路由应用(Task 5 实装),Apache-2.0
 route_manager = "0.2"
+
+# 试验性包，不进发布产物
+[package.metadata.dist]
+dist = false

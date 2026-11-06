@@ -34,14 +34,14 @@ arch_tag() {
 }
 build_target() { # $1=target
     case "$1" in
-        *-linux-*) cargo zigbuild --release --target "$1" -p planet-port -p daemon ;;
+        *-linux-*) cargo zigbuild --release --target "$1" -p planet-port ;;
         x86_64-pc-windows-msvc)
             # Task 1 探针结论:xwin(msvc STL 头 + lld-link)在本机可链接;
             # llvm 的 clang/lld-link 不在默认 PATH,须显式前置。
             # 子 shell 内 export,避免污染后续目标的 PATH
             (export PATH="/opt/homebrew/opt/llvm/bin:$PATH"; \
-                cargo xwin build --release --target "$1" -p planet-port -p daemon) ;;
-        *)         cargo build --release --target "$1" -p planet-port -p daemon ;;
+                cargo xwin build --release --target "$1" -p planet-port) ;;
+        *)         cargo build --release --target "$1" -p planet-port ;;
     esac
 }
 # windows 产物打包:双 exe + wintun.dll(SHA256 校验) + 离线安装脚本 → zip

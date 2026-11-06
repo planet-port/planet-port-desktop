@@ -3,6 +3,19 @@ name = "planet-port"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description.workspace = true
+
+# CLI 主程序
+[[bin]]
+name = "planet-port"
+path = "src/main.rs"
+
+# 守护进程(原 crates/daemon 包并入,双 bin 同包以便 dist 合并归档分发)
+[[bin]]
+name = "planet-portd"
+path = "src/bin/planet-portd/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
@@ -18,6 +31,12 @@ rust-i18n = "3"
 sys-locale = "0.3.2"
 # 时间戳本地化(events TS / planet show revision / share expires_at);MIT/Apache-2.0
 chrono = "0.4"
+# planet-portd HTTP API 服务
+axum = "0.8"
+# signal:SIGINT/SIGTERM 优雅退出;sync:watch 停止通道(Windows 服务停止)与既有 sync::Mutex
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync"] }
+# planet URL 导入等核心逻辑共用
+zt-core = { path = "../zt-core" }
 
 # Windows 服务管理(service/windows.rs):管理员令牌判定(TokenElevation)。
 # 仅 Windows 目标引入,MIT/Apache-2.0;版本对齐 daemon/zt-core 既有 0.59
@@ -29,4 +48,9 @@ windows-sys = { version = "0.59", features = [
     # Machine PATH 注册(service/windows.rs):注册表读写 + WM_SETTINGCHANGE 广播
     "Win32_System_Registry",
     "Win32_UI_WindowsAndMessaging",
+    # planet-portd:命名互斥体单例锁(Threading/Foundation)+ 随机数
+    # (Security_Cryptography 的 BCryptGenRandom)+ SCM 服务入口
+    # (System_Services 的 StartServiceCtrlDispatcherW)
+    "Win32_Security_Cryptography",
+    "Win32_System_Services",
 ] }

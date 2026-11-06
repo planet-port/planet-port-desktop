@@ -1,12 +1,30 @@
 [workspace]
 resolver = "2"
-members = ["crates/api", "crates/cli", "crates/zt-sys", "crates/zt-core", "crates/pocs", "crates/poc4", "crates/daemon"]
+members = ["crates/api", "crates/cli", "crates/zt-sys", "crates/zt-core", "crates/pocs", "crates/poc4"]
 
 [workspace.package]
 version = "0.3.0"
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/planet-port/planet-port-desktop"
+homepage = "https://github.com/planet-port/planet-port-desktop"
+description = "Multi-planet ZeroTier client"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# cargo-dist 发布配置：tag push → CI 五目标构建 → GitHub Releases + homebrew tap
+[workspace.metadata.dist]
+cargo-dist-version = "0.34.0"
+ci = "github"
+installers = ["homebrew"]
+publish-jobs = ["homebrew"]
+tap = "planet-port/homebrew-tap"
+publish-prereleases = true            # -beta.N tag 也要发 prerelease 并更新 tap
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin",
+           "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
+           "x86_64-pc-windows-msvc"]
+include = ["third_party/wintun/wintun.dll", "scripts/install-offline.ps1"]
+checksum = "sha256"
+github-build-setup = "dist-build-setup.yml"   # 相对 .github/workflows/ 解析，指向同名文件

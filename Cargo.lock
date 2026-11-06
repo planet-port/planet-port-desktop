@@ -384,21 +384,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
-name = "daemon"
-version = "0.3.0"
-dependencies = [
- "axum",
- "libc",
- "planet-port-api",
- "serde",
- "serde_json",
- "tokio",
- "ureq",
- "windows-sys 0.59.0",
- "zt-core",
-]
-
-[[package]]
 name = "dirs"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1101,6 +1086,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 name = "planet-port"
 version = "0.3.0"
 dependencies = [
+ "axum",
  "chrono",
  "clap",
  "libc",
@@ -1109,9 +1095,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sys-locale",
+ "tokio",
  "unicode-width",
  "ureq",
  "windows-sys 0.59.0",
+ "zt-core",
 ]
 
 [[package]]

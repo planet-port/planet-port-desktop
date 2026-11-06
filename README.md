@@ -116,8 +116,7 @@ flowchart LR
 
 | crate | 说明 |
 |---|---|
-| `crates/daemon`(planet-portd) | 真实 daemon:内嵌 zt-core,管理多 planet 实例 |
-| `crates/cli`(planet-port) | CLI 薄客户端 |
+| `crates/cli`(planet-port + planet-portd) | CLI 薄客户端 + 真实 daemon:daemon 内嵌 zt-core,管理多 planet 实例 |
 | `crates/api`(planet-port-api) | REST 契约类型与端点构造(CLI 与 daemon 共用) |
 | `crates/zt-sys` / `crates/zt-core` | ZeroTier 1.16.2 核心 FFI(-sys 绑定 + safe wrapper) |
 | `crates/pocs` | 可行性验证代码 |

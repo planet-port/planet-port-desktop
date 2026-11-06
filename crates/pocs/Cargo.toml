@@ -7,3 +7,7 @@ license = "MPL-2.0"
 [dependencies]
 zt-core = { path = "../zt-core" }
 clap = { version = "4", features = ["derive"] }
+
+# 试验性包，不进发布产物
+[package.metadata.dist]
+dist = false
