@@ -8,6 +8,9 @@ crates/pocs/fixtures/
 # Win10 实测机连接配置(含密码,勿提交)
 .env.win10
 
+# 主机 e2e 测试配置(含 sudo 密码,勿提交)
+.env.host-test
+
 # 本地 scratch(打包演练产物等,一律进 tmp/)
 /tmp/
 
