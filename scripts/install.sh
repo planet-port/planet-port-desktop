@@ -7,8 +7,9 @@
 #
 # 行为:
 #   1. 识别平台与架构,从 GitHub Releases 下载对应预编译包
-#      (命名参考 zerotier 发布规范: planet-port_<ver>_<platform>_<arch>.tar.gz;
-#      macOS: macos_aarch64 / macos_x86_64;Linux: linux_amd64 / linux_arm64)
+#      (cargo-dist 规范命名: planet-port-<target>.tar.xz;Windows 为
+#      planet-port-x86_64-pc-windows-msvc.zip;
+#      target 如 aarch64-apple-darwin / x86_64-unknown-linux-gnu)
 #   2. --no-service 时仅落盘二进制:
 #      - macOS: /Library/Application Support/planet-portd/bin/ + /usr/local/bin/planet-port 软链
 #      - Linux: 直接落 /usr/local/bin/planet-port 与 /usr/local/bin/planet-portd(无软链)
@@ -19,7 +20,8 @@
 #
 # 环境变量:
 #   PLANET_PORT_VERSION  指定版本(如 v0.1.1),默认取 Releases 最新
-#   PLANET_PORT_TARBALL  用本地 tar.gz 代替下载(测试用)
+#   PLANET_PORT_TARBALL  用本地包代替下载(测试用)
+#   PLANET_PORT_PREFIX   落盘根目录覆盖,仅供沙箱测试;正常安装不设
 
 set -euo pipefail
 
@@ -27,36 +29,36 @@ REPO="planet-port/planet-port-desktop"
 
 die() { echo "错误: $*" >&2; exit 1; }
 
-# ── 平台识别(产物命名: macos_aarch64 / macos_x86_64 / linux_amd64 / windows_x86_64) ──
+# ── 平台识别(产物命名: cargo-dist 规范 planet-port-<target>.tar.xz) ──
 OS="$(uname -s)"
 case "$OS" in
     Darwin) PLATFORM="macos" ;;
-    Linux)
-        # ubuntu / mint 等 Debian 系共用 linux_amd64 产物
-        PLATFORM="linux"
-        ;;
+    Linux)  PLATFORM="linux" ;;
     *) PLATFORM="unsupported" ;;
 esac
-case "$(uname -m)" in
-    arm64|aarch64) ARCH_TAG="$( [[ "$PLATFORM" == "linux" ]] && echo arm64 || echo aarch64 )" ;;
-    x86_64|amd64)  ARCH_TAG="$( [[ "$PLATFORM" == "linux" ]] && echo amd64 || echo x86_64 )" ;;
-    *) ARCH_TAG="" ;;
+case "${PLATFORM}_$(uname -m)" in
+    macos_arm64|macos_aarch64)  TRIPLE="aarch64-apple-darwin" ;;
+    macos_x86_64)               TRIPLE="x86_64-apple-darwin" ;;
+    linux_x86_64|linux_amd64)   TRIPLE="x86_64-unknown-linux-gnu" ;;
+    linux_aarch64|linux_arm64)  TRIPLE="aarch64-unknown-linux-gnu" ;;
+    *) TRIPLE="" ;;
 esac
 
-if [[ "$PLATFORM" == "unsupported" || -z "$ARCH_TAG" ]]; then
-    die "当前平台(${OS} $(uname -m))的版本尚未发布,已支持: macOS(arm64/x86_64)、Linux(amd64/arm64,glibc≥2.31);Windows 在发布计划中"
+if [[ -z "$TRIPLE" ]]; then
+    die "当前平台(${OS} $(uname -m))的版本尚未发布,已支持: macOS(arm64/x86_64)、Linux(amd64/arm64,glibc≥2.31);Windows 见 docs/install.md"
 fi
 
 if [[ "$(id -u)" -ne 0 ]]; then
     exec sudo bash "$0" "$@"
 fi
 
+# 落盘根目录;PLANET_PORT_PREFIX 仅供沙箱测试,正常安装不设
 if [[ "$PLATFORM" == "macos" ]]; then
-    APP_BIN="/Library/Application Support/planet-portd/bin"
-    LINK="/usr/local/bin/planet-port"
+    APP_BIN="${PLANET_PORT_PREFIX:-/Library/Application Support/planet-portd}/bin"
+    LINK="${PLANET_PORT_PREFIX:-/usr/local/bin}/planet-port"
 else
-    APP_BIN="/usr/local/bin"
-    LINK="/usr/local/bin/planet-port"
+    APP_BIN="${PLANET_PORT_PREFIX:-/usr/local}/bin"
+    LINK="${PLANET_PORT_PREFIX:-/usr/local}/bin/planet-port"
 fi
 
 # ── 参数 ──────────────────────────────────────────────────────────────
@@ -84,7 +86,7 @@ else
         [[ -n "$TAG" ]] || die "获取最新版本失败(仓库可能还没有 Release)"
     fi
     VERSION="${TAG#v}"
-    ASSET="planet-port_${VERSION}_${PLATFORM}_${ARCH_TAG}.tar.gz"
+    ASSET="planet-port-${TRIPLE}.tar.xz"
     URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
 
     TMP="$(mktemp -d)"
@@ -100,15 +102,21 @@ fi
 # 「下载 + 解压 + 调起」,不再重复实现拷贝/软链/恢复逻辑
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE" ${TMP:-}' EXIT
-tar -xzf "$TARBALL" -C "$STAGE"
-[[ -x "$STAGE/planet-port" && -x "$STAGE/planet-portd" ]] \
+tar -xJf "$TARBALL" -C "$STAGE"
+# dist 归档可能带顶层目录(planet-port-<target>/),也可能顶层直放,两者都兼容
+BIN_DIR="$STAGE"
+if [[ ! -x "$STAGE/planet-port" ]]; then
+    BIN_DIR="$(find "$STAGE" -maxdepth 2 -type f -name planet-port -perm +111 -exec dirname {} \; | head -1)"
+    [[ -n "$BIN_DIR" ]] || die "包内容不完整(需含可执行的 planet-port 与 planet-portd)"
+fi
+[[ -x "$BIN_DIR/planet-port" && -x "$BIN_DIR/planet-portd" ]] \
     || die "包内容不完整(需含可执行的 planet-port 与 planet-portd)"
 
 if [[ "$NO_SERVICE" -eq 1 ]]; then
     # 仅落盘二进制,不装服务(软链仅 macOS 需要;Linux 直接落 /usr/local/bin)
     mkdir -p "$APP_BIN"
     for bin in planet-port planet-portd; do
-        install -m 755 "${STAGE}/${bin}" "${APP_BIN}/${bin}.new"
+        install -m 755 "${BIN_DIR}/${bin}" "${APP_BIN}/${bin}.new"
         mv -f "${APP_BIN}/${bin}.new" "${APP_BIN}/${bin}"
     done
     if [[ "$PLATFORM" == "macos" ]]; then
@@ -117,12 +125,12 @@ if [[ "$NO_SERVICE" -eq 1 ]]; then
     fi
     echo "已跳过服务安装(--no-service),需要时执行: sudo planet-port install"
 else
-    "${STAGE}/planet-port" install
+    "${BIN_DIR}/planet-port" install
 fi
 rm -rf "$STAGE"
 
 echo
-echo "安装完成: ${VERSION} (${PLATFORM} ${ARCH_TAG})"
+echo "安装完成: ${VERSION} (${TRIPLE})"
 echo "  CLI:      ${LINK}"
 echo "  二进制:   ${APP_BIN}/"
 if [[ "$PLATFORM" == "macos" ]]; then

@@ -46,10 +46,11 @@ curl -fsSL https://raw.githubusercontent.com/planet-port/planet-port-desktop/mai
 ```
 
 脚本行为:识别平台架构 → 从 GitHub Releases 下载对应
-`planet-port_<ver>_<platform>_<arch>.tar.gz`(macOS:`macos_aarch64` /
-`macos_x86_64`;Linux:`linux_amd64` / `linux_arm64`)→ 解压 → 调用包内
+`planet-port-<target>.tar.xz`(macOS:`aarch64-apple-darwin` /
+`x86_64-apple-darwin`;Linux:`x86_64-unknown-linux-gnu` /
+`aarch64-unknown-linux-gnu`)→ 解压 → 调用包内
 `planet-port install` 完成安装(见下;macOS 装 launchd 服务,Linux 装
-systemd 服务)。
+systemd 服务)。发版由 cargo-dist CI 在推 tag 时自动完成。
 
 指定版本 / 跳过服务:
 
@@ -62,15 +63,15 @@ curl -fsSL …/install.sh | sudo bash -s -- --no-service  # 只落盘二进制(m
 
 **方式一:`planet-port install`(推荐,无任何依赖)**
 
-把与目标机器平台匹配的发布包 tar.gz 拷过去(U 盘/内网传输),解压后:
+把与目标机器平台匹配的发布包 tar.xz 拷过去(U 盘/内网传输),解压后:
 
 ```bash
 # macOS(Apple Silicon)
-tar -xzf planet-port_0.1.0_macos_aarch64.tar.gz
+tar -xJf planet-port-aarch64-apple-darwin.tar.xz
 sudo ./planet-port install
 
-# Linux(amd64;arm64 换 linux_arm64 包)
-tar -xzf planet-port_0.1.0_linux_amd64.tar.gz
+# Linux(amd64;arm64 换 aarch64-unknown-linux-gnu 包)
+tar -xJf planet-port-x86_64-unknown-linux-gnu.tar.xz
 sudo ./planet-port install
 ```
 
@@ -84,7 +85,7 @@ launchd 服务;Linux 直接落 `/usr/local/bin/` + 写 unit,均立即启动、
 目标机上已有 install.sh(如随发布包分发)时:
 
 ```bash
-sudo PLANET_PORT_TARBALL=./planet-port_0.1.0_linux_amd64.tar.gz ./install.sh
+sudo PLANET_PORT_TARBALL=./planet-port-x86_64-unknown-linux-gnu.tar.xz ./install.sh
 ```
 
 与在线安装等价,仅"下载"一步替换为本地包。
@@ -92,7 +93,7 @@ sudo PLANET_PORT_TARBALL=./planet-port_0.1.0_linux_amd64.tar.gz ./install.sh
 ## Windows 安装(x86_64)
 
 支持 Windows 10+(纸面,按支持面收敛),实测基线为 Windows 11
-build 26200,Win10 未实测。产物为 zip(`planet-port_<ver>_windows_x86_64.zip`,
+build 26200,Win10 未实测。产物为 zip(`planet-port-x86_64-pc-windows-msvc.zip`,
 内含 planet-port.exe / planet-portd.exe / wintun.dll / install-offline.ps1),
 安装时含 Machine PATH 注册。
 本版本**不做代码签名**,SmartScreen 拦截属预期,见下文「故障排查」。
@@ -112,7 +113,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version 0.1.3  # 指定�
 无需切换到 PowerShell 窗口(管理员 cmd:开始菜单搜 cmd → 右键 → 以管理员身份运行)。
 
 脚本行为:强制 TLS 1.2 → 管理员校验 → GitHub API 解析版本 → 下载
-`planet-port_<ver>_windows_x86_64.zip` 并解压 → 包内容完整性预检(三件套
+`planet-port-x86_64-pc-windows-msvc.zip` 并解压 → 包内容完整性预检(三件套
 缺一即给全量缺件清单)→ 调起包内 `planet-port.exe service install` 完成落盘、
 ACL 收敛与服务注册。脚本用 param 块接收 `-Version`,iex 管道无法传参且
 无法落地校验,故采用下载后 `-File` 执行的形态。

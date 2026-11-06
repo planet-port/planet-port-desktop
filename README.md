@@ -18,12 +18,12 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 
 ### 系统支持与最低版本
 
-产物形态参考 zerotier-one 官方分发（预编译 tar.gz 二进制 + 安装脚本，后续按系统补 deb / MSI 等安装包）：
+产物形态由 cargo-dist 生成（命名 `planet-port-<target>.tar.xz`，Windows 为 `planet-port-x86_64-pc-windows-msvc.zip`；预编译二进制 + 安装脚本，后续按系统补 deb / MSI 等安装包）：
 
 | 系统 | 产物类型 | 完成程度 | 最低系统版本 |
 |---|---|---|---|
-| macOS（Apple Silicon / Intel） | tar.gz + 安装脚本 | ✅ 已发布可用（launchd 服务、feth 数据面、DNS 托管完整） | macOS 12+ |
-| Ubuntu / Linux Mint 等 Debian 系 | tar.gz + 安装脚本（后续 deb） | 🚧 适配中：数据面已通（Ubuntu 24.04 实机验证多 planet 上线、join/netconf/路由、跨节点连通与 LAN 直连）；服务层（launchd→systemd）与安装脚本待适配 | Ubuntu 20.04+ / Mint 20+ |
+| macOS（Apple Silicon / Intel） | tar.xz + 安装脚本 | ✅ 已发布可用（launchd 服务、feth 数据面、DNS 托管完整） | macOS 12+ |
+| Ubuntu / Linux Mint 等 Debian 系 | tar.xz + 安装脚本（后续 deb） | 🚧 适配中：数据面已通（Ubuntu 24.04 实机验证多 planet 上线、join/netconf/路由、跨节点连通与 LAN 直连）；服务层（launchd→systemd）与安装脚本待适配 | Ubuntu 20.04+ / Mint 20+ |
 | Debian | 同上（与 Ubuntu 共用 Linux 产物） | 🚧 同上 | Debian 11+ |
 | Windows | zip + 安装脚本（后续 MSI） | 🚧 实现完成：wintun 数据面、SCM 服务化、CLI 全命令、DNS NRPT、install.ps1 / 离线 zip 安装链路；Win11 实机安装级验收进行中，Win10 纸面支持未实测 | Windows 10+ |
 | Termux（Android） | 待定 | 📐 待定（zerotier-one 官方亦不发布 Termux 包，仅社区仓库有） | 待定 |
@@ -143,7 +143,7 @@ CLI 手工回归清单（对 planet-portd 实测的基准）见 [docs/2026-10-29
 
 ### 发版流水线
 
-发版流水线 [.github/workflows/release.yml](.github/workflows/release.yml) 由 `dist generate` 生成，内含对 `DIST_RELEASE_TOKEN` 的手工替换；重新生成后必须复查该替换是否保留。
+发版由 cargo-dist CI 自动完成：推 tag（如 `v0.3.0`）触发 [.github/workflows/release.yml](.github/workflows/release.yml)（由 `dist generate` 生成），构建并上传各平台产物。该 workflow 内含对 `DIST_RELEASE_TOKEN` 的手工替换；重新生成后必须复查该替换是否保留。
 
 ## 致谢
 
