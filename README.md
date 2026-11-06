@@ -27,7 +27,8 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 | Debian | 同上（与 Ubuntu 共用 Linux 产物） | ✅ 同上 | Debian 12+ |
 | Windows | zip + 安装脚本（后续 MSI） | ✅ 已发布可用：wintun 数据面、SCM 服务化、CLI 全命令、DNS NRPT、install.ps1 / 离线 zip 安装链路；Win11 实机安装级 e2e 通过，Win10 纸面支持未实测 | Windows 10+ |
 | Termux（Android） | 待定 | 📐 待定（zerotier-one 官方亦不发布 Termux 包，仅社区仓库有） | 待定 |
-| 其它（FreeBSD / RHEL 系等） | 待定 | 📐 待定 | 待定 |
+| Rocky Linux 9 等 RHEL 系 | tar.xz + 安装脚本 | ✅ 安装级可用（Rocky 9 容器实测：安装、systemd 服务、启停与恢复全通过，恰为 glibc 2.34 下限；SELinux enforcing 未测不在承诺内） | Rocky 9+ |
+| 其它（FreeBSD / Arch 等） | 待定 | 📐 待定 | 待定 |
 
 > 最低版本说明：Linux 系以 ubuntu-22.04 CI 工具链为构建基线（glibc ≥ 2.34，低于 2.34 的发行版如 Ubuntu 20.04 / Debian 11 不在支持内）；macOS 12+ 为设计目标，当前仅在 macOS 26（Apple Silicon）实测；Windows 10+ 为纸面下限（按支持面收敛），当前仅在 Windows 11 实测。
 
