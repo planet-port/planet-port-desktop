@@ -45,11 +45,16 @@ case "${PLATFORM}_$(uname -m)" in
 esac
 
 if [[ -z "$TRIPLE" ]]; then
-    die "当前平台(${OS} $(uname -m))的版本尚未发布,已支持: macOS(arm64/x86_64)、Linux(amd64/arm64,glibc≥2.31);Windows 见 docs/install.md"
+    die "当前平台(${OS} $(uname -m))的版本尚未发布,已支持: macOS(arm64/x86_64)、Linux(amd64/arm64,glibc≥2.34);Windows 见 docs/install.md"
 fi
 
 if [[ "$(id -u)" -ne 0 ]]; then
-    exec sudo bash "$0" "$@"
+    # 沙箱豁免:PLANET_PORT_PREFIX 指定落盘根目录时,落盘无需 root,跳过提权直接继续
+    if [[ -n "${PLANET_PORT_PREFIX:-}" ]]; then
+        :
+    else
+        exec sudo bash "$0" "$@"
+    fi
 fi
 
 # 落盘根目录;PLANET_PORT_PREFIX 仅供沙箱测试,正常安装不设
