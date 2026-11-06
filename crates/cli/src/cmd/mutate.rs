@@ -36,9 +36,55 @@ pub fn join(client: &Client, nwid: &str, planet: &Option<String>, json: bool) ->
 }
 
 pub fn leave(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
+    // 无显式 --planet 时按 nwid 跨行星唯一定位:只挂在一个 planet 上就直接
+    // 离开(零参数用法定向到唯一落点),挂多个 planet 则 409 列候选要求
+    // 显式指定——同一个网络在不同 planet 上是不同成员,不能替用户挑。
+    // 非法 nwid 与名字输入不在此路径解析,透传 daemon 维持原报错。
+    let planet = match planet {
+        Some(p) => Some(p.clone()),
+        None => resolve_leave_planet(client, nwid)?,
+    };
     let resp = client.post_empty(&endpoints::network_leave(nwid, planet.as_deref()))?;
-    ok(client, "leave", planet, json, &resp);
+    ok(client, "leave", &planet, json, &resp);
     Ok(())
+}
+
+/// 跨行星解析 leave 的落点 planet:唯一命中返回其 id;未挂返回 None
+/// (透传 daemon 报 404);多行星同挂 409 networkAmbiguous 列候选。
+fn resolve_leave_planet(client: &Client, nwid: &str) -> Result<Option<String>, CliError> {
+    let norm = match norm_nwid(nwid) {
+        Ok(n) => n,
+        Err(_) => return Ok(None),
+    };
+    let v = client.get_json(&endpoints::networks(None))?;
+    let rows: Vec<NetworkEntry> = serde_json::from_value(
+        v.get("networks").cloned().unwrap_or(Value::Null),
+    )
+    .unwrap_or_default();
+    let hits: Vec<&NetworkEntry> = rows.iter().filter(|n| n.nwid == norm).collect();
+    match hits.as_slice() {
+        [] => Ok(None),
+        [one] => Ok(Some(one.planet.clone())),
+        many => {
+            let names = crate::cmd::query::planet_names(client);
+            Err(CliError::Api(
+                409,
+                ApiError {
+                    error: "networkAmbiguous".into(),
+                    message: format!(
+                        "network \"{}\" joined on {} planets; pass --planet to pick one",
+                        norm,
+                        many.len()
+                    ),
+                    candidates: Some(
+                        many.iter()
+                            .map(|n| crate::cmd::query::planet_display(&names, &n.planet))
+                            .collect(),
+                    ),
+                },
+            ))
+        }
+    }
 }
 
 /// zerotier-cli 老用户的 key 肌肉记忆 → 本项目等价 key(报错时提示映射)

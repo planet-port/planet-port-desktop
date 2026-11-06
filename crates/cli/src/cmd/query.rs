@@ -13,7 +13,7 @@ fn dash<T: ToString>(v: Option<T>) -> String {
 }
 
 /// planet id → 名称映射,列表输出显示 `id (name)`;/status 拿不到时回退纯 id
-fn planet_names(client: &Client) -> HashMap<String, String> {
+pub(crate) fn planet_names(client: &Client) -> HashMap<String, String> {
     planet_statuses(client)
         .into_iter()
         .map(|p| (p.id, p.name))
@@ -29,7 +29,7 @@ fn planet_statuses(client: &Client) -> Vec<PlanetStatus> {
         .unwrap_or_default()
 }
 
-fn planet_display(names: &HashMap<String, String>, id: &str) -> String {
+pub(crate) fn planet_display(names: &HashMap<String, String>, id: &str) -> String {
     match names.get(id) {
         Some(n) => format!("{id} ({n})"),
         None => id.to_string(),
