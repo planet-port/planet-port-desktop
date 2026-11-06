@@ -49,14 +49,31 @@ if ($Version -eq "latest") {
 }
 $asset = "planet-port-x86_64-pc-windows-msvc.zip"
 $url = "https://github.com/$repo/releases/download/v${Version}/${asset}"
+# 旧命名回退:v0.3.0 手工 release.sh 产物为 planet-port_<ver>_windows_x86_64.zip
+$oldAsset = "planet-port_${Version}_windows_x86_64.zip"
 
 # 4. 下载解压
 $tmp = Join-Path $env:TEMP "planet-port-install"
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory $tmp | Out-Null
+$outFile = Join-Path $tmp $asset
 Write-Host "下载 $url"
-Invoke-WebRequest -UseBasicParsing $url -OutFile (Join-Path $tmp $asset)
-Expand-Archive (Join-Path $tmp $asset) (Join-Path $tmp "pkg")
+# ErrorActionPreference 为 Stop 时 404 会抛异常,据此回退旧命名资产重试
+try {
+    Invoke-WebRequest -UseBasicParsing $url -OutFile $outFile
+} catch {
+    $oldUrl = "https://github.com/$repo/releases/download/v${Version}/${oldAsset}"
+    Write-Host "未找到 $asset,回退尝试旧命名 $oldAsset"
+    try {
+        Invoke-WebRequest -UseBasicParsing $oldUrl -OutFile $outFile
+    } catch {
+        Write-Error "下载失败:$asset 与旧命名 $oldAsset 均不可达(确认 Release 已附带对应资产)"
+    }
+}
+if (-not (Test-Path $outFile) -or (Get-Item $outFile).Length -le 0) {
+    Write-Error "下载内容为空(确认 Release 已附带 $asset)"
+}
+Expand-Archive $outFile (Join-Path $tmp "pkg")
 # dist 归档可能带顶层目录(planet-port-x86_64-pc-windows-msvc/),也可能顶层直放,
 # 两者都兼容(与 mac/linux 的 install.sh 同一思路)
 $pkg = Join-Path $tmp "pkg"

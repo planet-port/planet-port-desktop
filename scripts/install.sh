@@ -22,6 +22,10 @@
 #   PLANET_PORT_VERSION  指定版本(如 v0.1.1),默认取 Releases 最新
 #   PLANET_PORT_TARBALL  用本地包代替下载(测试用)
 #   PLANET_PORT_PREFIX   落盘根目录覆盖,仅供沙箱测试;正常安装不设
+#
+# 资产命名兼容:cargo-dist 新命名(planet-port-<target>.tar.xz)404 时,
+# 回退尝试旧命名 planet-port_<ver>_<platform>_<arch>.tar.gz(如 v0.3.0
+# 手工 release.sh 产物,顶层直放布局,解包逻辑天然兼容)
 
 set -euo pipefail
 
@@ -93,12 +97,28 @@ else
     VERSION="${TAG#v}"
     ASSET="planet-port-${TRIPLE}.tar.xz"
     URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
+    # 旧命名回退:triple → 手工发版时代的 platform_arch(仅用于 404 后重试)
+    case "$TRIPLE" in
+        aarch64-apple-darwin)      OLD_ASSET="planet-port_${VERSION}_macos_aarch64.tar.gz" ;;
+        x86_64-apple-darwin)       OLD_ASSET="planet-port_${VERSION}_macos_x86_64.tar.gz" ;;
+        x86_64-unknown-linux-gnu)  OLD_ASSET="planet-port_${VERSION}_linux_amd64.tar.gz" ;;
+        aarch64-unknown-linux-gnu) OLD_ASSET="planet-port_${VERSION}_linux_arm64.tar.gz" ;;
+        *)                         OLD_ASSET="" ;;
+    esac
 
     TMP="$(mktemp -d)"
     trap 'rm -rf "$TMP"' EXIT
-    echo "下载 ${URL}"
-    curl -fSL --progress-bar -o "${TMP}/${ASSET}" "$URL" || die "下载失败(确认 Release 已附带 ${ASSET})"
     TARBALL="${TMP}/${ASSET}"
+    echo "下载 ${URL}"
+    # curl -f:HTTP ≥400 直接失败且不落错误页,据此判定 404 并回退旧命名
+    if ! curl -fsSL --progress-bar -o "$TARBALL" "$URL"; then
+        [[ -n "$OLD_ASSET" ]] || die "下载失败(确认 Release 已附带 ${ASSET})"
+        OLD_URL="https://github.com/${REPO}/releases/download/${TAG}/${OLD_ASSET}"
+        echo "未找到 ${ASSET},回退尝试旧命名 ${OLD_ASSET}"
+        curl -fsSL --progress-bar -o "$TARBALL" "$OLD_URL" \
+            || die "下载失败(确认 Release 已附带 ${ASSET} 或 ${OLD_ASSET})"
+    fi
+    [[ -s "$TARBALL" ]] || die "下载内容为空(确认 Release 已附带 ${ASSET})"
 fi
 
 # ── 解包并安装 ─────────────────────────────────────────────────────────
@@ -107,7 +127,12 @@ fi
 # 「下载 + 解压 + 调起」,不再重复实现拷贝/软链/恢复逻辑
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE" ${TMP:-}' EXIT
-tar -xJf "$TARBALL" -C "$STAGE"
+# 新命名 .tar.xz / 旧命名 .tar.gz 两种压缩都要能解(按扩展名选参数,避免依赖 tar 自动识别)
+case "$TARBALL" in
+    *.tar.gz|*.tgz) TAR_FLAG="-xzf" ;;
+    *)              TAR_FLAG="-xJf" ;;
+esac
+tar $TAR_FLAG "$TARBALL" -C "$STAGE"
 # dist 归档可能带顶层目录(planet-port-<target>/),也可能顶层直放,两者都兼容
 BIN_DIR="$STAGE"
 if [[ ! -x "$STAGE/planet-port" ]]; then
