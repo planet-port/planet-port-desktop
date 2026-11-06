@@ -32,8 +32,8 @@ $repo = "planet-port/planet-port-desktop"
 if ($Version -ne "latest" -and $Version -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$') {
     Write-Error "-Version 格式不合法:'$Version'。示例:0.1.3 / v0.1.3 / 0.1.3-beta.1(或省略该参数装 latest)"
 }
-# 容忍 v 前缀:资产命名统一用不带 v 的纯版本号;校验用的 -notmatch 不区分
-# 大小写,`-Version V0.1.3` 能过校验,这里两种前缀都得剥,否则拼资产名 404
+# 容忍 v 前缀:下载 URL 的 tag 统一用不带 v 的纯版本号;校验用的 -notmatch 不区分
+# 大小写,`-Version V0.1.3` 能过校验,这里两种前缀都得剥,否则拼下载地址 404
 $Version = $Version.TrimStart('v', 'V')
 
 # 2. 管理员检查(service install 内部同样校验,提前拦给明确提示)
@@ -47,7 +47,7 @@ if ($Version -eq "latest") {
     $rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest"
     $Version = $rel.tag_name.TrimStart('v', 'V')
 }
-$asset = "planet-port_${Version}_windows_x86_64.zip"
+$asset = "planet-port-x86_64-pc-windows-msvc.zip"
 $url = "https://github.com/$repo/releases/download/v${Version}/${asset}"
 
 # 4. 下载解压
@@ -57,7 +57,14 @@ New-Item -ItemType Directory $tmp | Out-Null
 Write-Host "下载 $url"
 Invoke-WebRequest -UseBasicParsing $url -OutFile (Join-Path $tmp $asset)
 Expand-Archive (Join-Path $tmp $asset) (Join-Path $tmp "pkg")
+# dist 归档可能带顶层目录(planet-port-x86_64-pc-windows-msvc/),也可能顶层直放,
+# 两者都兼容(与 mac/linux 的 install.sh 同一思路)
 $pkg = Join-Path $tmp "pkg"
+if (-not (Test-Path (Join-Path $pkg "planet-port.exe"))) {
+    $found = Get-ChildItem $pkg -Recurse -Depth 2 -Filter "planet-port.exe" -File |
+        Select-Object -First 1
+    if ($found) { $pkg = $found.DirectoryName }
+}
 
 # 5. 包内容完整性预检(缺件时 service install 也会报,这里收集齐后给全量提示)
 $missing = @()

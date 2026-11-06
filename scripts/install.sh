@@ -106,7 +106,7 @@ tar -xJf "$TARBALL" -C "$STAGE"
 # dist 归档可能带顶层目录(planet-port-<target>/),也可能顶层直放,两者都兼容
 BIN_DIR="$STAGE"
 if [[ ! -x "$STAGE/planet-port" ]]; then
-    BIN_DIR="$(find "$STAGE" -maxdepth 2 -type f -name planet-port -perm +111 -exec dirname {} \; | head -1)"
+    BIN_DIR="$(find "$STAGE" -maxdepth 2 -type f -name planet-port -perm -u+x -exec dirname {} \; | head -1)"
     [[ -n "$BIN_DIR" ]] || die "包内容不完整(需含可执行的 planet-port 与 planet-portd)"
 fi
 [[ -x "$BIN_DIR/planet-port" && -x "$BIN_DIR/planet-portd" ]] \
