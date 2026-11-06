@@ -385,7 +385,7 @@ impl NetDevice {
 
     fn apply_routes(&mut self, cfg: &NetConfig) {
         if self.routes.is_none() {
-            match RouteApplier::new(self.if_index) {
+            match RouteApplier::new(self.if_index, &self.if_name) {
                 Ok(r) => self.routes = Some(r),
                 Err(e) => {
                     eprintln!("[device] {} 路由应用器创建失败(忽略): {e}", self.if_name);

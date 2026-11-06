@@ -149,6 +149,13 @@ fn map_locale(raw: &str) -> Option<String> {
 }
 
 fn main() {
+    // 管道下游提前关闭(如 `planet-port listpeers | head`)时按 Unix 惯例
+    // 静默退出:Rust 默认忽略 SIGPIPE,println! 遇 EPIPE 会 panic;恢复
+    // 默认处置后进程直接终止,与 cat/ls 等常规工具一致。
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     init_locale();
     let cli = Cli::parse();
     let json = cli.json;

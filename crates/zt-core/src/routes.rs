@@ -7,6 +7,12 @@
 //! - 默认路由(0.0.0.0/0、::/0)一律跳过,设备绝不劫持默认路由;
 //! - managed 路由一律安装:本模块不做「目标被其它接口占用则跳过」的跨实例
 //!   判断(该检测上移到 daemon 层做全局扫描),失败只告警不中断其余条目;
+//! - **不得压过本机直连路由**(2026-11-07 casaos 事故:G-Home 下发的
+//!   `192.168.8.0/24 via ...` 与主机物理网段同前缀,metric 0 安装后把
+//!   本机局域网流量全部引进隧道,主机从局域网失联约 3 分钟)。防护分平台:
+//!   Linux/Windows 与官方客户端对齐,统一 metric 5000(直连路由 metric
+//!   0/100 永远优先);macOS BSD 协议栈无 metric 概念,改为「目标网段覆盖
+//!   其它接口上的本机地址则跳过安装」;
 //! - teardown 尽力清理;内核在设备销毁后也会回收绑定其上的路由。
 //!
 //! # Windows 后端(自 poc4 routes_win.rs 平移)
@@ -37,6 +43,46 @@ fn is_default(target: &IpNet) -> bool {
     target.prefix == 0
 }
 
+/// 托管路由安装 metric:与官方客户端(zerotier-one)对齐的 5000。内核
+/// 直连路由 metric 为 0/100,本机物理网段的流量永远优先走直连,托管
+/// 路由只在直连不存在时兜底——官方客户端在 Linux 上即此行为。
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+const MANAGED_ROUTE_METRIC: u32 = 5000;
+
+/// macOS 防护:目标网段是否覆盖「其它接口上的本机地址」。BSD 协议栈
+/// 无路由 metric,同前缀的网关路由会压过直连路由(实机复现:G-Home 的
+/// 192.168.8.0/24 via 抢走 en0 同网段流量),唯一安全做法是跳过安装。
+/// v6 目标不判定(托管 v6 路由本就少,待有实网案例再补)。
+#[cfg(target_os = "macos")]
+fn shadows_local_subnet(target: &IpNet, own_if: &str) -> bool {
+    let IpAddr::V4(t) = target.addr else { return false };
+    let hit = crate::ifaddr::local_v4_by_if().into_iter().any(|(name, ip)| {
+        name != own_if && ipv4_in_net(IpAddr::V4(ip), IpAddr::V4(t), target.prefix)
+    });
+    if hit {
+        eprintln!(
+            "[routes] 跳过 {}(覆盖其它接口的本机地址,装了会遮蔽其直连网段)",
+            fmt_target(target)
+        );
+    }
+    hit
+}
+
+#[cfg(target_os = "macos")]
+fn ipv4_in_net(ip: IpAddr, net: IpAddr, prefix: u8) -> bool {
+    match (ip, net) {
+        (IpAddr::V4(ip), IpAddr::V4(net)) => {
+            let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix) };
+            u32::from(ip) & mask == u32::from(net) & mask
+        }
+        _ => false,
+    }
+}
+
+fn fmt_target(target: &IpNet) -> String {
+    format!("{}/{}", target.addr, target.prefix)
+}
+
 /// Windows 侧平台级过滤:v6 目标一律不装(理由见模块注释「不安装 v6 托管
 /// 路由」),与默认路由跳过同级的告警日志。
 #[cfg(windows)]
@@ -51,7 +97,8 @@ fn platform_skip(target: &IpNet) -> bool {
     v6
 }
 
-/// unix 侧无平台级过滤,行为与既有实现完全一致。
+/// macOS 走 shadows_local_subnet 防护(见上);Linux 的 metric 防护在
+/// to_route 里,均不在本过滤钩子。非 macOS 的 unix 无平台级过滤。
 #[cfg(not(windows))]
 fn platform_skip(_target: &IpNet) -> bool {
     false
@@ -60,19 +107,21 @@ fn platform_skip(_target: &IpNet) -> bool {
 pub struct RouteApplier {
     rm: RouteManager,
     if_index: u32,
+    if_name: String,
     applied: Vec<ManagedRoute>,
 }
 
 impl RouteApplier {
-    pub fn new(if_index: u32) -> io::Result<Self> {
-        Ok(Self { rm: RouteManager::new()?, if_index, applied: Vec::new() })
+    pub fn new(if_index: u32, if_name: &str) -> io::Result<Self> {
+        Ok(Self { rm: RouteManager::new()?, if_index, if_name: if_name.to_string(), applied: Vec::new() })
     }
 
     pub fn applied(&self) -> &[ManagedRoute] {
         &self.applied
     }
 
-    /// ManagedRoute -> route_manager::Route(on-link 用 if_index 绑定,有 via 用网关)。
+    /// ManagedRoute -> route_manager::Route(on-link 用 if_index 绑定,有 via 用网关;
+    /// Linux/Windows 带 metric 5000,确保不压过本机直连路由,见模块红线)。
     fn to_route(&self, r: &ManagedRoute) -> Option<Route> {
         if is_default(&r.target) {
             return None;
@@ -80,6 +129,10 @@ impl RouteApplier {
         let mut route = Route::new(r.target.addr, r.target.prefix).with_if_index(self.if_index);
         if let Some(via) = r.via {
             route = route.with_gateway(via);
+        }
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        {
+            route = route.with_metric(MANAGED_ROUTE_METRIC);
         }
         Some(route)
     }
@@ -94,6 +147,12 @@ impl RouteApplier {
             .iter()
             .filter(|r| !is_default(&r.target))
             .filter(|r| !platform_skip(&r.target))
+            .filter(|r| {
+                #[cfg(target_os = "macos")]
+                { !shadows_local_subnet(&r.target, &self.if_name) }
+                #[cfg(not(target_os = "macos"))]
+                { true }
+            })
             .collect();
         for r in &want_kept {
             if self.applied.iter().any(|a| key(a) == key(r)) {
