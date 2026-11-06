@@ -23,12 +23,19 @@ pub struct PlanetStatus {
     #[serde(rename = "type")]
     pub kind: PlanetKind,
     pub status: String, // running | stopped
+    /// 持久启用开关(禁用 = 即使有网络也不运行);缺省 true 兼容旧响应
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     pub online: bool,
     pub node_id: Option<String>,
     pub core_version: Option<String>,
     pub latency_ms: Option<u64>,
     pub network_count: usize,
     pub port: u16,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// GET /planets/{id} 返回体
@@ -50,6 +57,8 @@ pub struct PlanetDetail {
     pub network_count: usize,
     pub port: u16,
     pub status: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     pub online: bool,
 }
 

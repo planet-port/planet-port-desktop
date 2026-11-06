@@ -514,16 +514,16 @@ async fn daemon_main(args: Args) {
             .ok();
     }
 
-    // 5. 恢复:registry 中 running=true 即期望运行的 planet(含优雅退出保留的
-    //    状态),逐个拉起;失败(start_planet 内部已登记 planetStartFailed +
-    //    running=false)则继续
+    // 5. 恢复(派生运行规则):enabled ∧ 非手动挂起 ∧ 有网络 即期望运行。
+    //    running=true 含优雅退出保留的状态;手动 stop(manual_stop)与禁用
+    //    (enabled=false)不拉起;无网络的不空跑核心
     let recover: Vec<registry::RegistryEntry> = state
         .registry
         .lock()
         .unwrap()
         .planets
         .iter()
-        .filter(|e| e.running)
+        .filter(|e| e.enabled && !e.manual_stop && !e.net_local.is_empty())
         .cloned()
         .collect();
     for e in recover {

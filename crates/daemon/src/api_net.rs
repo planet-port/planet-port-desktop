@@ -41,18 +41,39 @@ pub(crate) fn resolve_running_planet(
     st: &AppState,
     planet: Option<&str>,
 ) -> Result<String, ApiErr> {
+    let (cid, entry) = resolve_planet_entry(st, planet)?;
+    if !entry.running {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "planetNotRunning",
+            &format!(
+                "planet \"{}\" is not running",
+                crate::api_planet::name_of(&entry)
+            ),
+            None,
+        ));
+    }
+    Ok(cid)
+}
+
+/// 定位目标 planet(不校验运行状态,供 join 的自动拉起路径复用):
+/// 显式指定按 id/name/worldId 解析,未命中 404;自动选择按**登记数**计
+/// (1 个即中,≥2 一律报歧义要求显式指定)。返回 canonical id + entry
+/// 克隆,registry 锁内即放。
+pub(crate) fn resolve_planet_entry(
+    st: &AppState,
+    planet: Option<&str>,
+) -> Result<(String, RegistryEntry), ApiErr> {
     let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(p) = planet {
         return match world::resolve_planet_id(&reg, p).and_then(|cid| {
-            reg.planets.iter().find(|x| x.id == cid).map(|x| (cid, x))
+            reg.planets
+                .iter()
+                .find(|x| x.id == cid)
+                .cloned()
+                .map(|x| (cid, x))
         }) {
-            Some((cid, x)) if x.running => Ok(cid),
-            Some((_, x)) => Err(err(
-                StatusCode::CONFLICT,
-                "planetNotRunning",
-                &format!("planet \"{}\" is not running", crate::api_planet::name_of(x)),
-                None,
-            )),
+            Some((cid, x)) => Ok((cid, x)),
             None => Err(err(
                 StatusCode::NOT_FOUND,
                 "planetNotFound",
@@ -61,8 +82,6 @@ pub(crate) fn resolve_running_planet(
             )),
         };
     }
-    // 自动选择按**登记数**计,不看连接状态:登记 1 个(即使未启用)即为其
-    // 目标(running 校验同显式分支);登记 ≥2 一律报歧义要求显式指定
     match reg.planets.len() {
         0 => Err(err(
             StatusCode::CONFLICT,
@@ -72,19 +91,7 @@ pub(crate) fn resolve_running_planet(
         )),
         1 => {
             let p = &reg.planets[0];
-            if p.running {
-                Ok(p.id.clone())
-            } else {
-                Err(err(
-                    StatusCode::CONFLICT,
-                    "planetNotRunning",
-                    &format!(
-                        "planet \"{}\" is not running",
-                        crate::api_planet::name_of(p)
-                    ),
-                    None,
-                ))
-            }
+            Ok((p.id.clone(), p.clone()))
         }
         _ => {
             // 候选列全部登记行星(带运行状态;running 的附实际网络数,以核心
@@ -340,9 +347,40 @@ pub async fn net_join(
     Path(nwid): Path<String>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiErr> {
-    // 定位(registry 锁在 resolve_running_planet 内短持)与运行时获取(planets
-    // 锁)分开:两锁不得嵌套
-    let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
+    // 定位(registry 锁在 resolve_planet_entry 内短持)与运行时获取(planets
+    // 锁)分开:两锁不得嵌套。join 是明确的联网意图,目标未运行且非手动
+    // 挂起时自动拉起再加入;禁用与手动挂起是用户的"别跑"意志,报错指引
+    let (pid, entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
+    if !entry.enabled {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "planetDisabled",
+            &format!(
+                "planet \"{}\" is disabled; enable it first",
+                crate::api_planet::name_of(&entry)
+            ),
+            None,
+        ));
+    }
+    if entry.manual_stop {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "planetNotRunning",
+            &format!(
+                "planet \"{}\" was stopped manually; start it first",
+                crate::api_planet::name_of(&entry)
+            ),
+            None,
+        ));
+    }
+    // 未运行(running=false:leave 清空后的资源性停止等)→ 自动拉起;
+    // running=true 但运行时缺失的残留(上次启动失败等)同样由幂等的
+    // start_planet 纠正
+    if !entry.running || runtime_of(&st, &pid).is_none() {
+        runtime::start_planet(&st, &entry)
+            .await
+            .map_err(|m| err(StatusCode::INTERNAL_SERVER_ERROR, "startFailed", &m, None))?;
+    }
     let rt = not_running(&st, &pid)?;
     let nwid_u = parse_nwid(&nwid)?;
     // 已加入 → 幂等成功(对齐 zerotier-cli:重复 join 不报错,批量脚本可重入)
@@ -447,9 +485,11 @@ pub async fn net_leave(
     st.events.push(&rt.planet_id, "leave", &format!("left {nwid}"));
     // DNS:该网络的系统 resolver 若归本 planet 所有则还原(失败仅记事件)。
     // 持 dns_gate:与 netconf apply / stop 的 restore 互斥,标记文件的
-    // check-then-act 不能交叠
-    let _dns_gate = st.dns_gate.lock().await;
+    // check-then-act 不能交叠。守卫必须收在本块内:下方 idle 停机会经
+    // stop_planet 再次拿 dns_gate,tokio Mutex 不可重入,守卫活到函数尾
+    // 会自死锁(客户端超时断开才被 drop 解开)
     {
+        let _dns_gate = st.dns_gate.lock().await;
         let events = Arc::clone(&st.events);
         let config_dir = st.config_dir.clone();
         let pid = rt.planet_id.clone();
@@ -457,6 +497,16 @@ pub async fn net_leave(
             crate::dns::restore(&config_dir, &events, &pid, Some(nwid_u))
         })
         .await;
+    }
+    // 派生运行规则:leave 清空全部网络后 planet 无事可做,自动停核心
+    // 释放资源(IdleStop 不产生挂起语义,后续 join/boot 按规则可再拉起)
+    if rt
+        .net_local
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_empty()
+    {
+        runtime::stop_planet(&st, &rt.planet_id, runtime::StopMark::IdleStop).await;
     }
     Ok(Json(json!({"result": "ok"})))
 }

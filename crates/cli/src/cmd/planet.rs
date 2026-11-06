@@ -28,6 +28,10 @@ pub enum PlanetCmd {
         ttl: u64,
         id: String,
     },
+    /// Enable a planet (persist; auto-start if it has networks)
+    Enable { id: String },
+    /// Disable a planet (persist; stop it and never run until enabled)
+    Disable { id: String },
 }
 
 pub fn run(client: &Client, cmd: &PlanetCmd, json: bool) -> Result<(), CliError> {
@@ -37,6 +41,8 @@ pub fn run(client: &Client, cmd: &PlanetCmd, json: bool) -> Result<(), CliError>
         PlanetCmd::Rename { id, new_name } => rename(client, id, new_name, json),
         PlanetCmd::Export { id, out } => export(client, id, out.clone()),
         PlanetCmd::Share { id, ttl } => share(client, id, *ttl, json),
+        PlanetCmd::Enable { id } => enable(client, id, json),
+        PlanetCmd::Disable { id } => disable(client, id, json),
     }
 }
 
@@ -51,6 +57,20 @@ pub fn start(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
 pub fn stop(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
     let resp = client.post_empty(&endpoints::planet_action(id, "stop"))?;
     print_result(client, "stop", id, json, &resp);
+    Ok(())
+}
+
+/// 启用(持久):非手动挂起且有网络 → daemon 侧自动拉起
+pub fn enable(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
+    let resp = client.post_empty(&endpoints::planet_action(id, "enable"))?;
+    print_result(client, "enable", id, json, &resp);
+    Ok(())
+}
+
+/// 禁用(持久):在跑立即停;禁用期间 join/start/boot 一律不运行
+pub fn disable(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
+    let resp = client.post_empty(&endpoints::planet_action(id, "disable"))?;
+    print_result(client, "disable", id, json, &resp);
     Ok(())
 }
 
@@ -86,11 +106,18 @@ fn list(client: &Client, json: bool) -> Result<(), CliError> {
     .unwrap_or_default();
     let mut t = new_table(&["ICON", "PLANET", "ID", "STATUS", "NETWORKS", "PORT"]);
     for p in rows {
+        // 禁用是持久开关,与运行状态正交:disabled 前缀标识,避免"stopped
+        // 但其实被禁用"的误读
+        let status = match (p.status.as_str(), p.enabled) {
+            ("running", _) => "running".to_string(),
+            (_, false) => "disabled".to_string(),
+            _ => "stopped".to_string(),
+        };
         t.add_row(vec![
             icon_to_emoji(&p.icon).to_string(),
             p.name,
             p.id,
-            if p.status == "running" { "running".into() } else { "stopped".into() },
+            status,
             p.network_count.to_string(),
             p.port.to_string(),
         ]);

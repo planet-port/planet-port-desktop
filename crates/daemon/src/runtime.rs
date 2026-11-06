@@ -411,6 +411,14 @@ pub fn status_name(s: &NetStatus) -> &'static str {
 /// 已在运行则幂等成功。成功后按 registry net_local 逐网络 re-join
 /// (重启恢复;Core 不持久化成员关系,见函数尾部注释)。
 pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(), String> {
+    // 禁用是持久的"别跑"意志:start 一律拒绝(端点侧已挡,此处兜底防
+    // boot 恢复/join 拉起等内部调用路径绕过)
+    if !entry.enabled {
+        return Err(format!(
+            "planet \"{}\" is disabled; enable it first",
+            crate::api_planet::name_of(entry)
+        ));
+    }
     // 启停全程持门闩:防并发双 start 双实例(后者覆盖前者即泄漏线程/端口)
     let _gate = state.runtime_gate.lock().await;
     let pid = entry.id.clone();
@@ -489,6 +497,8 @@ pub async fn start_planet(state: &AppState, entry: &RegistryEntry) -> Result<(),
         let mut reg = state.registry.lock().unwrap();
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
             e.running = true;
+            // start 即手动恢复:清除挂起标记(join 自动拉起/boot 恢复由此放行)
+            e.manual_stop = false;
             e.last_node_id = Some(node_id);
         }
         if let Err(e) = reg.save(&state.config_dir) {
@@ -536,11 +546,14 @@ fn start_failed(state: &AppState, pid: &str, message: &str) -> String {
 /// stop 的登记语义。registry 的 `running` 字段是**期望状态**:
 /// - [`StopMark::ExplicitStop`]:用户显式 stop / 致命自停 / 删除收尾,
 ///   落 `running=false`,下次 daemon 启动不拉起;
+/// - [`StopMark::IdleStop`]:资源性停止(leave 清空全部网络 / disable),
+///   落 `running=false` 但**不置手动挂起**——join/boot 按派生规则可再拉起;
 /// - [`StopMark::ShutdownKeep`]:daemon 优雅退出(SIGTERM),保留 `running=true`,
 ///   daemon 下次启动时按既有的恢复逻辑自动拉起——服务 stop/start 即暂停/恢复。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StopMark {
     ExplicitStop,
+    IdleStop,
     ShutdownKeep,
 }
 
@@ -617,11 +630,16 @@ async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>, mark: StopMa
     {
         let mut reg = state.registry.lock().unwrap();
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == rt.planet_id) {
-            // 期望状态仅显式 stop 才落 false;优雅退出保留 true 供下次启动恢复。
-            // last_node_id 是展示用的上次节点地址(身份本体在 dataDir),保留即可
-            if mark == StopMark::ExplicitStop {
+            // 期望状态仅显式/资源性停止才落 false;优雅退出保留 true 供下次
+            // 启动恢复。last_node_id 是展示用的上次节点地址(身份本体在
+            // dataDir):显式 stop 清空(对齐 identity 列表语义),资源性停止
+            // 保留。manual_stop 只由显式 stop(端点)置位、start 清除,此处
+            // 不动——资源性停止不产生挂起语义
+            if mark != StopMark::ShutdownKeep {
                 e.running = false;
-                e.last_node_id = None;
+                if mark == StopMark::ExplicitStop {
+                    e.last_node_id = None;
+                }
             }
             // 设备已随 teardown 销毁,登记清空(sink 后续的登记任务见
             // running=false 也会自行跳过)
@@ -631,10 +649,10 @@ async fn teardown_runtime(state: &AppState, rt: Arc<PlanetRuntime>, mark: StopMa
             eprintln!("[runtime] registry 写盘失败: {e}");
         }
     }
-    let stop_msg = if mark == StopMark::ShutdownKeep {
-        "planet stopped (daemon 优雅退出,重启后自动恢复)"
-    } else {
-        "planet stopped"
+    let stop_msg = match mark {
+        StopMark::ShutdownKeep => "planet stopped (daemon 优雅退出,重启后自动恢复)",
+        StopMark::IdleStop => "planet idled (no networks / disabled)",
+        StopMark::ExplicitStop => "planet stopped",
     };
     state.events.push(&rt.planet_id, "planetStopped", stop_msg);
     // DNS:系统 resolver 若仍归本 planet 所有(stop/删除/shutdown 共用此路径)
