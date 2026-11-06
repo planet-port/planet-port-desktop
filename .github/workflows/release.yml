@@ -127,6 +127,9 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
+      - name: "拉取 ZeroTier 核心源码"
+        run: "./scripts/bootstrap.sh"
+        shell: "bash"
       - name: "校验 wintun.dll SHA256"
         run: |
           want="e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce"

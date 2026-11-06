@@ -14,12 +14,16 @@ STAMP="${CORE_DIR}/.fetched-tag"
 
 err() { echo "bootstrap: $*" >&2; exit 1; }
 
+# SHA256 工具探测:macOS/git-bash 用 shasum,Linux CI/发行版用 sha256sum(两者 --check 行为一致)
+SHA256_TOOL=(shasum -a 256)
+command -v shasum >/dev/null 2>&1 || SHA256_TOOL=(sha256sum)
+
 if [[ -f "$STAMP" && "$(cat "$STAMP")" == "$ZT_VERSION" ]]; then
   echo "ZeroTier 核心 ${ZT_VERSION} 已就绪，跳过拉取"
   exit 0
 fi
 
-verify_tarball() { echo "${ZT_SHA256}  ${TARBALL}" | shasum -a 256 --check - >/dev/null 2>&1; }
+verify_tarball() { echo "${ZT_SHA256}  ${TARBALL}" | "${SHA256_TOOL[@]}" --check - >/dev/null 2>&1; }
 
 mkdir -p "$CACHE_DIR"
 if [[ -s "$TARBALL" ]] && ! verify_tarball; then

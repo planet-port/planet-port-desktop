@@ -1,5 +1,9 @@
 # cargo-dist 构建作业注入步骤（github-build-setup 指向本文件）
 # dist 每次重新生成 release.yml 都会带上这里的内容，防投毒校验不丢失
+- name: 拉取 ZeroTier 核心源码
+  shell: bash
+  run: ./scripts/bootstrap.sh
+
 - name: 校验 wintun.dll SHA256
   shell: bash
   run: |
