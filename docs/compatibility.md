@@ -11,6 +11,7 @@
 | 2026-10-31 | openclaw (192.168.8.220) | Ubuntu 24.04.4 LTS (glibc 2.39, systemd 255) | x86_64 | 通过 | 覆盖升级场景:旧 daemon 数据保留、planet 自动恢复、tap 重建;与官方 zerotier-one 共存 |
 | 2026-11-01 | huaweimatebook | Windows 11 专业版 build 26200 | x86_64 | 通过(POC 级) | Windows POC 三道 Gate 全 PASS(实机 MSVC 编译/wintun 设备层/与 mac 节点互 ping 31/32);MSVC 14.44 + LLVM 18.1.8 + rustc 1.99.1;最低 Win10 未验证,详见 docs/2026-10-31-windows-poc-report.md |
 | 2026-11-02 | huaweimatebook | Windows 11 专业版 build 26200 | x86_64 | 通过(安装级) | 正式版 e2e 全流程:离线 zip 安装→CLI↔daemon 互操→join/授权→与 mac 节点双向互 ping→stop/start→uninstall(数据保留)→重装状态自动恢复→实机重启开机自启;全程与官方 zerotier-one 共存无干扰;产物为 mac 交叉构建(cargo-xwin) |
+| 2026-11-06 | openclaw (192.168.8.220) | Ubuntu 24.04.4 LTS (glibc 2.39, systemd 255) | x86_64 | 通过(安装级) | v0.3.0 正式产物覆盖升级 e2e(0.1.0→0.3.0):手动下载 linux_amd64 tar.gz + 包内 `planet-port install`→planet 3530253632 自动恢复(同地址 618857da15,PLANET 根 8ms)、网络 5cf54f181554090f 自动 re-join(tap0 / 10.121.16.71)、stop/start、幂等重装、开机自启 enabled;uninstall 未做(该机承载在跑网络);网内无其他在线成员,跨节点互 ping 未覆盖。线上安装链路本次未走通:install.sh 资产命名(`planet-port-<target>.tar.xz`)与 v0.3.0 实际产物(`planet-port_0.3.0_linux_amd64.tar.gz`)不符,且该机直连 github.com 不稳定,均属待修问题 |
 
 ## 已知边界(实测结论)
 
