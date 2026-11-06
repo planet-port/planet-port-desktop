@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/api", "crates/cli", "crates/zt-sys", "crates/zt-core", "crates/pocs", "crates/poc4"]
 
 [workspace.package]
-version = "0.3.1-beta.1"
+version = "0.3.1-beta.2"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/planet-port/planet-port-desktop"
