@@ -141,6 +141,10 @@ CLI 侧环境变量（`PLANET_PORT_URL` / `PLANET_PORT_TOKEN` / `PLANET_PORT_CON
 
 CLI 手工回归清单（对 planet-portd 实测的基准）见 [docs/2026-10-29-cli-regression-checklist.md](docs/2026-10-29-cli-regression-checklist.md) 。
 
+### 发版流水线
+
+发版流水线 [.github/workflows/release.yml](.github/workflows/release.yml) 由 `dist generate` 生成，内含对 `DIST_RELEASE_TOKEN` 的手工替换；重新生成后必须复查该替换是否保留。
+
 ## 致谢
 
 - [ZeroTier](https://github.com/zerotier/ZeroTierOne) — 网络核心

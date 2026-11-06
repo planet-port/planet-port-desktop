@@ -17,6 +17,7 @@ serde_json = "1"
 # cargo-dist 发布配置：tag push → CI 五目标构建 → GitHub Releases + homebrew tap
 [workspace.metadata.dist]
 cargo-dist-version = "0.34.0"
+allow-dirty = ["ci"]                # release.yml 含手工 token 替换，跳过 CI 再生成比对
 ci = "github"
 installers = ["homebrew"]
 publish-jobs = ["homebrew"]

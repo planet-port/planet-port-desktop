@@ -212,7 +212,7 @@ sc.exe query planetportd
 从源码构建后直接安装(等价离线方式一,源即 `target/release/`):
 
 ```bash
-cargo build --release -p planet-port -p daemon
+cargo build --release -p planet-port --bins
 sudo ./target/release/planet-port install
 ```
 
