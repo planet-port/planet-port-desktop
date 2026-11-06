@@ -28,4 +28,9 @@ targets = ["aarch64-apple-darwin", "x86_64-apple-darwin",
            "x86_64-pc-windows-msvc"]
 include = ["third_party/wintun/wintun.dll", "scripts/install-offline.ps1"]
 checksum = "sha256"
-github-build-setup = "dist-build-setup.yml"   # 相对 .github/workflows/ 解析，指向同名文件
+github-build-setup = "../dist-build-setup.yml"   # dist 以 .github/workflows/ 为基准拼接；../ 移出 workflows 目录避免被 GitHub 当作 workflow 解析
+
+# cargo-dist 构建专用 profile(其 build 硬编码 --profile dist)
+[profile.dist]
+inherits = "release"
+lto = "thin"
