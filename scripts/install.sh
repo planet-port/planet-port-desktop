@@ -115,6 +115,9 @@ else
         [[ -n "$OLD_ASSET" ]] || die "下载失败(确认 Release 已附带 ${ASSET})"
         OLD_URL="https://github.com/${REPO}/releases/download/${TAG}/${OLD_ASSET}"
         echo "未找到 ${ASSET},回退尝试旧命名 ${OLD_ASSET}"
+        # 旧命名是 gzip 内容,落盘文件名必须同步换成 .tar.gz,
+        # 否则解包按扩展名误判走 -xJf(GNU tar 直接报 xz 格式错误)
+        TARBALL="${TMP}/${OLD_ASSET}"
         curl -fsSL --progress-bar -o "$TARBALL" "$OLD_URL" \
             || die "下载失败(确认 Release 已附带 ${ASSET} 或 ${OLD_ASSET})"
     fi
