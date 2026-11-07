@@ -17,6 +17,7 @@
 | 2026-11-07 | casaos (192.168.8.211) | Armbian 25.08(Debian 13 trixie, glibc 2.41, systemd 257) | aarch64 | 通过(安装级) | v0.3.0 linux_arm64 全新安装 e2e(此前实机仅测过覆盖升级,本机为无旧版本净装):install→systemd 服务即启+开机自启、add planet、join 私有网络(控制器授权后 OK,managed IP 10.121.16.99/24)、PLANET 根 UDP 直连 11-31ms、stop/start、幂等重装(planet 自动恢复,同地址 7e17427041);与 openclaw(amd64)/huaweimatebook(Windows)跨节点互 ping 均 0% 丢包(20ms/112ms) |
 | 2026-11-07 | WX-RK3566 (10.121.15.88) | Ubuntu 20.04.6 LTS (glibc 2.31) | aarch64 | 通过(安装级) | v0.3.0 linux_arm64 覆盖升级 e2e(0.1.0→0.3.0):install、planet 3530253632 自动恢复(同地址 7b1de38f18)、网络 5cf54f181554090f OK(10.121.16.244)、stop/start、幂等重装、ping openclaw 0% 丢包;planet 文件重复导入 409 防覆盖符合预期;**glibc 2.31 实测可加载运行,实际兼容下限低于本文件「已知边界」写的 2.34** |
 | 2026-11-07 | gozi-mba (10.152.124.24) | Linux Mint 21.3 (glibc 2.35) | x86_64 | 通过(安装级) | v0.3.0 linux_amd64 覆盖升级 e2e(0.1.0→0.3.0):install、planet 自动恢复(同地址 f5107745dd)、网络 OK(10.121.16.161)、stop/start、幂等重装、ping openclaw 0% 丢包;planet 文件重复导入 409 防覆盖符合预期;本轮由 scripts/e2e-host-test.sh 固化流程自动执行 |
+| 2026-11-07 | 四台 Linux 实测机(RK3566/gozi-mba/openclaw/casaos) | Ubuntu 20.04(glibc 2.31)/Mint 21.3(2.35)/Ubuntu 24.04(2.39)/Armbian Debian 13(2.41) | aarch64/x86_64 | 通过(安装级,回归) | v0.3.3 四机覆盖升级 e2e 各 9 步全过(install/版本/服务/stop-start/幂等重装/跨节点互 ping)。本版起 Linux 产物在 manylinux_2_28 容器构建,glibc 符号依赖实测 ≤2.28(两架构产物 strings 验证),RK3566(Ubuntu 20.04)恢复可装可跑——v0.3.1/v0.3.2 的 ubuntu-22.04 CI 产物 glibc ≥2.34 在该机无法加载的问题已解决。另:gozi-mba 一轮 e2e 因 ssh 会话中断后 daemon 数据面失联(控制面正常),systemctl restart 后即恢复,未复现,待观察 |
 
 ## 已知边界(实测结论)
 

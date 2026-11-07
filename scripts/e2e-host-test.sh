@@ -44,20 +44,22 @@ WORK="$(mktemp -d /tmp/pp-e2e.XXXXXX)"
 trap '[[ $KEEP -eq 1 ]] || rm -rf "$WORK"' EXIT
 
 # ---- 产物缓存:每架构只下载一次 ----
-fetch_assets() { # $1=arch(amd64|arm64) → echo 解包目录
+fetch_assets() { # $1=arch(amd64|arm64) → echo 二进制所在目录
   local arch="$1" dir="$WORK/assets-$arch" tgz target
-  [[ -d "$dir" ]] && { echo "$dir"; return 0; }
-  mkdir -p "$dir"
   # v0.3.1 起产物为 dash 命名 tar.xz(如 planet-port-x86_64-unknown-linux-gnu)
   case "$arch" in
     amd64) target="x86_64-unknown-linux-gnu" ;;
     arm64) target="aarch64-unknown-linux-gnu" ;;
     *) echo "未知架构: $arch" >&2; return 1 ;;
   esac
-  gh release download "$VERSION" --repo "$GH_REPO" --pattern "*${target}*" --dir "$dir" \
-    || { echo "下载产物失败(${arch})" >&2; return 1; }
-  tar -xf "$dir/planet-port-${target}.tar.xz" -C "$dir" || return 1
+  if [[ ! -d "$dir" ]]; then
+    mkdir -p "$dir"
+    gh release download "$VERSION" --repo "$GH_REPO" --pattern "*${target}*" --dir "$dir" \
+      || { echo "下载产物失败(${arch})" >&2; return 1; }
+    tar -xf "$dir/planet-port-${target}.tar.xz" -C "$dir" || return 1
+  fi
   # v0.3.1+ 产物套一层 planet-port-<target>/ 目录;v0.3.0 为平铺,双兼容
+  # (缓存命中与首次下载共用同一解析,不能提前返回解压根)
   local bin_dir="$dir/planet-port-${target}"
   [[ -x "$bin_dir/planet-port" ]] || bin_dir="$dir"
   [[ -x "$bin_dir/planet-port" ]] || { echo "解包后缺 planet-port" >&2; return 1; }
