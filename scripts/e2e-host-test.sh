@@ -57,8 +57,11 @@ fetch_assets() { # $1=arch(amd64|arm64) → echo 解包目录
   gh release download "$VERSION" --repo "$GH_REPO" --pattern "*${target}*" --dir "$dir" \
     || { echo "下载产物失败(${arch})" >&2; return 1; }
   tar -xf "$dir/planet-port-${target}.tar.xz" -C "$dir" || return 1
-  [[ -x "$dir/planet-port" ]] || { echo "解包后缺 planet-port" >&2; return 1; }
-  echo "$dir"
+  # v0.3.1+ 产物套一层 planet-port-<target>/ 目录;v0.3.0 为平铺,双兼容
+  local bin_dir="$dir/planet-port-${target}"
+  [[ -x "$bin_dir/planet-port" ]] || bin_dir="$dir"
+  [[ -x "$bin_dir/planet-port" ]] || { echo "解包后缺 planet-port" >&2; return 1; }
+  echo "$bin_dir"
 }
 
 # ---- 远端步骤脚本:stdin 由本脚本注入,参数 1=sudo 喂法前缀 ----
