@@ -24,6 +24,8 @@
   cli.identity.modeIndependent: independent (per-planet identity)
   cli.identity.switchWarn: "note: switching identity mode may change node addresses of some or all planets; affected network memberships need re-authorization"
   cli.identity.switched: "identity mode switched to %{mode}; effective next time the planet runs"
+  cli.identity.modeAutoSwitched: "identity mode auto-switched to shared (imported identity now applies to all planets)"
+  cli.identity.supersededHint: "member records of superseded node %{ids} remain on controller networks; clean them up in ztnet / ZeroTier Central"
   cli.identity.planetKindOfficial: official planet
   cli.identity.planetKindCustom: custom planet
   cli.identity.planetRegistered: "the official client's current planet is already imported as \"%{name}\"; join your previous networks to restore membership without re-authorization"

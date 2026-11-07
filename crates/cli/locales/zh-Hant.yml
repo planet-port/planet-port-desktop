@@ -24,6 +24,8 @@
   cli.identity.modeIndependent: 獨立(每 planet 各自身份)
   cli.identity.switchWarn: "注意: 切換身份模式後部分或全部 planet 將變更節點位址,受影響網路的成員資格需重新授權"
   cli.identity.switched: "身份模式已切換為 %{mode},planet 下次運行時生效"
+  cli.identity.modeAutoSwitched: "已自動切換為共享身份模式(匯入的官方身份將對全部 planet 生效)"
+  cli.identity.supersededHint: "被替換的節點位址 %{ids} 在各網路的成員記錄不會自動刪除,請到控制器(如 ztnet / ZeroTier Central)手動清理"
   cli.identity.planetKindOfficial: 官方 planet
   cli.identity.planetKindCustom: 自訂 planet
   cli.identity.planetRegistered: "官方用戶端當前 planet 已導入為 %{name};原已加入的網路直接 join 即可恢復,無需重新授權"

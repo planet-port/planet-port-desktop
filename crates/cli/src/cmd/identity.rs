@@ -148,6 +148,22 @@ fn import(client: &Client, path: Option<&str>, force: bool, json: bool) -> Resul
             }
         }
     }
+    // Independent → Shared 的自动切换提示(导入语义 = 整端改用官方身份)
+    if resp["modeSwitched"].as_bool().unwrap_or(false) {
+        println!("{}", rust_i18n::t!("cli.identity.modeAutoSwitched"));
+    }
+    // 游离成员记录指引:被取代的 id 在控制器各网络的成员记录不会自行
+    // 消失(节点无权删自身记录),提示到控制器侧清理
+    let superseded: Vec<&str> = resp["supersededNodeIds"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    if !superseded.is_empty() {
+        println!(
+            "{}",
+            rust_i18n::t!("cli.identity.supersededHint", ids = superseded.join(", "))
+        );
+    }
     Ok(())
 }
 

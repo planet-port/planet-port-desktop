@@ -155,6 +155,10 @@ pub async fn identity_import(
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiErr> {
     let force = body.get("force").and_then(|v| v.as_bool()).unwrap_or(false);
+    // 游离成员记录追溯:导入前的全局身份地址(若存在)。必须在任何写盘前
+    // 读——下方步骤会把 identity.public 整对替换;此前该 id 若 join 过网络,
+    // 控制器侧的成员记录就是导入后待清理的游离记录,报给 CLI 指引。
+    let previous_node_id = global_node_id(&st.config_dir);
     // 1. 定位身份文件:显式 path(identity.secret 路径或其目录)或自动探测
     let secret_path = match body.get("path").and_then(|v| v.as_str()) {
         Some(p) if !p.is_empty() => {
@@ -271,6 +275,15 @@ pub async fn identity_import(
             None,
         ));
     }
+    // 导入前模式与各 planet 独立身份地址:Independent 模式下这些身份
+    // 连同全局旧身份都会被本次导入取代,一并报给 CLI 作待清理线索
+    let (prev_mode, prev_planet_ids): (IdentityMode, Vec<String>) = {
+        let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        (
+            reg.identity_mode,
+            reg.planets.iter().filter_map(|e| e.last_node_id.clone()).collect(),
+        )
+    };
     // 4.5 gate 内重判覆盖保护:步骤 3 的判定发生在停服务(最长 90s)之前,
     // 并发的两个非 force 导入都可能先过守卫再先后进门闩,后者会静默覆盖
     // 前者。此处正持门闩、紧邻落盘,重判一次把窗口封死;前置判定保留作
@@ -417,6 +430,41 @@ pub async fn identity_import(
     let _ = fs::remove_file(&bak_public);
     st.events
         .push("global", "identityImported", &format!("global identity imported: {addr_s}"));
+    // Independent → Shared:导入语义 = 整端改用官方身份,与官方客户端
+    // 「一机一身份、多网络共用」对齐;不切换的话导入的身份永不生效
+    // (独立模式各 planet 仍读各自 dataDir 身份,此前迁移要手动
+    // `identity use shared` 即此缺口)。模式切换前置(全部 planet
+    // stopped)与导入运行态守卫同款,此刻必满足;仍持 runtime_gate,
+    // registry 改写与并发 start 串行化。写盘失败沿用既有语义:内存已
+    // 生效、事件留痕(identityModePersistFailed)。
+    let mut mode_switched = false;
+    if prev_mode == IdentityMode::Independent {
+        let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        reg.identity_mode = IdentityMode::Shared;
+        mode_switched = true;
+        if let Err(e) = reg.save(&st.config_dir) {
+            eprintln!("[identity] registry 写盘失败: {e}");
+            st.events.push("global", "identityModePersistFailed", &e.to_string());
+        }
+        st.events.push(
+            "global",
+            "identityModeSwitched",
+            "identity mode switched to shared (import)",
+        );
+    }
+    // 被本次导入取代的节点地址(去重、排除新地址):全局旧身份 +
+    // Independent 模式下各 planet 独立身份。这些 id 在控制器各网络里的
+    // 成员记录不会自行消失(节点无权删自身记录),报给 CLI 指引清理。
+    let mut superseded: Vec<String> = Vec::new();
+    if let Some(p) = &previous_node_id {
+        superseded.push(p.clone());
+    }
+    if prev_mode == IdentityMode::Independent {
+        superseded.extend(prev_planet_ids);
+    }
+    superseded.sort();
+    superseded.dedup();
+    superseded.retain(|s| s != &addr_s);
     let action_str = match action {
         OfficialServiceAction::StoppedAndDisabled => "stoppedAndDisabled",
         OfficialServiceAction::NotInstalled => "notInstalled",
@@ -441,6 +489,10 @@ pub async fn identity_import(
             "nodeId": addr_s,
             "serviceAction": action_str,
             "officialPlanet": official_planet,
+            "previousNodeId": previous_node_id,
+            "supersededNodeIds": superseded,
+            "identityMode": "shared",
+            "modeSwitched": mode_switched,
         })),
     ))
 }
