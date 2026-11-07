@@ -1,5 +1,14 @@
 # cargo-dist 构建作业注入步骤（github-build-setup 指向本文件）
 # dist 每次重新生成 release.yml 都会带上这里的内容，防投毒校验不丢失
+
+# manylinux_2_28 容器内无 libclang，zt-sys 的 bindgen 生成绑定需要它；
+# ubuntu runner 自带(自带 clang)，以 dnf 存在与否区分两种环境
+- name: manylinux 容器内安装 libclang(bindgen 依赖)
+  shell: bash
+  run: |
+    command -v dnf >/dev/null 2>&1 || { echo "非 manylinux 容器，跳过"; exit 0; }
+    dnf install -y clang-devel
+
 - name: 拉取 ZeroTier 核心源码
   shell: bash
   run: ./scripts/bootstrap.sh

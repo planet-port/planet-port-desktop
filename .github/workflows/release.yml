@@ -127,6 +127,11 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
+      - name: "manylinux 容器内安装 libclang(bindgen 依赖)"
+        run: |
+          command -v dnf >/dev/null 2>&1 || { echo "非 manylinux 容器，跳过"; exit 0; }
+          dnf install -y clang-devel
+        shell: "bash"
       - name: "拉取 ZeroTier 核心源码"
         run: "./scripts/bootstrap.sh"
         shell: "bash"
