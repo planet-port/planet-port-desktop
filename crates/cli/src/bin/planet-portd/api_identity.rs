@@ -213,6 +213,59 @@ pub async fn identity_import(
             "identity.secret and identity.public addresses do not match",
         ));
     }
+    // 2.5 预检(只读):返回导入决策所需的全部事实,不做任何变更(不覆盖、
+    // 不停官方服务)。CLI 交互提问(模式选择/覆盖确认/相同 planet 二选一)
+    // 基于此响应,最终再发正式导入。响应带 preflight 标记,旧 daemon 会
+    // 忽略未知字段直接执行真导入,CLI 检查不到该标记即拒绝,防版本错配
+    // 下的误导入。
+    if body.get("preflight").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mode = reg.identity_mode;
+        let g_node = global_node_id(&st.config_dir);
+        let official_planet = official_planet_info(&secret_path).map(|mut v| {
+            if let Some(w) = v["worldId"].as_u64() {
+                if let Some(e) = reg.planets.iter().find(|e| e.world_id == w) {
+                    v["registeredName"] = json!(crate::api_planet::name_of(e));
+                }
+            }
+            v
+        });
+        // 相同 planet(官方 planet 已注册):独立模式下其 dataDir 身份地址
+        // 即「二选一」里的原身份;共享模式下 planet 身份就是全局身份
+        let matching_planet = official_planet
+            .as_ref()
+            .and_then(|v| v["worldId"].as_u64())
+            .and_then(|w| reg.planets.iter().find(|e| e.world_id == w))
+            .map(|e| {
+                let node_id = match mode {
+                    IdentityMode::Independent => fs::read(e.data_dir.join("identity.public"))
+                        .ok()
+                        .as_deref()
+                        .and_then(identity_addr)
+                        .or_else(|| e.last_node_id.clone()),
+                    IdentityMode::Shared => g_node.clone(),
+                };
+                json!({
+                    "id": e.id,
+                    "name": crate::api_planet::name_of(e),
+                    "nodeId": node_id,
+                })
+            });
+        return Ok((
+            StatusCode::OK,
+            Json(json!({
+                "preflight": true,
+                "nodeId": addr_s,
+                "identityMode": mode_str(mode),
+                "globalIdentity": {
+                    "exists": st.config_dir.join("identity.secret").exists(),
+                    "nodeId": g_node,
+                },
+                "officialPlanet": official_planet,
+                "matchingPlanet": matching_planet,
+            })),
+        ));
+    }
     // 3. 覆盖保护:已有全局身份且未 force → 拒绝
     let dest_secret = st.config_dir.join("identity.secret");
     let dest_public = st.config_dir.join("identity.public");
@@ -430,46 +483,6 @@ pub async fn identity_import(
     let _ = fs::remove_file(&bak_public);
     st.events
         .push("global", "identityImported", &format!("global identity imported: {addr_s}"));
-    // Independent → Shared:导入语义 = 整端改用官方身份,与官方客户端
-    // 「一机一身份、多网络共用」对齐;不切换的话导入的身份永不生效
-    // (独立模式各 planet 仍读各自 dataDir 身份,此前迁移要手动
-    // `identity use shared` 即此缺口)。模式切换前置(全部 planet
-    // stopped)与导入运行态守卫同款,此刻必满足;仍持 runtime_gate,
-    // registry 改写与并发 start 串行化。写盘失败沿用既有语义:内存已
-    // 生效、事件留痕(identityModePersistFailed)。
-    let mut mode_switched = false;
-    if prev_mode == IdentityMode::Independent {
-        let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        reg.identity_mode = IdentityMode::Shared;
-        mode_switched = true;
-        if let Err(e) = reg.save(&st.config_dir) {
-            eprintln!("[identity] registry 写盘失败: {e}");
-            st.events.push("global", "identityModePersistFailed", &e.to_string());
-        }
-        st.events.push(
-            "global",
-            "identityModeSwitched",
-            "identity mode switched to shared (import)",
-        );
-    }
-    // 被本次导入取代的节点地址(去重、排除新地址):全局旧身份 +
-    // Independent 模式下各 planet 独立身份。这些 id 在控制器各网络里的
-    // 成员记录不会自行消失(节点无权删自身记录),报给 CLI 指引清理。
-    let mut superseded: Vec<String> = Vec::new();
-    if let Some(p) = &previous_node_id {
-        superseded.push(p.clone());
-    }
-    if prev_mode == IdentityMode::Independent {
-        superseded.extend(prev_planet_ids);
-    }
-    superseded.sort();
-    superseded.dedup();
-    superseded.retain(|s| s != &addr_s);
-    let action_str = match action {
-        OfficialServiceAction::StoppedAndDisabled => "stoppedAndDisabled",
-        OfficialServiceAction::NotInstalled => "notInstalled",
-        OfficialServiceAction::Failed(_) => unreachable!("failed 已在上方拦截"),
-    };
     // 官方客户端当前 planet 的识别与已注册比对:身份迁移保留了原节点
     // 地址,成员资格随之保留,但"原网络挂在哪个 planet"只有官方目录里
     // 的 `planet` 文件知道。报给 CLI 才能提示"直接 join 恢复"还是
@@ -483,6 +496,91 @@ pub async fn identity_import(
         }
         v
     });
+    // 身份模式:交还用户选择(body.mode;缺省不改,兼容脚本与旧客户端)。
+    // 是否切共享不该由导入擅自决定——共享会变更独立模式下全部 planet
+    // 的运行地址。模式切换前置(全部 planet stopped)与导入运行态守卫
+    // 同款,此刻必满足;仍持 runtime_gate,registry 改写与并发 start
+    // 串行化。写盘失败沿用既有语义:内存已生效、事件留痕。
+    let want_mode = match body.get("mode").and_then(|v| v.as_str()) {
+        Some("shared") => Some(IdentityMode::Shared),
+        Some("independent") => Some(IdentityMode::Independent),
+        _ => None,
+    };
+    let mut mode_changed = false;
+    if let Some(m) = want_mode {
+        let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if reg.identity_mode != m {
+            reg.identity_mode = m;
+            mode_changed = true;
+            if let Err(e) = reg.save(&st.config_dir) {
+                eprintln!("[identity] registry 写盘失败: {e}");
+                st.events.push("global", "identityModePersistFailed", &e.to_string());
+            }
+            st.events.push(
+                "global",
+                "identityModeSwitched",
+                &format!("identity mode switched to {} (import)", mode_str(m)),
+            );
+        }
+    }
+    let final_mode = want_mode.unwrap_or(prev_mode);
+    // 独立模式下的「相同 planet 二选一」:body.planetIdentity=official
+    // 时把官方身份对写入该 planet 的 dataDir(仅它换地址,其余 planet
+    // 不动)。共享模式无意义(各 planet 本就复用全局身份),忽略。
+    // planet 已停(运行态守卫),dataDir 写入与运行无竞态。
+    let mut planet_identity_applied: Option<String> = None;
+    let mut superseded_planet_id: Option<String> = None;
+    if final_mode == IdentityMode::Independent
+        && body.get("planetIdentity").and_then(|v| v.as_str()) == Some("official")
+    {
+        if let Some(world_id) =
+            official_planet.as_ref().and_then(|v| v["worldId"].as_u64())
+        {
+            let found = {
+                let reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                reg.planets
+                    .iter()
+                    .find(|e| e.world_id == world_id)
+                    .map(|e| (crate::api_planet::name_of(e), e.data_dir.clone()))
+            };
+            if let Some((name, data_dir)) = found {
+                superseded_planet_id = fs::read(data_dir.join("identity.public"))
+                    .ok()
+                    .as_deref()
+                    .and_then(identity_addr);
+                write_identity_pair(&data_dir, &secret, &public)
+                    .map_err(|e| internal(format!("cannot write planet identity: {e}")))?;
+                planet_identity_applied = Some(name.clone());
+                st.events.push(
+                    "global",
+                    "planetIdentityReplaced",
+                    &format!("planet {name} identity replaced with official {addr_s}"),
+                );
+            }
+        }
+    }
+    // 被本次导入取代的节点地址(去重、排除新地址):全局旧身份;切共享
+    // 时各 planet 独立身份;planetIdentity=official 时该 planet 旧身份。
+    // 这些 id 在控制器各网络里的成员记录不会自行消失(节点无权删自身
+    // 记录),报给 CLI 指引清理。
+    let mut superseded: Vec<String> = Vec::new();
+    if let Some(p) = &previous_node_id {
+        superseded.push(p.clone());
+    }
+    if prev_mode == IdentityMode::Independent && final_mode == IdentityMode::Shared {
+        superseded.extend(prev_planet_ids);
+    }
+    if let Some(p) = superseded_planet_id {
+        superseded.push(p);
+    }
+    superseded.sort();
+    superseded.dedup();
+    superseded.retain(|s| s != &addr_s);
+    let action_str = match action {
+        OfficialServiceAction::StoppedAndDisabled => "stoppedAndDisabled",
+        OfficialServiceAction::NotInstalled => "notInstalled",
+        OfficialServiceAction::Failed(_) => unreachable!("failed 已在上方拦截"),
+    };
     Ok((
         StatusCode::CREATED,
         Json(json!({
@@ -491,10 +589,72 @@ pub async fn identity_import(
             "officialPlanet": official_planet,
             "previousNodeId": previous_node_id,
             "supersededNodeIds": superseded,
-            "identityMode": "shared",
-            "modeSwitched": mode_switched,
+            "identityMode": mode_str(final_mode),
+            "modeChanged": mode_changed,
+            "planetIdentityApplied": planet_identity_applied,
         })),
     ))
+}
+
+/// 身份对原子写入目录(独立模式 planet dataDir 用):旧对先挪 .bak,
+/// 双 tmp(0600)成对 rename,全部成功才删备份,任一失败回滚——语义与
+/// 全局导入的写盘段一致,杜绝「新 secret 配旧 public」或丢 secret 导致
+/// 下次 start 静默生成全新身份。
+fn write_identity_pair(
+    dir: &std::path::Path,
+    secret: &[u8],
+    public: &[u8],
+) -> std::io::Result<()> {
+    #[cfg(unix)]
+    let tighten = |p: &std::path::Path| {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(p, fs::Permissions::from_mode(0o600))
+    };
+    #[cfg(not(unix))]
+    let tighten = |_p: &std::path::Path| Ok(());
+    let mut pairs: Vec<(std::path::PathBuf, std::path::PathBuf, &[u8])> = Vec::new();
+    for (name, payload) in [("identity.secret", secret), ("identity.public", public)] {
+        let dest = dir.join(name);
+        let tmp = dir.join(format!("{name}.tmp"));
+        fs::write(&tmp, payload)?;
+        tighten(&tmp)?;
+        pairs.push((dest, tmp, payload));
+    }
+    let mut baks: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
+    for (dest, _, _) in &pairs {
+        if dest.exists() {
+            // 不能用 with_extension("bak"):identity.secret/public 会都变成
+            // identity.bak 互相覆盖,必须按文件名追加后缀
+            let bak = dest.with_file_name(format!(
+                "{}.bak",
+                dest.file_name().and_then(|n| n.to_str()).unwrap_or("identity")
+            ));
+            fs::rename(dest, &bak)?;
+            baks.push((bak, dest.clone()));
+        }
+    }
+    for (i, (dest, tmp, _)) in pairs.iter().enumerate() {
+        if let Err(e) = fs::rename(tmp, dest) {
+            // 回滚:已挪走的 .bak 归位(覆盖已写入的新 dest),无 .bak 的
+            // 已改名 dest 是孤儿新文件须删除,全部 tmp 清理不留垃圾
+            for (bak, dest) in &baks {
+                let _ = fs::rename(bak, dest);
+            }
+            for (dest2, _, _) in pairs.iter().take(i) {
+                if !baks.iter().any(|(_, d)| d == dest2) {
+                    let _ = fs::remove_file(dest2);
+                }
+            }
+            for (_, tmp2, _) in &pairs {
+                let _ = fs::remove_file(tmp2);
+            }
+            return Err(e);
+        }
+    }
+    for (bak, _) in &baks {
+        let _ = fs::remove_file(bak);
+    }
+    Ok(())
 }
 
 // ---- PUT /identity ----
@@ -564,4 +724,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/identity", get(identity_list).put(identity_mode_set))
         .route("/identity/import", post(identity_import))
+        // 预检独立路由:旧 daemon 未知路由 404,天然防「预检被当真导入」
+        // 的版本错配(旧 daemon 会忽略请求体里的未知字段)
+        .route("/identity/import/preflight", post(identity_import))
 }

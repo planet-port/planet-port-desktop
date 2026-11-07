@@ -24,8 +24,16 @@
   cli.identity.modeIndependent: independent (per-planet identity)
   cli.identity.switchWarn: "note: switching identity mode may change node addresses of some or all planets; affected network memberships need re-authorization"
   cli.identity.switched: "identity mode switched to %{mode}; effective next time the planet runs"
-  cli.identity.modeAutoSwitched: "identity mode auto-switched to shared (imported identity now applies to all planets)"
   cli.identity.supersededHint: "member records of superseded node %{ids} remain on controller networks; clean them up in ztnet / ZeroTier Central"
+  cli.identity.planetIdentityApplied: "planet %{name} now uses the official identity; effective on next run"
+  cli.identity.needNewDaemon: "daemon too old for import preflight; upgrade planet-portd first"
+  cli.identity.needForce: "global identity %{old} exists; pass --force to overwrite (or confirm interactively)"
+  cli.identity.confirmOverwrite: "overwrite existing global identity %{old}? [y/N]"
+  cli.identity.chooseMode: "choose identity mode: [1] shared (all planets reuse imported identity) / [2] independent (per-planet identities unchanged)"
+  cli.identity.choosePlanetIdentity: "planet %{name} currently uses %{old}, official identity is %{new}: [1] switch to official / [2] keep current"
+  cli.identity.invalidChoice: "invalid choice %{input}; enter 1 or 2"
+  cli.identity.cancelled: "import cancelled"
+  cli.identity.needModeFlag: "non-interactive context requires --mode shared|independent"
   cli.identity.planetKindOfficial: official planet
   cli.identity.planetKindCustom: custom planet
   cli.identity.planetRegistered: "the official client's current planet is already imported as \"%{name}\"; join your previous networks to restore membership without re-authorization"

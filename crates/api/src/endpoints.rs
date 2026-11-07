@@ -82,6 +82,11 @@ pub fn identity() -> &'static str {
 pub fn identity_import() -> &'static str {
     "/identity/import"
 }
+/// 导入预检(只读):独立路由,旧 daemon 无此路由返回 404,CLI 据此识别
+/// 版本错配,不会把预检误当正式导入执行
+pub fn identity_import_preflight() -> &'static str {
+    "/identity/import/preflight"
+}
 pub fn dump(planet: Option<&str>) -> String {
     format!("/dump{}", q(planet))
 }
