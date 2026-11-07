@@ -49,7 +49,7 @@ case "${PLATFORM}_$(uname -m)" in
 esac
 
 if [[ -z "$TRIPLE" ]]; then
-    die "当前平台(${OS} $(uname -m))的版本尚未发布,已支持: macOS(arm64/x86_64)、Linux(amd64/arm64,glibc≥2.34);Windows 见 docs/install.md"
+    die "当前平台(${OS} $(uname -m))的版本尚未发布,已支持: macOS(arm64/x86_64)、Linux(amd64/arm64,glibc≥2.28);Windows 见 docs/install.md"
 fi
 
 if [[ "$(id -u)" -ne 0 ]]; then

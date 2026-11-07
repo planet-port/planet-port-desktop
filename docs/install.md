@@ -1,8 +1,8 @@
 # planet-port 安装指南
 
-适用平台:macOS(Apple Silicon / Intel)、Linux(amd64 / arm64,glibc≥2.34,
-Ubuntu 22.04+ / Mint 21+ 等主流发行版,需 systemd)、Windows(x86_64;纸面
-支持 Win10+,实测基线为 Win11,见下文「Windows 安装」)。
+适用平台:macOS(Apple Silicon / Intel)、Linux(amd64 / arm64,glibc≥2.28,
+RHEL/Rocky 8+ / Ubuntu 20.04+ / Debian 11+ 等主流发行版,需 systemd)、
+Windows(x86_64;纸面支持 Win10+,实测基线为 Win11,见下文「Windows 安装」)。
 
 安装后的系统落点(所有安装方式一致,按平台区分):
 

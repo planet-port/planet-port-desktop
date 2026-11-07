@@ -27,10 +27,10 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 | Debian | 同上（与 Ubuntu 共用 Linux 产物） | ✅ 同上 | Debian 12+ |
 | Windows | zip + 安装脚本（后续 MSI） | ✅ 已发布可用：wintun 数据面、SCM 服务化、CLI 全命令、DNS NRPT、install.ps1 / 离线 zip 安装链路；Win11 实机安装级 e2e 通过，Win10 纸面支持未实测 | Windows 10+ |
 | Termux（Android） | 待定 | 📐 待定（zerotier-one 官方亦不发布 Termux 包，仅社区仓库有） | 待定 |
-| Rocky Linux 9 等 RHEL 系 | tar.xz + 安装脚本 | ✅ 安装级可用（Rocky 9 容器实测：安装、systemd 服务、启停与恢复全通过，恰为 glibc 2.34 下限；SELinux enforcing 未测不在承诺内） | Rocky 9+ |
+| Rocky Linux 9 等 RHEL 系 | tar.xz + 安装脚本 | ✅ 安装级可用（Rocky 9 容器实测：安装、systemd 服务、启停与恢复全通过；SELinux enforcing 未测不在承诺内） | Rocky 8+ |
 | 其它（FreeBSD / Arch 等） | 待定 | 📐 待定 | 待定 |
 
-> 最低版本说明：Linux 系以 ubuntu-22.04 CI 工具链为构建基线（glibc ≥ 2.34，低于 2.34 的发行版如 Ubuntu 20.04 / Debian 11 不在支持内）；macOS 12+ 为设计目标，当前仅在 macOS 26（Apple Silicon）实测；Windows 10+ 为纸面下限（按支持面收敛），当前仅在 Windows 11 实测。
+> 最低版本说明：Linux 系在 manylinux_2_28 容器内构建（glibc ≥ 2.28，覆盖 RHEL/Rocky 8+、Ubuntu 20.04+、Debian 11+ 等主流发行版）；macOS 12+ 为设计目标，当前仅在 macOS 26（Apple Silicon）实测；Windows 10+ 为纸面下限（按支持面收敛），当前仅在 Windows 11 实测。
 
 架构与可行性结论见 [docs/2026-10-28-desktop-port-feasibility.md](docs/2026-10-28-desktop-port-feasibility.md) ，CLI/API 设计见 [docs/superpowers/specs/2026-10-28-cli-api-design.md](docs/superpowers/specs/2026-10-28-cli-api-design.md) 。
 
@@ -46,7 +46,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 
 ## 快速开始
 
-> **系统要求**：macOS（Apple Silicon / Intel）、Linux（amd64 / arm64，glibc ≥ 2.34，需 systemd）、Windows（x86_64）。安装细节见 [docs/install.md](docs/install.md) ，各系统支持程度与最低版本见上方「系统支持与最低版本」。
+> **系统要求**：macOS（Apple Silicon / Intel）、Linux（amd64 / arm64，glibc ≥ 2.28，需 systemd）、Windows（x86_64）。安装细节见 [docs/install.md](docs/install.md) ，各系统支持程度与最低版本见上方「系统支持与最低版本」。
 
 ```bash
 # 一条命令:下载二进制 + 装软链 + 装 launchd 服务并启动
