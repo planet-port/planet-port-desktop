@@ -45,13 +45,18 @@ trap '[[ $KEEP -eq 1 ]] || rm -rf "$WORK"' EXIT
 
 # ---- 产物缓存:每架构只下载一次 ----
 fetch_assets() { # $1=arch(amd64|arm64) → echo 解包目录
-  local arch="$1" dir="$WORK/assets-$arch" tgz
+  local arch="$1" dir="$WORK/assets-$arch" tgz target
   [[ -d "$dir" ]] && { echo "$dir"; return 0; }
   mkdir -p "$dir"
-  tgz="$dir/planet-port_${VERSION#v}_${OS_LINUX}_${arch}.tar.gz"
-  gh release download "$VERSION" --repo "$GH_REPO" --pattern "*${OS_LINUX}_${arch}*" --dir "$dir" \
+  # v0.3.1 起产物为 dash 命名 tar.xz(如 planet-port-x86_64-unknown-linux-gnu)
+  case "$arch" in
+    amd64) target="x86_64-unknown-linux-gnu" ;;
+    arm64) target="aarch64-unknown-linux-gnu" ;;
+    *) echo "未知架构: $arch" >&2; return 1 ;;
+  esac
+  gh release download "$VERSION" --repo "$GH_REPO" --pattern "*${target}*" --dir "$dir" \
     || { echo "下载产物失败(${arch})" >&2; return 1; }
-  tar -xzf "$tgz" -C "$dir" || return 1
+  tar -xf "$dir/planet-port-${target}.tar.xz" -C "$dir" || return 1
   [[ -x "$dir/planet-port" ]] || { echo "解包后缺 planet-port" >&2; return 1; }
   echo "$dir"
 }
