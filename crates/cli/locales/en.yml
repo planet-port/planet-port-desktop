@@ -67,7 +67,9 @@
   cli.install.linked: "symlink created: %{link} → %{bin}"
   cli.install.planetRestored: "planet %{id} restored"
   cli.install.planetRestoreFailed: "warning: planet %{id} restore failed (%{e}); run: planet-port start %{id}"
-  cli.install.versionConfirm: "installed %{old}, about to install %{new} (upgrade/downgrade), continue? [y/N] "
+  cli.install.versionConfirm: "installed %{old}, about to %{action} %{new}, continue? [y/N] "
+  cli.install.upgrade: upgrade to
+  cli.install.downgrade: downgrade to
   cli.install.aborted: cancelled
   cli.service.started: "Started (port %{port})"
   cli.service.startTimeout: "Start timed out (15s), log: %{log}"

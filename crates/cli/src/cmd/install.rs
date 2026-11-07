@@ -24,10 +24,16 @@ use super::service;
 pub fn run(yes: bool, json: bool) {
     service::require_root();
     // 0. 版本差异确认:与已装版本不同(升级/降级)时先问一声,同版本幂等
-    //    重装不提示;-j 下确认会污染 stdout,必须显式 --yes(同 remove)
+    //    重装不提示;-j 下确认会污染 stdout,必须显式 --yes(同 remove)。
+    //    方向按版本号数值比较得出,异常格式(非数字段)按升级措辞兜底
     if let Some(old) = installed_version() {
         let new = env!("CARGO_PKG_VERSION");
         if old != new {
+            let direction = if version_lt(&old, new) { "upgrade" } else { "downgrade" };
+            let action = match direction {
+                "upgrade" => rust_i18n::t!("cli.install.upgrade").to_string(),
+                _ => rust_i18n::t!("cli.install.downgrade").to_string(),
+            };
             if json && !yes {
                 eprintln!("error: --json requires --yes for install when version differs ({old} -> {new})");
                 std::process::exit(2);
@@ -35,7 +41,7 @@ pub fn run(yes: bool, json: bool) {
             if !yes {
                 eprint!(
                     "{}",
-                    rust_i18n::t!("cli.install.versionConfirm", old = old, new = new)
+                    rust_i18n::t!("cli.install.versionConfirm", old = old, new = new, action = action)
                 );
                 std::io::Write::flush(&mut std::io::stderr()).ok();
                 let mut answer = String::new();
@@ -121,6 +127,32 @@ fn installed_version() -> Option<String> {
         .filter(|o| o.status.success())?;
     let s = String::from_utf8_lossy(&out.stdout);
     s.split_whitespace().last().map(String::from)
+}
+
+/// 点分数值比较(a < b?)。逐段取前导数字比大小,缺段按 0,非数字段
+/// (如预发布后缀)同样退化为 0——只服务确认措辞的升降级判定,不追求
+/// 语义化版本的完整序(相等时调用方已按同版本短路)
+fn version_lt(a: &str, b: &str) -> bool {
+    let num = |s: &str| -> u64 {
+        s.chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .unwrap_or(0)
+    };
+    let mut sa = a.split('.');
+    let mut sb = b.split('.');
+    loop {
+        match (sa.next(), sb.next()) {
+            (None, None) => return false,
+            (x, y) => {
+                let (x, y) = (num(x.unwrap_or("0")), num(y.unwrap_or("0")));
+                if x != y {
+                    return x < y;
+                }
+            }
+        }
+    }
 }
 
 /// CLI 同目录的 daemon 二进制;从 daemon 自身(planet-portd)运行时用自身
