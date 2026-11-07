@@ -611,7 +611,9 @@ fn write_identity_pair(
         fs::set_permissions(p, fs::Permissions::from_mode(0o600))
     };
     #[cfg(not(unix))]
-    let tighten = |_p: &std::path::Path| Ok(());
+    // 显式标返回类型:Windows 分支的 Ok(()) 推断不出 E(unix 分支在
+    // 非 Windows 主机上不编译,此类错只能靠 Windows CI 暴露)
+    let tighten = |_p: &std::path::Path| -> std::io::Result<()> { Ok(()) };
     let mut pairs: Vec<(std::path::PathBuf, std::path::PathBuf, &[u8])> = Vec::new();
     for (name, payload) in [("identity.secret", secret), ("identity.public", public)] {
         let dest = dir.join(name);
