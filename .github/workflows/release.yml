@@ -297,7 +297,26 @@ jobs:
           # Write and read notes from a file to avoid quoting breaking things
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
 
-          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+          # 手工补丁（dist generate 会回退，与上方 token 替换同属人工复查项）：
+          # 变更说明取 git-cliff CHANGELOG（scripts/release.sh 生成）对应版本段落，
+          # 置于 dist 自动生成的安装/下载表格之前；无对应段落时仅用 dist 说明
+          # （精确匹配 `（` 前的完整版本 token，避免 v0.3.6 前缀误中 beta 段落）
+          TAG="${{ needs.plan.outputs.tag }}"
+          awk -v tag="$TAG" '
+            $1 == "##" {
+              v = $2
+              sub(/（.*/, "", v)
+              if (v == tag) { insec = 1; next }
+            }
+            insec && $1 == "##" { exit }
+            insec { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/changes.md" || true
+          {
+            [ -s "$RUNNER_TEMP/changes.md" ] && cat "$RUNNER_TEMP/changes.md" && echo
+            cat "$RUNNER_TEMP/notes.txt"
+          } > "$RUNNER_TEMP/final-notes.txt"
+
+          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/final-notes.txt" artifacts/*
 
   publish-homebrew-formula:
     needs:
