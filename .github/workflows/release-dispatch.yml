@@ -1,0 +1,76 @@
+name: Release Dispatch
+
+# 网页发版入口：Actions 页 Run workflow 填版本号与发布说明，即完成
+# 「同步 workspace 版本 → Cargo.lock → 提交 → 打 tag → 推送」，
+# tag 推送由 cargo-dist 的 Release 工作流接管（构建/发布/homebrew）。
+# desktop 无 CHANGELOG/git-cliff 推导（发布说明为手写提交正文），版本号由表单输入。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 版本号（如 0.3.6）
+        required: true
+        type: string
+      notes:
+        description: 发布说明（作为发版提交正文）
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    name: 版本同步与打 tag
+    runs-on: ubuntu-latest
+    steps:
+      # 推 tag 用 DIST_RELEASE_TOKEN：GITHUB_TOKEN 推送的事件不会触发其它
+      # 工作流（GitHub 限制），cargo-dist 的 Release 管线必须由真实 tag 推送
+      # 事件驱动；该 token 已有 homebrew-tap 仓库写权限（同 PAT）
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.DIST_RELEASE_TOKEN }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: 校验版本号
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || {
+            echo "错误：版本号格式应为 X.Y.Z" >&2; exit 1; }
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "错误：tag v$VERSION 已存在" >&2; exit 1
+          fi
+          if ! git diff --quiet; then
+            echo "错误：工作区不干净" >&2; exit 1
+          fi
+
+      - name: 同步版本号
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # workspace.package 的 version 是文件中首个 version 赋值行（依赖版本声明在其后）
+          sed -i -E "0,/^version = \".*\"/s//version = \"$VERSION\"/" Cargo.toml
+          grep -q "^version = \"$VERSION\"" Cargo.toml || {
+            echo "错误：Cargo.toml 版本同步失败" >&2; exit 1; }
+          # 仅更新 lockfile 中 workspace 成员的版本记录，不动第三方依赖
+          cargo update -w
+
+      - name: 提交并打 tag
+        env:
+          VERSION: ${{ inputs.version }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          if [ -n "$NOTES" ]; then
+            git commit -m "chore(release): v$VERSION" -m "$NOTES"
+          else
+            git commit -m "chore(release): v$VERSION"
+          fi
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "HEAD:${GITHUB_REF_NAME}" --follow-tags
