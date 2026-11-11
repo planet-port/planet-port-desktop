@@ -10,6 +10,7 @@ mod api_planet;
 mod cleanup;
 mod dns;
 mod events;
+mod migrate;
 mod registry;
 mod runtime;
 mod service_control;
@@ -513,6 +514,11 @@ async fn daemon_main(args: Args) {
             .map_err(|e| eprintln!("[boot] feth 孤儿清扫任务失败: {e}"))
             .ok();
     }
+
+    // 4.7 registry 遗留迁移(dataDir 归位/端口卫生):必须在恢复实例之前——
+    // 实例一旦用旧路径/旧端口启动,迁移就只剩落盘残余。单条失败仅告警
+    // 事件(保留原路径),不阻断启动
+    migrate::migrate(&state);
 
     // 5. 恢复(派生运行规则):enabled ∧ 有网络 即期望运行。禁用
     //    (enabled=false)不拉起;无网络的不空跑核心
