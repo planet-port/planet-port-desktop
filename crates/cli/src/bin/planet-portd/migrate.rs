@@ -23,19 +23,52 @@ pub fn migrate(st: &AppState) {
     let mut changed = false;
 
     // ---- 1. dataDir 归位 ----
+    let root = fs::canonicalize(&data_root).unwrap_or_else(|_| data_root.clone());
     let entries: Vec<(usize, PathBuf)> = reg
         .planets
         .iter()
         .enumerate()
         .filter(|(_, e)| {
             let old = fs::canonicalize(&e.data_dir).unwrap_or_else(|_| e.data_dir.clone());
-            let root = fs::canonicalize(&data_root).unwrap_or_else(|_| data_root.clone());
             !old.starts_with(&root)
         })
         .map(|(i, e)| (i, fs::canonicalize(&e.data_dir).unwrap_or_else(|_| e.data_dir.clone())))
         .collect();
+
+    // 守卫:条目间嵌套。A 的 dataDir 严格包含另一条目的 dataDir 时,A 先迁
+    // 会把 B 的整树拖进 A 的新位置,B 下次启动静默重置身份。跳过外层 A
+    // (不迁、告警、原路径继续运行),保 B 留在原地独立搬迁。
+    let nested_outer: HashSet<usize> = entries
+        .iter()
+        .filter(|(a, da)| {
+            entries.iter().any(|(b, db)| {
+                a != b && db.starts_with(da.as_path()) && da.as_path() != db.as_path()
+            })
+        })
+        .map(|(a, _)| *a)
+        .collect();
+
     for (i, old) in entries {
         let id = reg.planets[i].id.clone();
+        // 守卫:自嵌套。old 是数据根的祖先(如 dataDir 指 config-dir 本身,
+        // 或更上层)时,归位等于把数据根塞进自身子孙:rename 报 EINVAL,
+        // 回退 copy 逐层下钻无底。放弃自动归位,须手工修正 registry。
+        if root.starts_with(&old) {
+            st.events.push(
+                &id,
+                "registryMigrateFailed",
+                "dataDir 为数据根祖先,放弃自动归位(须手工修正 registry)",
+            );
+            continue;
+        }
+        if nested_outer.contains(&i) {
+            st.events.push(
+                &id,
+                "registryMigrateFailed",
+                "dataDir 与其他条目 dataDir 嵌套,放弃自动归位(须手工处理)",
+            );
+            continue;
+        }
         let new_dir = data_root.join(&id);
         match relocate(&old, &new_dir) {
             Ok(()) => {
