@@ -75,6 +75,7 @@ impl NodeSink for DaemonSink {
             NodeEvent::Offline => ("节点离线".to_string(), false),
             NodeEvent::Down => ("核心已停止".to_string(), false),
             NodeEvent::IdentityCollision => ("身份冲突:与本 planet 已有节点地址相同".to_string(), true),
+            NodeEvent::TransportChanged(m) => (format!("通道变更: {m}"), false),
             NodeEvent::Fatal(m) => (format!("致命错误: {m}"), true),
         };
         // 先记 status 事件,再触发自动收尾:保证 events 里 Fatal 在 autoStopped 之前

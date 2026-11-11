@@ -21,14 +21,19 @@
 //! 同一 Node 的 process* 串行由驱动线程单线程保证;
 //! ZT_Node_delete 前必须先 join 驱动线程(见 shutdown)。
 //!
-//! # 平台分叉(仅驱动机制,语义逐行保留;Unix 路径零行为改动)
+//! # 平台分叉(仅驱动机制,语义逐行对等)
 //!
 //! 1. 唤醒:Unix 用 CLOEXEC 管道(wake_wr/wake_rd + poll);Windows 用 mpsc
 //!    `Sender<u8>`/`Receiver<u8>` + `recv_timeout`(等价 poll 阻塞语义)。
 //! 2. UDP:Unix 是「非阻塞 socket + poll 排空」;Windows 是「阻塞 socket +
-//!    读超时 + 独立读线程」——`recv_from` → `udp_rx` 通道 → 唤醒驱动线程,
-//!    驱动线程每圈 `try_recv` 排空;读线程忽略 WSAECONNRESET(此前 send 到
-//!    某地址收到 ICMP port-unreachable 后下一次 recv 必报,ZeroTier 官方同款)。
+//!    读超时 + 独立读线程」——`recv_from` → `udp_rx` 通道(包携带来源
+//!    socket 的 local_socket 值三元组)→ 唤醒驱动线程,驱动线程每圈
+//!    `try_recv` 排空;读线程忽略 WSAECONNRESET(此前 send 到某地址收到
+//!    ICMP port-unreachable 后下一次 recv 必报,ZeroTier 官方同款)。
+//!    主口之外还有副口通道(UDP 受限网络降级):Unix 进 poll 三元组;
+//!    Windows 副口有独立读线程(own 开关独立于主 running,换绑时单独停旧
+//!    拉新;主开关 running=false 一并停两个读线程)。副口换绑/收发全部在
+//!    驱动线程,Inner.secondary 无需加锁。
 //! 3. `udp_fd`:Unix `as_raw_fd()`;Windows `as_raw_socket()`(winsock SOCKET,
 //!    收发同一底层 socket,读线程侧句柄值为 `try_clone` 复制件)。
 //! 4. `multicastSubscribe` 的 ADI 形参在 Win32 绑定下是 `c_ulong`(32 位)。
@@ -36,17 +41,17 @@
 #[cfg(not(windows))]
 use std::fs::File;
 use std::io;
-#[cfg(windows)]
 use std::net::SocketAddr;
 use std::net::UdpSocket;
 #[cfg(not(windows))]
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::io::AsRawSocket;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 #[cfg(windows)]
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Mutex;
 #[cfg(windows)]
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -57,6 +62,7 @@ use crate::config::{NetConfig, NetConfigOp, NodeEvent, NodeParams, NodeSink};
 use crate::device::{FrameIn, FrameInTx};
 use crate::sa;
 use crate::state::{zt_obj, StateStore};
+use crate::transport::{self, TransportInfo, TcpTunnelState};
 use zt_sys as zt;
 
 /// 物理 recv 缓冲:ZT_MAX_PHYSPAYLOAD + ZT_MAX_HEADROOM
@@ -187,6 +193,8 @@ pub(crate) enum FrameOut {
 struct Inner {
     store: StateStore,
     udp: UdpSocket,
+    /// 副口(驱动线程独占换绑/收发;wire_send 亦在驱动线程,无竞争)
+    secondary: Option<UdpSocket>,
     // 回调出口通道(回调线程 = 驱动线程,send 只在 shutdown 后才可能失败)
     frame_out: Sender<FrameOut>,
     event_out: Sender<NodeEvent>,
@@ -206,6 +214,16 @@ struct Inner {
     // Arc:Windows 的 UDP 读线程要跨线程检查同一开关
     #[cfg(windows)]
     pub(crate) running: Arc<AtomicBool>,
+    // Windows:副口读线程的独立开关(换绑时置 false 停旧线程再拉新的);
+    // 主开关 running=false 也能停它,shutdown 无需额外清理
+    #[cfg(windows)]
+    pub(crate) sec_reader_running: Option<Arc<AtomicBool>>,
+    /// 最近一次收到 global IPv4 直包的时刻(TCP 触发计时;驱动线程写)
+    /// Task 3 读此字段判 TCP 触发,本任务仅写入
+    #[allow(dead_code)]
+    pub(crate) last_global_rx_ms: AtomicI64,
+    /// 通道状态快照(驱动线程写,查询线程短锁读)
+    pub(crate) transport_pub: Mutex<TransportInfo>,
 }
 
 impl Inner {
@@ -236,13 +254,14 @@ struct Driver {
     netcfg_rx: Receiver<(u64, NetConfigOp, NetConfig)>,
     #[cfg(not(windows))]
     wake_rd: File,
-    // Windows:UDP 读线程投递的物理包队列 + 唤醒接收端 + winsock SOCKET
+    // Windows:UDP 读线程投递的物理包队列(含来源 socket 的 local_socket 值)
+    // + 发送端克隆(副口换绑时要为新的读线程再拉一个)+ 唤醒接收端
     #[cfg(windows)]
-    udp_rx: Receiver<(Vec<u8>, SocketAddr)>,
+    udp_rx: Receiver<(Vec<u8>, SocketAddr, i64)>,
+    #[cfg(windows)]
+    udp_tx: Sender<(Vec<u8>, SocketAddr, i64)>,
     #[cfg(windows)]
     wake_rx: Receiver<u8>,
-    #[cfg(windows)]
-    local_socket: i64,
     deadline: i64,
 }
 
@@ -271,7 +290,9 @@ pub struct NodeHandle {
 //   查询迁移到驱动线程命令通道留二期;
 // - 结构安全(裸指针/channel/pipe)论证不变:dataStore/UDP 仅由驱动线程
 //   触达;wake() 只对管道 fd 做 write(线程安全);shutdown 的 join 先于
-//   ZT_Node_delete 的硬顺序不受调用线程影响。
+//   ZT_Node_delete 的硬顺序不受调用线程影响;
+// - transport() 查询线程短锁读 transport_pub(Mutex 快照),驱动线程只在
+//   换绑瞬间短锁写,无悬垂指针、无核心状态竞争。
 // 上层(daemon)据此可在 REST 工作线程持有句柄,并把 start/shutdown 放进
 // spawn_blocking。node/inner 指针不外借,调用方无其它形式触及。
 unsafe impl Send for NodeHandle {}
@@ -304,6 +325,12 @@ impl NodeHandle {
         // World 二进制:第 0 字节 type,随后 8 字节 worldId(大端)
         let world_id = u64::from_be_bytes(planet[1..9].try_into().expect("长度已校验"));
         let udp = UdpSocket::bind(("0.0.0.0", params.bind_port)).map_err(NodeError::Io)?;
+        // 副口:随机绑一个(20000-65500),失败仅告警不阻断——主口照常,离线 120s
+        // 后由驱动 tick 重试换绑(对齐官方 allowSecondaryPort 默认行为)
+        let secondary = transport::bind_secondary(|| rand::random::<u32>());
+        if secondary.is_none() {
+            eprintln!("[node] 副口绑定失败(1000 次尝试),暂无副口通道");
+        }
         // Unix:非阻塞 socket,驱动线程 poll 排空;Windows:阻塞 socket + 读超时,
         // 收包由独立读线程负责(见 run_udp_reader)
         #[cfg(not(windows))]
@@ -311,12 +338,31 @@ impl NodeHandle {
         #[cfg(windows)]
         udp.set_read_timeout(Some(Duration::from_millis(UDP_READ_TIMEOUT_MS)))
             .map_err(NodeError::Io)?;
+        // 副口同样按平台设收包模式(与主口一致)
+        #[cfg(not(windows))]
+        if let Some(sec) = &secondary {
+            sec.set_nonblocking(true).map_err(NodeError::Io)?;
+        }
+        #[cfg(windows)]
+        if let Some(sec) = &secondary {
+            sec.set_read_timeout(Some(Duration::from_millis(UDP_READ_TIMEOUT_MS)))
+                .map_err(NodeError::Io)?;
+        }
         // Windows:接收端克隆给读线程;发送端留在 Inner 供 wire_send(同一 SOCKET)
         #[cfg(windows)]
         let udp_rd = udp.try_clone().map_err(NodeError::Io)?;
         // winsock SOCKET(收发同一底层 socket,读线程侧句柄值为复制件);须在读线程 move 走克隆前取值
         #[cfg(windows)]
         let local_socket = udp_rd.as_raw_socket() as i64;
+        // Windows:副口克隆给读线程,句柄值同上须在克隆 move 走前取值
+        #[cfg(windows)]
+        let (secondary_rd, secondary_local) = match secondary.as_ref() {
+            Some(s) => (
+                Some(s.try_clone().map_err(NodeError::Io)?),
+                Some(s.as_raw_socket() as i64),
+            ),
+            None => (None, None),
+        };
         let (frame_tx, frame_rx) = channel();
         let (frame_in_tx, frame_in_rx) = channel();
         let (event_tx, event_rx) = channel();
@@ -327,7 +373,7 @@ impl NodeHandle {
         #[cfg(windows)]
         let (wake_tx, wake_rx) = channel::<u8>();
         #[cfg(windows)]
-        let (udp_tx, udp_rx) = channel::<(Vec<u8>, SocketAddr)>();
+        let (udp_tx, udp_rx) = channel::<(Vec<u8>, SocketAddr, i64)>();
         #[cfg(not(windows))]
         let running = AtomicBool::new(true);
         #[cfg(windows)]
@@ -335,6 +381,22 @@ impl NodeHandle {
         // 读线程的唤醒克隆:物理包投进 udp_rx 后即唤醒驱动线程(对齐 poll 语义)
         #[cfg(windows)]
         let wake_tx_rd = wake_tx.clone();
+        #[cfg(windows)]
+        let wake_tx_sec = wake_tx.clone();
+        // 发送端克隆:一份给驱动(换绑时为副口新读线程用),一份给副口读线程
+        #[cfg(windows)]
+        let udp_tx_drv = udp_tx.clone();
+        #[cfg(windows)]
+        let udp_tx_sec = udp_tx.clone();
+        let transport_pub = Mutex::new(TransportInfo {
+            primary_port: udp.local_addr().map(|a| a.port()).unwrap_or(params.bind_port),
+            secondary_port: secondary
+                .as_ref()
+                .and_then(|s| s.local_addr().ok())
+                .map(|a| a.port()),
+            tcp: TcpTunnelState::Disabled, // Task 3 接 relay 后启用
+            relay: None,
+        });
         let inner = Box::into_raw(Box::new(Inner {
             store: StateStore::new(
                 params.data_dir.clone(),
@@ -343,6 +405,7 @@ impl NodeHandle {
                 params.identity_dir.clone(),
             ),
             udp,
+            secondary,
             frame_out: frame_tx,
             frame_in: frame_in_tx,
             event_out: event_tx,
@@ -356,6 +419,10 @@ impl NodeHandle {
             running,
             #[cfg(windows)]
             running: Arc::clone(&running),
+            #[cfg(windows)]
+            sec_reader_running: None,
+            last_global_rx_ms: AtomicI64::new(0),
+            transport_pub,
         }));
         let cbs = zt::ZT_Node_Callbacks {
             version: 0,
@@ -399,12 +466,16 @@ impl NodeHandle {
             }
             return Err(NodeError::DataStoreFailed(format!("首次后台任务失败 rc={rc}")));
         }
+        // Windows:主开关克隆给副口读线程(shutdown 置 false 时主/副读线程一并
+        // 退出);须在主口读线程 move 走 running 之前克隆
+        #[cfg(windows)]
+        let running_sec = Arc::clone(&running);
         // Windows:UDP 读线程先于驱动线程启动(阻塞 recv_from → 通道 → 唤醒 → 驱动
         // 线程 processWirePacket);起不来即回收节点(此刻尚未对外发包)
         #[cfg(windows)]
         let reader = std::thread::Builder::new()
             .name("zt-udp-reader".into())
-            .spawn(move || run_udp_reader(udp_rd, running, udp_tx, wake_tx_rd))
+            .spawn(move || run_udp_reader(udp_rd, running, None, udp_tx, wake_tx_rd, local_socket))
             .map_err(|e| {
                 unsafe {
                     zt::ZT_Node_delete(node);
@@ -412,6 +483,30 @@ impl NodeHandle {
                 }
                 NodeError::Io(io::Error::other(format!("UDP 读线程启动失败: {e}")))
             })?;
+        // Windows:副口读线程(own 开关独立于主 running,换绑时可单独停旧线程;
+        // 主 running=false 同样能停它,shutdown 无需额外清理)。起不来仅告警并
+        // 放弃副口(与绑定失败同语义,不阻断启动)
+        #[cfg(windows)]
+        if let (Some(sec_rd), Some(sec_local)) = (secondary_rd, secondary_local) {
+            let own_sec = Arc::new(AtomicBool::new(true));
+            let spawned = std::thread::Builder::new()
+                .name("zt-udp-sec-reader".into())
+                .spawn({
+                    let own = Arc::clone(&own_sec);
+                    let running_main = Arc::clone(&running_sec);
+                    move || run_udp_reader(sec_rd, running_main, Some(own), udp_tx_sec, wake_tx_sec, sec_local)
+                });
+            match spawned {
+                Ok(_) => unsafe { (*inner).sec_reader_running = Some(own_sec) },
+                Err(e) => {
+                    eprintln!("[node] 副口读线程启动失败,暂无副口通道: {e}");
+                    unsafe {
+                        (*inner).secondary = None;
+                        (*inner).transport_pub.lock().unwrap().secondary_port = None;
+                    }
+                }
+            }
+        }
         // 回调出口通道与 sink 一并交给驱动线程消费(事件送达 = on_event/on_net_config)
         let driver = Driver {
             node,
@@ -427,9 +522,9 @@ impl NodeHandle {
             #[cfg(windows)]
             udp_rx,
             #[cfg(windows)]
-            wake_rx,
+            udp_tx: udp_tx_drv,
             #[cfg(windows)]
-            local_socket,
+            wake_rx,
             deadline: if dl > 0 { dl } else { now_ms() + 1 },
         };
         let handle = std::thread::Builder::new()
@@ -553,6 +648,12 @@ impl NodeHandle {
         }
     }
 
+    /// 通道状态快照(短锁读;字段语义见 transport::TransportInfo)。
+    /// 驱动线程只在通道 tick 的换绑瞬间写,锁竞争可忽略。
+    pub fn transport(&self) -> TransportInfo {
+        self.inner().transport_pub.lock().unwrap().clone()
+    }
+
     /// 下发命令并等待驱动线程的 rc 应答(命令与 process* 同线程串行执行)。
     ///
     /// 红线:阻塞等应答,故绝不可在 sink 回调(驱动线程)内调用本路径
@@ -568,8 +669,12 @@ impl NodeHandle {
     }
 
     /// 关停顺序(强制):running=false → 唤醒 poll → Cmd::Stop → join 驱动线程
-    /// → [Windows: join UDP 读线程] → ZT_Node_delete → drop Inner。join 必须
-    /// 先于 delete,否则驱动线程仍在使用已释放的 Node(悬垂)。
+    /// → [Windows: join 主口 UDP 读线程] → ZT_Node_delete → drop Inner。join
+    /// 必须先于 delete,否则驱动线程仍在使用已释放的 Node(悬垂)。
+    ///
+    /// 副口 socket 随 Inner drop 关闭,无需额外顺序;Windows 副口读线程不被
+    /// join——它靠主开关 running=false 退出(50ms 读超时内),不触任何核心
+    /// 状态与 Inner 指针,晚于驱动线程 join/Inner drop 仅存活片刻,无悬垂。
     pub fn shutdown(mut self) {
         self.shutdown_inner();
     }
@@ -663,18 +768,24 @@ unsafe fn run_driver(mut d: Driver) {
     let udp_fd = inner.udp.as_raw_fd();
     let mut last_mcast_ms: i64 = i64::MIN / 4; // 首圈立即做一次订阅
     let mut last_health_ms: i64 = i64::MIN / 4; // 首圈立即做一次巡检
+    let mut last_transport_ms: i64 = i64::MIN / 4; // 首圈立即做一次通道巡检
+    let mut last_online_ms: i64 = now_ms();
     // 已 join 的网络(来自 vnet_config 回调的 UP/UPDATE/DOWN/DESTROY)
     let mut current_networks: Vec<u64> = Vec::new();
     #[cfg(not(windows))]
     let mut buf = [0u8; PHY_BUF];
+    // 副口 fd:换绑时由通道 tick 原地更新;缺省 -1(poll 忽略负 fd)
+    #[cfg(not(windows))]
+    let mut secondary_fd: RawFd = inner.secondary.as_ref().map_or(-1, |s| s.as_raw_fd());
     #[cfg(not(windows))]
     let mut polls = [
         libc::pollfd { fd: udp_fd, events: libc::POLLIN, revents: 0 },
+        libc::pollfd { fd: secondary_fd, events: libc::POLLIN, revents: 0 },
         libc::pollfd { fd: d.wake_rd.as_raw_fd(), events: libc::POLLIN, revents: 0 },
     ];
     // POLLERR/POLLNVAL 日志去重:状态保持时只报一次,避免忙转刷屏
     #[cfg(not(windows))]
-    let mut poll_reported = [false; 2];
+    let mut poll_reported = [false; 3];
     loop {
         let now = now_ms();
         if d.deadline <= now {
@@ -723,6 +834,56 @@ unsafe fn run_driver(mut d: Driver) {
                 }
                 Ok(Cmd::Stop) => return,
                 Err(_) => break,
+            }
+        }
+        // 通道层巡检:副口换绑(离线 >120s)/TCP 触发回退(Task 3 接入)
+        if now - last_transport_ms >= transport::TRANSPORT_TICK_MS {
+            last_transport_ms = now;
+            let online = {
+                let mut s: zt::ZT_NodeStatus = std::mem::zeroed();
+                unsafe { zt::ZT_Node_status(d.node, &mut s) };
+                s.online != 0
+            };
+            if online {
+                last_online_ms = now;
+            }
+            // 副口换绑:持续离线 → 关旧绑新(撞活流;online 即停,直到再次离线)
+            if !online && now - last_online_ms > transport::SECONDARY_REBIND_AFTER_MS {
+                let old = unsafe { (*d.inner).secondary.take() };
+                drop(old);
+                let sec = transport::bind_secondary(|| rand::random::<u32>());
+                #[cfg(not(windows))]
+                {
+                    // 成败都同步 polls:成功指到新 fd,失败落回 -1(否则 poll
+                    // 盯着已关闭的旧 fd 必报 POLLNVAL,驱动线程退出)
+                    secondary_fd = sec.as_ref().map_or(-1, |s| s.as_raw_fd());
+                    polls[1].fd = secondary_fd;
+                    if let Some(s) = &sec {
+                        let _ = s.set_nonblocking(true);
+                    }
+                }
+                // Windows:停旧读线程(own=false)→ 拉起新读线程;返回保留给
+                // Inner 的原 socket 供 wire_send
+                #[cfg(windows)]
+                let sec = spawn_secondary_reader(&d, sec);
+                // Inner.secondary 仅驱动线程触达:换绑经裸指针写入;写入后本
+                // 块内的读取同样走 (*d.inner)(外层 inner 共享引用只作只读便利用)
+                unsafe {
+                    (*d.inner).secondary = sec;
+                    let ev = match (*d.inner).secondary.as_ref() {
+                        Some(s) => format!("secondary rebound udp/{}", port_of(s)),
+                        None => "secondary rebind failed".into(),
+                    };
+                    // 快照「clone-改-写回」:单次短锁,查询线程要么读到旧值要么
+                    // 读到新值,不见中间态
+                    let mut snap_guard = (*d.inner).transport_pub.lock().unwrap();
+                    let mut snap = snap_guard.clone();
+                    snap.secondary_port =
+                        (*d.inner).secondary.as_ref().map(|s| port_of(s)).filter(|p| *p != 0);
+                    *snap_guard = snap;
+                    drop(snap_guard);
+                    let _ = (*d.inner).event_out.send(NodeEvent::TransportChanged(ev));
+                }
             }
         }
         // 设备健康巡检节拍:Windows 侧检测适配器被外部重启等设备失效并自愈
@@ -831,14 +992,20 @@ unsafe fn run_driver(mut d: Driver) {
         }
         #[cfg(not(windows))]
         {
-            // poll:UDP 可读 / 唤醒;最长等到位下一次后台任务
+            // poll:主口 UDP / 副口 UDP / 唤醒;最长等到位下一次后台任务
             let timeout = ((d.deadline - now_ms()).clamp(1, i64::from(POLL_MAX_MS))) as i32;
-            let n = unsafe { libc::poll(polls.as_mut_ptr(), 2, timeout) };
+            let n = unsafe { libc::poll(polls.as_mut_ptr(), 3, timeout) };
             if n > 0 && polls[0].revents & libc::POLLIN != 0 {
                 // 排空当前可读包;每包都可能推进 deadline
                 loop {
                     match inner.udp.recv_from(&mut buf) {
                         Ok((len, from)) if len > 0 => {
+                            // global IPv4 直收计时(TCP 触发依据,Task 3 消费)
+                            if let SocketAddr::V4(v4) = from {
+                                if transport::is_global_ipv4(*v4.ip()) {
+                                    inner.last_global_rx_ms.store(now_ms(), Ordering::Relaxed);
+                                }
+                            }
                             let sa = sa::to_sockaddr_storage(&from, None);
                             let mut dl: i64 = 0;
                             let _ = unsafe {
@@ -862,8 +1029,42 @@ unsafe fn run_driver(mut d: Driver) {
                 }
             }
             if n > 0 && polls[1].revents & libc::POLLIN != 0 {
+                // 副口排空:与主口同款收包循环,socket/localSocket 换副口值
+                // (换绑后 secondary 与 polls[1].fd 同 tick 内一致更新)
+                while let Some(s) = inner.secondary.as_ref() {
+                    match s.recv_from(&mut buf) {
+                        Ok((len, from)) if len > 0 => {
+                            // global IPv4 直收计时(与主口同款)
+                            if let SocketAddr::V4(v4) = from {
+                                if transport::is_global_ipv4(*v4.ip()) {
+                                    inner.last_global_rx_ms.store(now_ms(), Ordering::Relaxed);
+                                }
+                            }
+                            let sa = sa::to_sockaddr_storage(&from, None);
+                            let mut dl: i64 = 0;
+                            let _ = unsafe {
+                                zt::ZT_Node_processWirePacket(
+                                    d.node,
+                                    std::ptr::null_mut(),
+                                    now_ms() as _,
+                                    i64::from(secondary_fd),
+                                    &sa,
+                                    buf.as_ptr() as *const _,
+                                    len as _,
+                                    &mut dl,
+                                )
+                            };
+                            if dl > 0 && dl < d.deadline {
+                                d.deadline = dl;
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            if n > 0 && polls[2].revents & libc::POLLIN != 0 {
                 let mut b = [0u8; 64];
-                let _ = unsafe { libc::read(polls[1].fd, b.as_mut_ptr() as *mut _, b.len()) };
+                let _ = unsafe { libc::read(polls[2].fd, b.as_mut_ptr() as *mut _, b.len()) };
             }
             // POLLERR/POLLNVAL:fd 级异常,两者后果天差地别。NVAL = fd 无效
             // (节点已不可用,置 running=false 并退出驱动线程防忙转);ERR 多为
@@ -876,7 +1077,11 @@ unsafe fn run_driver(mut d: Driver) {
                     poll_reported[i] = false;
                     continue;
                 }
-                let what = if i == 0 { "UDP socket" } else { "唤醒管道" };
+                let what = match i {
+                    0 => "主口",
+                    1 => "副口",
+                    _ => "唤醒管道",
+                };
                 let kind = if nval { "POLLNVAL(fd 无效)" } else { "POLLERR(多为暂态,已忽略)" };
                 if !poll_reported[i] {
                     poll_reported[i] = true;
@@ -891,9 +1096,15 @@ unsafe fn run_driver(mut d: Driver) {
         #[cfg(windows)]
         {
             // UDP 读线程投递的物理包 → processWirePacket;每包都可能推进 deadline
-            while let Ok((pkt, from)) = d.udp_rx.try_recv() {
+            while let Ok((pkt, from, sock_id)) = d.udp_rx.try_recv() {
                 if pkt.is_empty() {
                     continue;
+                }
+                // global IPv4 直收计时(主/副口同款,TCP 触发依据,Task 3 消费)
+                if let SocketAddr::V4(v4) = from {
+                    if transport::is_global_ipv4(*v4.ip()) {
+                        inner.last_global_rx_ms.store(now_ms(), Ordering::Relaxed);
+                    }
                 }
                 let sa = sa::to_sockaddr_storage(&from, None);
                 let mut dl: i64 = 0;
@@ -902,7 +1113,7 @@ unsafe fn run_driver(mut d: Driver) {
                         d.node,
                         std::ptr::null_mut(),
                         now_ms() as _,
-                        d.local_socket,
+                        sock_id,
                         &sa,
                         pkt.as_ptr() as *const _,
                         pkt.len() as _,
@@ -935,8 +1146,8 @@ unsafe fn run_driver(mut d: Driver) {
     }
 }
 
-/// UDP 读线程(Windows):阻塞 recv_from → `(payload, from)` 投通道 → 唤醒
-/// 驱动线程。读超时(start 期已设)使循环可周期性检查 running,保证可被关停。
+/// UDP 读线程(Windows):阻塞 recv_from → `(payload, from, sock_id)` 投通道
+/// → 唤醒驱动线程。读超时(start 期已设)使循环可周期性检查 running,保证可被关停。
 ///
 /// 唤醒对齐 Unix poll 语义:fd 可读即唤醒驱动线程,包不等待下一 tick;
 /// 每包只唤醒一次,驱动线程每圈把 udp_rx 排空后再睡,不忙转。
@@ -951,16 +1162,21 @@ unsafe fn run_driver(mut d: Driver) {
 fn run_udp_reader(
     sock: UdpSocket,
     running: Arc<AtomicBool>,
-    tx: Sender<(Vec<u8>, SocketAddr)>,
+    // 副口独立开关(主口 None):own=false 停本线程,主开关 running=false 一并停全部
+    own: Option<Arc<AtomicBool>>,
+    tx: Sender<(Vec<u8>, SocketAddr, i64)>,
     wake: Sender<u8>,
+    sock_id: i64,
 ) {
     let mut buf = vec![0u8; PHY_BUF];
     // 兜底:克隆端不继承读超时的平台差异下,这里再设一次,保证关停可被响应
     let _ = sock.set_read_timeout(Some(Duration::from_millis(UDP_READ_TIMEOUT_MS)));
-    while running.load(Ordering::SeqCst) {
+    let own_alive =
+        || own.as_ref().map(|o| o.load(Ordering::SeqCst)).unwrap_or(true);
+    while running.load(Ordering::SeqCst) && own_alive() {
         match sock.recv_from(&mut buf) {
             Ok((len, from)) if len > 0 => {
-                if tx.send((buf[..len].to_vec(), from)).is_err() {
+                if tx.send((buf[..len].to_vec(), from, sock_id)).is_err() {
                     // 驱动线程已退出,通道对端不在了
                     return;
                 }
@@ -983,6 +1199,43 @@ fn run_udp_reader(
             }
         }
     }
+}
+
+/// Windows 副口读线程(重)拉起(仅驱动线程,通道 tick 换绑时调用):
+/// 先停旧读线程(own=false,50ms 读超时内退出),再克隆 socket spawn 新线程,
+/// 返回保留在 Inner 的原 socket 供 wire_send。spawn 失败仅告警(副口退化成
+/// 只发不收,与官方「起不来则无副口」同级降级,不影响主口)。
+///
+/// # Safety
+/// `d.inner` 须为 start() 中有效分配且驱动线程存活期间不被释放(shutdown
+/// 顺序保证);Inner 仅由驱动线程触达,经裸指针写 `sec_reader_running` 安全。
+#[cfg(windows)]
+unsafe fn spawn_secondary_reader(d: &Driver, sec: Option<UdpSocket>) -> Option<UdpSocket> {
+    let Some(sock) = sec else { return None };
+    // 旧读线程退出后其 socket 克隆随之释放;旧 socket 已由调用方先 drop
+    if let Some(old) = (*d.inner).sec_reader_running.take() {
+        old.store(false, Ordering::SeqCst);
+    }
+    let Ok(rd) = sock.try_clone() else {
+        eprintln!("[node] 副口读线程克隆 socket 失败,副口暂只发不收");
+        return Some(sock);
+    };
+    let sock_id = rd.as_raw_socket() as i64;
+    let own = Arc::new(AtomicBool::new(true));
+    let spawned = std::thread::Builder::new()
+        .name("zt-udp-sec-reader".into())
+        .spawn({
+            let own = Arc::clone(&own);
+            let running_main = Arc::clone(&(*d.inner).running);
+            let tx = d.udp_tx.clone();
+            let wake = (*d.inner).wake_tx.clone();
+            move || run_udp_reader(rd, running_main, Some(own), tx, wake, sock_id)
+        });
+    match spawned {
+        Ok(_) => (*d.inner).sec_reader_running = Some(own),
+        Err(e) => eprintln!("[node] 副口读线程重启失败,副口暂只发不收: {e}"),
+    }
+    Some(sock)
 }
 
 pub fn now_ms() -> i64 {
@@ -1062,7 +1315,7 @@ unsafe extern "C" fn wire_send(
     _n: *mut zt::ZT_Node,
     uptr: *mut core::ffi::c_void,
     _t: *mut core::ffi::c_void,
-    _local_socket: i64,
+    local_socket: i64,
     remote: *const zt::sockaddr_storage,
     data: *const core::ffi::c_void,
     len: core::ffi::c_uint,
@@ -1078,9 +1331,38 @@ unsafe extern "C" fn wire_send(
     } else {
         std::slice::from_raw_parts(data as *const u8, len as usize)
     };
-    match inner.udp.send_to(bytes, addr) {
-        Ok(_) => 0,
-        Err(_) => -1,
+    // 副口 fd 每次现取(换绑后核心可能仍按旧 fd 发——旧 socket 已 drop,
+    // secondary_local 自然取到新值;核心旧路径条目会因无回包过期,官方同款)
+    let secondary_local = inner.secondary.as_ref().map(|s| {
+        #[cfg(not(windows))]
+        {
+            s.as_raw_fd() as i64
+        }
+        #[cfg(windows)]
+        {
+            s.as_raw_socket() as i64
+        }
+    });
+    // tcp_open 当前恒 false,Task 3 接入
+    let plan = transport::plan_wire(local_socket, secondary_local, false, addr);
+    let mut ok = true;
+    for route in &plan.udp {
+        let sock = match route {
+            transport::WireRoute::Secondary => inner.secondary.as_ref(),
+            _ => Some(&inner.udp),
+        };
+        if let Some(s) = sock {
+            if s.send_to(bytes, addr).is_err() {
+                ok = false;
+            }
+        }
+    }
+    // TCP 镜像/隧道发送:Task 3 接线(此处预留调用点,消费 plan.mirror_tcp
+    // 与 WireRoute::Tcp)
+    if ok {
+        0
+    } else {
+        -1
     }
 }
 
@@ -1162,4 +1444,9 @@ unsafe extern "C" fn on_event(
     if let Some(e) = mapped {
         let _ = inner.event_out.send(e);
     }
+}
+
+/// socket 本地端口(取不到时 0,快照侧以 0 视为无效端口)。
+fn port_of(s: &UdpSocket) -> u16 {
+    s.local_addr().map(|a| a.port()).unwrap_or(0)
 }

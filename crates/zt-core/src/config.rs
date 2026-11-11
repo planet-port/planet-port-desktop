@@ -43,6 +43,8 @@ pub enum NodeEvent {
     Down,
     IdentityCollision,
     Fatal(String),
+    /// 通道层变更(副口换绑等),文本面向诊断面
+    TransportChanged(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

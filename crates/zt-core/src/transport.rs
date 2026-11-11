@@ -29,12 +29,11 @@ pub const SECONDARY_PORT_SPAN: u32 = 45_500;
 pub const SECONDARY_PORT_TRIALS: u32 = 1000;
 /// 副端口上限(含)
 pub const SECONDARY_PORT_MAX: u16 = 65_535;
-// 以下常量由 node.rs 驱动线程(Task 2/3)消费,接线前暂标 dead_code
+// 以下常量由 node.rs 驱动线程消费;SECONDARY_REBIND_AFTER_MS/TRANSPORT_TICK_MS
+// 已在 Task 2 接线(换绑巡检),其余 TCP 组待 Task 3 消费,暂标 dead_code
 /// 离线多久换绑副口(官方 ZT_PEER_PING_PERIOD*2)
-#[allow(dead_code)]
 pub const SECONDARY_REBIND_AFTER_MS: i64 = 120_000;
 /// 通道层巡检周期(官方 Binder refresh)
-#[allow(dead_code)]
 pub const TRANSPORT_TICK_MS: i64 = 30_000;
 /// TCP 触发:持续无 global 直收时长(官方 ZT_TCP_FALLBACK_AFTER)
 #[allow(dead_code)]
