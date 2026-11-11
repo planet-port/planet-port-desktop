@@ -123,6 +123,7 @@ fn main() {
             planet_file: args.planet.clone(),
             bind_port: args.port,
             identity_dir: None,
+            tcp_fallback_relay: None,
         },
         PrintSink { frames: Arc::clone(&frames) },
     ) {

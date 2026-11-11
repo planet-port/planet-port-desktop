@@ -214,6 +214,7 @@ fn spawn_node(
             planet_file: planet.clone(),
             bind_port: port,
             identity_dir: None,
+            tcp_fallback_relay: None,
         },
         sink,
     )

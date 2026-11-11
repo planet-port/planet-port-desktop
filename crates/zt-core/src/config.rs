@@ -21,6 +21,10 @@ pub struct NodeParams {
     /// 身份文件目录(None = data_dir 根,每 planet 独立身份;
     /// Some = 全局身份目录,daemon 侧按 registry 绑定注入)
     pub identity_dir: Option<PathBuf>,
+    /// TCP 兜底 relay("ip:port");None=禁用 TCP 隧道。
+    /// relay 须部署官方 tcp-proxy(非 zerotier-one 根本身,根的 TCP 9993
+    /// 是本地控制面)——见 docs/deploy-tcp-proxy.md
+    pub tcp_fallback_relay: Option<String>,
 }
 
 /// 上层接收 Node 事件/网络配置/虚拟网帧的出口(Task 3 起由驱动线程转发)。

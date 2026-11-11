@@ -12,7 +12,8 @@
 //! - FrameOut(核心→设备,sink 写设备)与 FrameIn(设备→核心,
 //!   processVirtualNetworkFrame)两条通道方向不可混用;
 //! - 关停硬顺序:running=false → 唤醒 poll → Cmd::Stop → join 驱动线程
-//!   → ZT_Node_delete → drop Inner(join 必须先于 delete,否则悬垂);
+//!   → join TCP 隧道线程 → ZT_Node_delete → drop Inner(join 必须先于
+//!   delete,否则悬垂);
 //! - `networks()/peers()` 等查询返回的核心缓冲必须用
 //!   `ZT_Node_freeQueryResult` 释放(本模块内完成,不外借指针);
 //! - FFI 边界禁 panic/unwrap;对端应答通道断开一律转 `NodeError`,不炸进程。
@@ -34,9 +35,13 @@
 //!    Windows 副口有独立读线程(own 开关独立于主 running,换绑时单独停旧
 //!    拉新;主开关 running=false 一并停两个读线程)。副口换绑/收发全部在
 //!    驱动线程,Inner.secondary 无需加锁。
-//! 3. `udp_fd`:Unix `as_raw_fd()`;Windows `as_raw_socket()`(winsock SOCKET,
+//! 3. TCP 隧道线程(run_tcp_tunnel,平台无关):relay 配置后即 spawn,与
+//!    驱动线程经 TcpCmd/TcpUp 双向通道互通;只持通道端点、唤醒闭包克隆与
+//!    running Arc,绝不触 Inner 指针。收包经通道回驱动线程按 TCP 哨兵
+//!    localSocket 喂核心。状态机(tcp_state)仅驱动线程读写。
+//! 4. `udp_fd`:Unix `as_raw_fd()`;Windows `as_raw_socket()`(winsock SOCKET,
 //!    收发同一底层 socket,读线程侧句柄值为 `try_clone` 复制件)。
-//! 4. `multicastSubscribe` 的 ADI 形参在 Win32 绑定下是 `c_ulong`(32 位)。
+//! 5. `multicastSubscribe` 的 ADI 形参在 Win32 绑定下是 `c_ulong`(32 位)。
 
 #[cfg(not(windows))]
 use std::fs::File;
@@ -50,9 +55,8 @@ use std::os::windows::io::AsRawSocket;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 #[cfg(windows)]
 use std::sync::mpsc::RecvTimeoutError;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender};
 use std::sync::Mutex;
-#[cfg(windows)]
 use std::sync::Arc;
 use std::thread::JoinHandle;
 #[cfg(windows)]
@@ -209,19 +213,22 @@ struct Inner {
     // 唤醒通道发送端(shutdown/命令/帧入/UDP 收包时发一字节让 recv_timeout 立即返回)
     #[cfg(windows)]
     pub(crate) wake_tx: Sender<u8>,
-    #[cfg(not(windows))]
-    pub(crate) running: AtomicBool,
-    // Arc:Windows 的 UDP 读线程要跨线程检查同一开关
-    #[cfg(windows)]
+    // Arc:Windows 的 UDP 读线程与 TCP 隧道线程(run_tcp_tunnel)都要跨线程
+    // 检查同一开关
     pub(crate) running: Arc<AtomicBool>,
     // Windows:副口读线程的独立开关(换绑时置 false 停旧线程再拉新的);
     // 主开关 running=false 也能停它,shutdown 无需额外清理
     #[cfg(windows)]
     pub(crate) sec_reader_running: Option<Arc<AtomicBool>>,
     /// 最近一次收到 global IPv4 直包的时刻(TCP 触发计时;驱动线程写)
-    /// Task 3 读此字段判 TCP 触发,本任务仅写入
-    #[allow(dead_code)]
     pub(crate) last_global_rx_ms: AtomicI64,
+    /// TCP 兜底 relay 地址(None=未配置,状态机停在 Disabled)
+    pub(crate) relay: Option<SocketAddr>,
+    /// TCP 隧道状态机(仅驱动线程读写;对外经 transport_pub 快照)
+    pub(crate) tcp_state: TcpTunnelState,
+    /// 驱动线程 → TCP 线程命令通道(wire_send/tick 在驱动线程发送;
+    /// 有界:Send 帧满即丢对齐官方 writeq)
+    pub(crate) tcp_cmd_tx: SyncSender<transport::TcpCmd>,
     /// 通道状态快照(驱动线程写,查询线程短锁读)
     pub(crate) transport_pub: Mutex<TransportInfo>,
 }
@@ -252,6 +259,8 @@ struct Driver {
     frame_in_rx: Receiver<FrameIn>,
     event_rx: Receiver<NodeEvent>,
     netcfg_rx: Receiver<(u64, NetConfigOp, NetConfig)>,
+    // TCP 隧道线程的上抛队列(状态转换/物理包);仅本线程消费
+    tcp_up_rx: Receiver<transport::TcpUp>,
     #[cfg(not(windows))]
     wake_rd: File,
     // Windows:UDP 读线程投递的物理包队列(含来源 socket 的 local_socket 值)
@@ -272,6 +281,8 @@ pub struct NodeHandle {
     inner: *mut Inner,
     // Some = 驱动线程存活;shutdown 时 join 后置 None
     driver: Option<JoinHandle<()>>,
+    // TCP 隧道线程(relay 未配置也 spawn;shutdown 时 join 后置 None)
+    tcp_thread: Option<JoinHandle<()>>,
     // Windows 独有:UDP 读线程(start 期 spawn,shutdown 时 join;晚于驱动线程退出无害)
     #[cfg(windows)]
     udp_reader: Option<JoinHandle<()>>,
@@ -291,6 +302,10 @@ pub struct NodeHandle {
 // - 结构安全(裸指针/channel/pipe)论证不变:dataStore/UDP 仅由驱动线程
 //   触达;wake() 只对管道 fd 做 write(线程安全);shutdown 的 join 先于
 //   ZT_Node_delete 的硬顺序不受调用线程影响;
+// - TCP 隧道线程(run_tcp_tunnel)不持 Inner/Node 指针,只持 TcpCmd/TcpUp
+//   通道端点、唤醒闭包克隆(wrfd/Sender)与 running Arc:跨线程读写仅
+//   Arc<AtomicBool>(原子)与 mpsc 通道(自带同步),收包经通道回驱动线程
+//   喂核心,与核心的单驱动线程访问约定不冲突;
 // - transport() 查询线程短锁读 transport_pub(Mutex 快照),驱动线程只在
 //   换绑瞬间短锁写,无悬垂指针、无核心状态竞争。
 // 上层(daemon)据此可在 REST 工作线程持有句柄,并把 start/shutdown 放进
@@ -324,6 +339,18 @@ impl NodeHandle {
         }
         // World 二进制:第 0 字节 type,随后 8 字节 worldId(大端)
         let world_id = u64::from_be_bytes(planet[1..9].try_into().expect("长度已校验"));
+        // TCP 兜底 relay:解析失败直接拒绝启动(非法地址静默禁用只会让用户
+        // 以为有兜底,实际没有——宁可 fail fast)
+        let relay = params
+            .tcp_fallback_relay
+            .as_deref()
+            .and_then(|s| s.parse::<SocketAddr>().ok());
+        if params.tcp_fallback_relay.is_some() && relay.is_none() {
+            return Err(NodeError::InvalidArg(format!(
+                "tcpFallbackRelay 非法(须 \"ip:port\"): {:?}",
+                params.tcp_fallback_relay
+            )));
+        }
         let udp = UdpSocket::bind(("0.0.0.0", params.bind_port)).map_err(NodeError::Io)?;
         // 副口:随机绑一个(20000-65500),失败仅告警不阻断——主口照常,离线 120s
         // 后由驱动 tick 重试换绑(对齐官方 allowSecondaryPort 默认行为)
@@ -372,16 +399,22 @@ impl NodeHandle {
         let (event_tx, event_rx) = channel();
         let (netcfg_tx, netcfg_rx) = channel();
         let (cmd_tx, cmd_rx) = channel();
+        // TCP 隧道通道:驱动线程持 tcp_cmd_tx(经 Inner)/tcp_up_rx(经 Driver),
+        // 线程持对端;relay 未配置也建(状态机 Disabled 不 connect)。
+        // 命令通道有界:官方 writeq 上限 64KiB,按典型物理包 ≤1KiB 折算 64 帧,
+        // 满即丢(TCP 线程 50ms 周期排空,Connect/Close 每 tick 至多 1 条不会满)
+        let (tcp_cmd_tx, tcp_cmd_rx) =
+            sync_channel::<transport::TcpCmd>((transport::TCP_QUEUE_LIMIT / 1024).max(1));
+        let (tcp_up_tx, tcp_up_rx) = channel::<transport::TcpUp>();
         #[cfg(not(windows))]
         let (wake_rd, wake_wr) = make_pipe().map_err(NodeError::Io)?;
         #[cfg(windows)]
         let (wake_tx, wake_rx) = channel::<u8>();
         #[cfg(windows)]
         let (udp_tx, udp_rx) = channel::<(Vec<u8>, SocketAddr, i64)>();
-        #[cfg(not(windows))]
-        let running = AtomicBool::new(true);
-        #[cfg(windows)]
         let running = Arc::new(AtomicBool::new(true));
+        // TCP 隧道线程的开关克隆(TCP 线程绝不触 Inner,只拿这份 Arc)
+        let running_tcp = Arc::clone(&running);
         // 读线程的唤醒克隆:物理包投进 udp_rx 后即唤醒驱动线程(对齐 poll 语义)
         #[cfg(windows)]
         let wake_tx_rd = wake_tx.clone();
@@ -392,14 +425,16 @@ impl NodeHandle {
         let udp_tx_drv = udp_tx.clone();
         #[cfg(windows)]
         let udp_tx_sec = udp_tx.clone();
+        // TCP 状态机初值:relay 已配置即 Idle(等待 tick 触发),否则 Disabled
+        let tcp_state_init = if relay.is_some() { TcpTunnelState::Idle } else { TcpTunnelState::Disabled };
         let transport_pub = Mutex::new(TransportInfo {
             primary_port: udp.local_addr().map(|a| a.port()).unwrap_or(params.bind_port),
             secondary_port: secondary
                 .as_ref()
                 .and_then(|s| s.local_addr().ok())
                 .map(|a| a.port()),
-            tcp: TcpTunnelState::Disabled, // Task 3 接 relay 后启用
-            relay: None,
+            tcp: tcp_state_init,
+            relay,
         });
         let inner = Box::into_raw(Box::new(Inner {
             store: StateStore::new(
@@ -419,13 +454,13 @@ impl NodeHandle {
             wake_wr,
             #[cfg(windows)]
             wake_tx,
-            #[cfg(not(windows))]
-            running,
-            #[cfg(windows)]
             running: Arc::clone(&running),
             #[cfg(windows)]
             sec_reader_running: None,
             last_global_rx_ms: AtomicI64::new(0),
+            relay,
+            tcp_state: tcp_state_init,
+            tcp_cmd_tx,
             transport_pub,
         }));
         let cbs = zt::ZT_Node_Callbacks {
@@ -517,6 +552,36 @@ impl NodeHandle {
                 (*inner).transport_pub.lock().unwrap().secondary_port = None;
             }
         }
+        // 唤醒闭包对齐 Inner::wake 语义(TCP 线程经它唤醒驱动线程;
+        // 绝不持有 Inner 指针,只拿管道写端克隆/唤醒通道发送端克隆)。
+        // 管道克隆放在驱动线程 spawn 之前:失败时无需 join,清理与
+        // ZT_Node_new 失败同款
+        #[cfg(not(windows))]
+        let wake_wr_tcp = match unsafe { (*inner).wake_wr.try_clone() } {
+            Ok(w) => w,
+            Err(e) => {
+                unsafe {
+                    zt::ZT_Node_delete(node);
+                    drop(Box::from_raw(inner));
+                }
+                return Err(NodeError::Io(e));
+            }
+        };
+        #[cfg(not(windows))]
+        let wake_fn = {
+            let w = wake_wr_tcp;
+            Box::new(move || {
+                let mut b = [1u8; 1];
+                let _ = unsafe { libc::write(w.as_raw_fd(), b.as_mut_ptr() as *const _, 1) };
+            }) as Box<dyn Fn() + Send>
+        };
+        #[cfg(windows)]
+        let wake_fn = {
+            let w = unsafe { (*inner).wake_tx.clone() };
+            Box::new(move || {
+                let _ = w.send(1);
+            }) as Box<dyn Fn() + Send>
+        };
         // 回调出口通道与 sink 一并交给驱动线程消费(事件送达 = on_event/on_net_config)
         let driver = Driver {
             node,
@@ -527,6 +592,7 @@ impl NodeHandle {
             frame_in_rx,
             event_rx,
             netcfg_rx,
+            tcp_up_rx,
             #[cfg(not(windows))]
             wake_rd,
             #[cfg(windows)]
@@ -541,20 +607,41 @@ impl NodeHandle {
             .name("zt-driver".into())
             .spawn(move || unsafe { run_driver(driver) })
             .map_err(|e| {
-                // 线程起不来:节点尚未对外发包,直接清理;Windows 先置停 running
-                // 让已启动的读线程(在 Inner drop 前仍持有发送端克隆)退出
+                // 线程起不来:节点尚未对外发包,直接清理;先置停 running
+                // 让已启动的读线程(Windows)在 Inner drop 前退出
                 unsafe {
-                    #[cfg(windows)]
                     (*inner).running.store(false, Ordering::SeqCst);
                     zt::ZT_Node_delete(node);
                     drop(Box::from_raw(inner));
                 }
                 NodeError::Io(io::Error::other(format!("驱动线程启动失败: {e}")))
             })?;
+        // TCP 隧道线程:relay 未配置也 spawn(状态机 Disabled 不 connect),
+        // 保证通道拓扑稳定;退出条件 running=false(50ms 循环周期内响应)
+        let tcp_thread = match std::thread::Builder::new()
+            .name("zt-tcp-tunnel".into())
+            .spawn(move || run_tcp_tunnel(tcp_cmd_rx, tcp_up_tx, wake_fn, running_tcp))
+        {
+            Ok(t) => t,
+            Err(e) => {
+                // 线程起不来:驱动线程已在跑,按红线顺序先停驱动线程并 join,
+                // 再释放 Node/Inner(join 先于 delete,否则驱动线程悬垂)
+                unsafe {
+                    (*inner).running.store(false, Ordering::SeqCst);
+                    (*inner).wake();
+                    let _ = (*inner).cmd_tx.send(Cmd::Stop);
+                    let _ = handle.join();
+                    zt::ZT_Node_delete(node);
+                    drop(Box::from_raw(inner));
+                }
+                return Err(NodeError::Io(io::Error::other(format!("TCP 线程启动失败: {e}"))));
+            }
+        };
         Ok(Self {
             node,
             inner,
             driver: Some(handle),
+            tcp_thread: Some(tcp_thread),
             #[cfg(windows)]
             udp_reader: Some(reader),
             shut_down: false,
@@ -679,12 +766,15 @@ impl NodeHandle {
     }
 
     /// 关停顺序(强制):running=false → 唤醒 poll → Cmd::Stop → join 驱动线程
-    /// → [Windows: join 主口 UDP 读线程] → ZT_Node_delete → drop Inner。join
-    /// 必须先于 delete,否则驱动线程仍在使用已释放的 Node(悬垂)。
+    /// → join TCP 隧道线程 → [Windows: join 主口 UDP 读线程] → ZT_Node_delete
+    /// → drop Inner。join 必须先于 delete,否则驱动线程仍在使用已释放的
+    /// Node(悬垂)。
     ///
     /// 副口 socket 随 Inner drop 关闭,无需额外顺序;Windows 副口读线程不被
     /// join——它靠主开关 running=false 退出(50ms 读超时内),不触任何核心
     /// 状态与 Inner 指针,晚于驱动线程 join/Inner drop 仅存活片刻,无悬垂。
+    /// TCP 隧道线程同理:靠 running=false + 50ms 超时循环退出,但它在
+    /// ZT_Node_delete 前 join(收发已停,退出无阻塞)。
     pub fn shutdown(mut self) {
         self.shutdown_inner();
     }
@@ -698,6 +788,11 @@ impl NodeHandle {
         self.inner().wake();
         let _ = self.inner().cmd_tx.send(Cmd::Stop);
         if let Some(h) = self.driver.take() {
+            let _ = h.join();
+        }
+        // TCP 隧道线程 join 在驱动线程之后、ZT_Node_delete 之前:running 已
+        // 置 false,50ms 循环周期内退出;此刻 cmd_tx 随 Inner 仍在,Close 不必再发
+        if let Some(h) = self.tcp_thread.take() {
             let _ = h.join();
         }
         // 读线程晚于驱动线程 join:其退出只依赖 running 开关与读超时,无悬垂
@@ -779,7 +874,10 @@ unsafe fn run_driver(mut d: Driver) {
     let mut last_mcast_ms: i64 = i64::MIN / 4; // 首圈立即做一次订阅
     let mut last_health_ms: i64 = i64::MIN / 4; // 首圈立即做一次巡检
     let mut last_transport_ms: i64 = i64::MIN / 4; // 首圈立即做一次通道巡检
+    let mut last_tcp_attempt_ms: i64 = i64::MIN / 4; // TCP connect 节流(i64::MIN/4 = 首个 tick 即可触发)
     let mut last_online_ms: i64 = now_ms();
+    // TCP 状态快照已同步到的值(transport_pub 同步去重:只在状态变化时短锁写)
+    let mut tcp_snap = inner.tcp_state;
     // 已 join 的网络(来自 vnet_config 回调的 UP/UPDATE/DOWN/DESTROY)
     let mut current_networks: Vec<u64> = Vec::new();
     #[cfg(not(windows))]
@@ -846,7 +944,7 @@ unsafe fn run_driver(mut d: Driver) {
                 Err(_) => break,
             }
         }
-        // 通道层巡检:副口换绑(离线 >120s)/TCP 触发回退(Task 3 接入)
+        // 通道层巡检:副口换绑(离线 >120s)/TCP 隧道触发与回退
         if now - last_transport_ms >= transport::TRANSPORT_TICK_MS {
             last_transport_ms = now;
             let online = {
@@ -895,6 +993,29 @@ unsafe fn run_driver(mut d: Driver) {
                     *snap_guard = snap;
                     drop(snap_guard);
                     let _ = (*d.inner).event_out.send(NodeEvent::TransportChanged(ev));
+                }
+            }
+            // TCP 隧道:60s 无 global 直收触发 connect(2.5s 节流);
+            // Established 且 30s 内有直收 → 主动关(fail forward,UDP 优先)
+            let state = inner.tcp_state;
+            if state != TcpTunnelState::Disabled {
+                let since_rx = now - inner.last_global_rx_ms.load(Ordering::Relaxed);
+                if state == TcpTunnelState::Established {
+                    if since_rx < transport::TCP_FALLBACK_WINDOW_MS {
+                        unsafe { (*d.inner).tcp_state = TcpTunnelState::Idle };
+                        let _ = inner.tcp_cmd_tx.send(transport::TcpCmd::Close);
+                        let _ = inner.event_out.send(NodeEvent::TransportChanged(
+                            "tcp tunnel closed (udp recovered)".into(),
+                        ));
+                    }
+                } else if since_rx > transport::TCP_AFTER_MS
+                    && now - last_tcp_attempt_ms > transport::TCP_RETRY_THROTTLE_MS
+                {
+                    if let Some(relay) = inner.relay {
+                        last_tcp_attempt_ms = now;
+                        unsafe { (*d.inner).tcp_state = TcpTunnelState::Connecting };
+                        let _ = inner.tcp_cmd_tx.send(transport::TcpCmd::Connect(relay));
+                    }
                 }
             }
         }
@@ -1012,7 +1133,7 @@ unsafe fn run_driver(mut d: Driver) {
                 loop {
                     match inner.udp.recv_from(&mut buf) {
                         Ok((len, from)) if len > 0 => {
-                            // global IPv4 直收计时(TCP 触发依据,Task 3 消费)
+                            // global IPv4 直收计时(通道 tick 判 TCP 隧道触发/回退用)
                             if let SocketAddr::V4(v4) = from {
                                 if transport::is_global_ipv4(*v4.ip()) {
                                     inner.last_global_rx_ms.store(now_ms(), Ordering::Relaxed);
@@ -1112,7 +1233,7 @@ unsafe fn run_driver(mut d: Driver) {
                 if pkt.is_empty() {
                     continue;
                 }
-                // global IPv4 直收计时(主/副口同款,TCP 触发依据,Task 3 消费)
+                // global IPv4 直收计时(主/副口同款,通道 tick 判 TCP 触发/回退用)
                 if let SocketAddr::V4(v4) = from {
                     if transport::is_global_ipv4(*v4.ip()) {
                         inner.last_global_rx_ms.store(now_ms(), Ordering::Relaxed);
@@ -1151,6 +1272,59 @@ unsafe fn run_driver(mut d: Driver) {
                     return;
                 }
             }
+        }
+        // TCP 隧道上抛:状态转换记事件;包按 TCP 哨兵路径喂核心(两平台公共区:
+        // Unix 在 poll 等待之后、Windows 在 udp_rx 排空之后;TCP 线程投包后
+        // 都会唤醒本线程,故无额外时延)
+        while let Ok(up) = d.tcp_up_rx.try_recv() {
+            match up {
+                transport::TcpUp::Connected => {
+                    unsafe { (*d.inner).tcp_state = TcpTunnelState::Established };
+                    let _ = inner.event_out.send(NodeEvent::TransportChanged(
+                        "tcp tunnel established".into(),
+                    ));
+                }
+                transport::TcpUp::Down(reason) => {
+                    unsafe {
+                        (*d.inner).tcp_state = if inner.relay.is_some() {
+                            TcpTunnelState::Idle
+                        } else {
+                            TcpTunnelState::Disabled
+                        };
+                    }
+                    let _ = inner
+                        .event_out
+                        .send(NodeEvent::TransportChanged(format!("tcp tunnel down: {reason}")));
+                }
+                transport::TcpUp::Packet(payload, from) => {
+                    let sa = sa::to_sockaddr_storage(&from, None);
+                    let mut dl: i64 = 0;
+                    let _ = unsafe {
+                        zt::ZT_Node_processWirePacket(
+                            d.node,
+                            std::ptr::null_mut(),
+                            now_ms() as _,
+                            transport::TCP_LOCAL_SOCKET,
+                            &sa,
+                            payload.as_ptr() as *const _,
+                            payload.len() as _,
+                            &mut dl,
+                        )
+                    };
+                    if dl > 0 && dl < d.deadline {
+                        d.deadline = dl;
+                    }
+                }
+            }
+        }
+        // TCP 状态快照同步(clone-改-写回,单次短锁):覆盖本圈 tick 置的
+        // Connecting 与上面的 Connected/Down 转换,查询线程只见前后态不见中间态
+        if tcp_snap != inner.tcp_state {
+            tcp_snap = inner.tcp_state;
+            let mut snap_guard = (*d.inner).transport_pub.lock().unwrap();
+            let mut snap = snap_guard.clone();
+            snap.tcp = inner.tcp_state;
+            *snap_guard = snap;
         }
         if !inner.running.load(Ordering::SeqCst) {
             return;
@@ -1357,23 +1531,41 @@ unsafe extern "C" fn wire_send(
             s.as_raw_socket() as i64
         }
     });
-    // tcp_open 当前恒 false,Task 3 接入
-    let plan = transport::plan_wire(local_socket, secondary_local, false, addr);
-    let mut ok = true;
+    // TCP 隧道状态(仅驱动线程读写):Established 时 global IPv4 出包镜像入隧道,
+    // TCP 哨兵路径(核心指定)不依赖本值
+    let tcp_open = inner.tcp_state == TcpTunnelState::Established;
+    let plan = transport::plan_wire(local_socket, secondary_local, tcp_open, addr);
+    // 返回语义 = 官方「任一路成功即 0」:冗余通道(主/副口)互不连坐,
+    // 全部失败才报 -1 让核心按路径失败处理
+    let mut sent = false;
     for route in &plan.udp {
         let sock = match route {
             transport::WireRoute::Secondary => inner.secondary.as_ref(),
-            _ => Some(&inner.udp),
+            // TCP 哨兵路径:核心指定走隧道,不落任何 UDP socket
+            transport::WireRoute::Tcp => None,
+            transport::WireRoute::Primary => Some(&inner.udp),
         };
         if let Some(s) = sock {
-            if s.send_to(bytes, addr).is_err() {
-                ok = false;
+            if s.send_to(bytes, addr).is_ok() {
+                sent = true;
             }
         }
     }
-    // TCP 镜像/隧道发送:Task 3 接线(此处预留调用点,消费 plan.mirror_tcp
-    // 与 WireRoute::Tcp)
-    if ok {
+    // TCP 镜像/哨兵发送:编码为伪 TLS 帧后投给 TCP 线程。try_send 满即丢
+    // (对齐官方 writeq,不阻塞驱动线程),通道断开(TCP 线程已退出)同样
+    // 忽略;成功入队计一路成功
+    let use_tcp = plan.mirror_tcp
+        || plan.udp.iter().any(|r| matches!(r, transport::WireRoute::Tcp));
+    if use_tcp {
+        if let SocketAddr::V4(v4) = addr {
+            let mut frame = Vec::with_capacity(bytes.len() + 12);
+            transport::codec::encode_frame(&v4, bytes, &mut frame);
+            if inner.tcp_cmd_tx.try_send(transport::TcpCmd::Send(frame)).is_ok() {
+                sent = true;
+            }
+        }
+    }
+    if sent {
         0
     } else {
         -1
@@ -1463,4 +1655,121 @@ unsafe extern "C" fn on_event(
 /// socket 本地端口(取不到时 0,快照侧以 0 视为无效端口)。
 fn port_of(s: &UdpSocket) -> u16 {
     s.local_addr().map(|a| a.port()).unwrap_or(0)
+}
+
+/// TCP 隧道线程:阻塞 connect/读写,与驱动线程经 TcpCmd/TcpUp 通道互通
+/// (平台无关,std 阻塞 IO)。
+///
+/// 架构红线:本线程绝不触 Inner 指针——只持 cmd_rx/up_tx/唤醒闭包/running
+/// Arc 的克隆;Inner 全部字段读写仍在驱动线程。状态机推进(Idle/Connecting/
+/// Established)由驱动线程在 TcpUp 消费处完成,本线程只如实上抛事实。
+///
+/// 退出条件:running=false(50ms 循环周期内响应)或 cmd_rx 断开
+/// (Cmd::Close 由驱动主动关隧道用,非退出信号)。
+///
+/// 错误策略:connect 失败/IO 错误 → Up::Down 上抛,状态回 Idle,重连节流
+/// 由驱动 tick 控制(2.5s),本线程不自行重试。
+fn run_tcp_tunnel(
+    cmd_rx: Receiver<transport::TcpCmd>,
+    up_tx: Sender<transport::TcpUp>,
+    wake: Box<dyn Fn() + Send>,
+    running: Arc<AtomicBool>,
+) {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let mut stream: Option<TcpStream> = None;
+    let mut dec = transport::codec::Decoder::new();
+    let mut buf = [0u8; 16_384];
+    let (major, minor, rev) = NodeHandle::core_version();
+    loop {
+        if !running.load(Ordering::SeqCst) {
+            return;
+        }
+        match cmd_rx.recv_timeout(Duration::from_millis(50)) {
+            Ok(transport::TcpCmd::Connect(relay)) => {
+                if stream.take().is_some() {
+                    let _ = up_tx.send(transport::TcpUp::Down("reconnect".into()));
+                }
+                match TcpStream::connect_timeout(&relay, Duration::from_secs(5)) {
+                    Ok(mut s) => {
+                        let _ = s.set_nodelay(true);
+                        let _ = s.set_read_timeout(Some(Duration::from_millis(50)));
+                        let mut hello = Vec::with_capacity(9);
+                        transport::codec::encode_hello(major as u8, minor as u8, rev as u16, &mut hello);
+                        if s.write_all(&hello).is_ok() {
+                            stream = Some(s);
+                            let _ = up_tx.send(transport::TcpUp::Connected);
+                        } else {
+                            let _ = up_tx.send(transport::TcpUp::Down("hello 写失败".into()));
+                        }
+                    }
+                    Err(e) => {
+                        let _ = up_tx.send(transport::TcpUp::Down(format!("connect 失败: {e}")));
+                    }
+                }
+                wake();
+            }
+            Ok(transport::TcpCmd::Send(frame)) => {
+                if let Some(s) = stream.as_mut() {
+                    if s.write_all(&frame).is_err() {
+                        stream = None;
+                        let _ = up_tx.send(transport::TcpUp::Down("写失败".into()));
+                        wake();
+                    }
+                }
+                // 无连接时帧静默丢弃:驱动侧状态机已在 Idle,不再投新帧
+            }
+            Ok(transport::TcpCmd::Close) => {
+                stream = None;
+                let _ = up_tx.send(transport::TcpUp::Down("驱动侧主动关闭".into()));
+                wake();
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+        }
+        if let Some(s) = stream.as_mut() {
+            match s.read(&mut buf) {
+                Ok(0) => {
+                    stream = None;
+                    let _ = up_tx.send(transport::TcpUp::Down("对端关闭".into()));
+                    wake();
+                }
+                Ok(n) => match dec.feed(&buf[..n]) {
+                    Ok(frames) => {
+                        for f in frames {
+                            if let transport::codec::Frame::Packet { peer, payload } = f {
+                                if up_tx
+                                    .send(transport::TcpUp::Packet(payload, SocketAddr::V4(peer)))
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                            }
+                            // Frame::Hello:服务端不回 HELLO,出现即忽略
+                        }
+                        wake();
+                    }
+                    Err(_) => {
+                        stream = None;
+                        dec = transport::codec::Decoder::new();
+                        let _ = up_tx.send(transport::TcpUp::Down("流解码错误".into()));
+                        wake();
+                    }
+                },
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock
+                            | std::io::ErrorKind::TimedOut
+                            | std::io::ErrorKind::Interrupted
+                    ) => {}
+                Err(e) => {
+                    stream = None;
+                    let _ = up_tx.send(transport::TcpUp::Down(format!("读失败: {e}")));
+                    wake();
+                }
+            }
+        }
+    }
 }

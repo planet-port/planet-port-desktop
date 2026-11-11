@@ -29,23 +29,20 @@ pub const SECONDARY_PORT_SPAN: u32 = 45_500;
 pub const SECONDARY_PORT_TRIALS: u32 = 1000;
 /// 副端口上限(含)
 pub const SECONDARY_PORT_MAX: u16 = 65_535;
-// 以下常量由 node.rs 驱动线程消费;SECONDARY_REBIND_AFTER_MS/TRANSPORT_TICK_MS
-// 已在 Task 2 接线(换绑巡检),其余 TCP 组待 Task 3 消费,暂标 dead_code
+// 以下常量均由 node.rs 驱动线程消费:副口组用于换绑巡检,TCP 组用于
+// 隧道触发/节流/回退与发送队列上限
 /// 离线多久换绑副口(官方 ZT_PEER_PING_PERIOD*2)
 pub const SECONDARY_REBIND_AFTER_MS: i64 = 120_000;
 /// 通道层巡检周期(官方 Binder refresh)
 pub const TRANSPORT_TICK_MS: i64 = 30_000;
 /// TCP 触发:持续无 global 直收时长(官方 ZT_TCP_FALLBACK_AFTER)
-#[allow(dead_code)]
 pub const TCP_AFTER_MS: i64 = 60_000;
 /// TCP connect 节流(官方 ZT_PING_CHECK_INTERVAL/2)
-#[allow(dead_code)]
 pub const TCP_RETRY_THROTTLE_MS: i64 = 2_500;
 /// TCP 回退窗口:窗口内有过直收即关隧道(官方 30s fail forward)
-#[allow(dead_code)]
 pub const TCP_FALLBACK_WINDOW_MS: i64 = 30_000;
-/// TCP 发送队列等效上限(try_send 满即丢帧;官方 writeq 满同样丢弃)
-#[allow(dead_code)]
+/// TCP 发送队列等效上限(字节,官方 writeq)。实现按典型物理包 ≤1KiB 折算
+/// 为有界命令通道帧数(TCP_QUEUE_LIMIT/1024 = 64 帧),满即丢
 pub const TCP_QUEUE_LIMIT: usize = 64 * 1024;
 
 /// 是否「global 范围 IPv4」:非环回/私网/链路本地/组播/文档段。

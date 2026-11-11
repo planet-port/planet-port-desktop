@@ -480,6 +480,8 @@ pub async fn start_planet(state: &AppState, id: &str) -> Result<(), String> {
             IdentityMode::Shared => Some(state.config_dir.clone()),
             IdentityMode::Independent => None,
         },
+        // TCP 兜底 relay:配置面接线在 daemon Task 5,此处先显式禁用
+        tcp_fallback_relay: None,
     };
     // start 含首次 processBackgroundTasks(阻塞),放阻塞线程池
     let node = tokio::task::spawn_blocking(move || {

@@ -7,7 +7,7 @@
 //!   在驱动线程执行,并以 catch_unwind 包裹;
 //! - FrameOut(核心→设备)与 FrameIn(设备→核心)两条通道方向不可混用;
 //! - 关停硬顺序:teardown 设备(停 reader)→ running=false → 唤醒 → Cmd::Stop
-//!   → join 驱动线程 → ZT_Node_delete → drop Inner;
+//!   → join 驱动线程 → join TCP 隧道线程 → ZT_Node_delete → drop Inner;
 //! - `networks()/peers()` 返回的核心查询缓冲必须在 zt-core 内用
 //!   `ZT_Node_freeQueryResult` 释放,指针不外借;
 //! - FFI 边界禁 panic/unwrap。
