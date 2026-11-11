@@ -48,6 +48,12 @@ pub struct RegistryEntry {
     pub data_dir: std::path::PathBuf,
     /// 实例 zerotier-one 监听端口
     pub port: u16,
+    /// 端口是否用户显式指定(启动迁移不改写显式端口;旧文件缺省 false)
+    #[serde(default)]
+    pub port_explicit: bool,
+    /// TCP 兜底 relay("ip:port",指向官方 tcp-proxy 部署);None=禁用
+    #[serde(default)]
+    pub tcp_fallback_relay: Option<String>,
     pub running: bool,
     /// 持久启用开关:禁用后即使有网络也不运行,join 报 planetDisabled。
     /// 与 running(实际运行登记)正交;旧文件可能残留 manualStop 字段,

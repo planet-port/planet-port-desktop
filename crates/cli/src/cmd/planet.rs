@@ -16,6 +16,13 @@ pub enum PlanetCmd {
     Show { id: String },
     /// Rename a planet
     Rename { id: String, new_name: String },
+    /// Set/clear TCP fallback relay (ip:port, official tcp-proxy deployment)
+    SetRelay {
+        id: String,
+        /// Omit to clear
+        #[arg(long)]
+        relay: Option<String>,
+    },
     /// Export planet binary to stdout or file
     Export {
         id: String,
@@ -39,6 +46,7 @@ pub fn run(client: &Client, cmd: &PlanetCmd, json: bool) -> Result<(), CliError>
         PlanetCmd::List => list(client, json),
         PlanetCmd::Show { id } => show(client, id, json),
         PlanetCmd::Rename { id, new_name } => rename(client, id, new_name, json),
+        PlanetCmd::SetRelay { id, relay } => set_relay(client, id, relay.clone(), json),
         PlanetCmd::Export { id, out } => export(client, id, out.clone()),
         PlanetCmd::Share { id, ttl } => share(client, id, *ttl, json),
         PlanetCmd::Enable { id } => enable(client, id, json),
@@ -173,6 +181,15 @@ fn rename(client: &Client, id: &str, new_name: &str, json: bool) -> Result<(), C
     let body = json!({ "name": new_name });
     let resp = client.patch_json(&endpoints::planet(id), &body)?;
     print_result(client, "rename", id, json, &resp);
+    Ok(())
+}
+
+/// 设置/清除 per-planet TCP 兜底 relay(relay 为 None 时序列化为 null,
+/// daemon 侧按清除处理;地址格式由服务端校验)
+fn set_relay(client: &Client, id: &str, relay: Option<String>, json: bool) -> Result<(), CliError> {
+    let body = json!({ "tcpFallbackRelay": relay });
+    let resp = client.patch_json(&endpoints::planet(id), &body)?;
+    print_result(client, "set-relay", id, json, &resp);
     Ok(())
 }
 

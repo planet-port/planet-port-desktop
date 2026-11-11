@@ -164,7 +164,7 @@ fn udp_bindable(port: u16) -> bool {
     UdpSocket::bind((Ipv4Addr::UNSPECIFIED, port)).is_ok()
 }
 
-/// 端口分配:body 指定则用之(与其它 planet 冲突 → 409),否则从 9994 起取
+/// 端口分配:body 指定则用之(与其它 planet 冲突 → 409),否则从 9993 起取
 /// registry 未占用且本机可 bind 的最低端口
 fn allocate_port(reg: &Registry, requested: Option<u16>) -> Result<u16, ApiErr> {
     if let Some(p) = requested {
@@ -179,7 +179,9 @@ fn allocate_port(reg: &Registry, requested: Option<u16>) -> Result<u16, ApiErr> 
         }
         return Ok(p);
     }
-    for p in 9994..=u16::MAX {
+    // 9993 起:对齐官方默认口(本机被官方 zerotier-one 占用时
+    // udp_bindable 探测自然跳过,不冲突)
+    for p in 9993..=u16::MAX {
         if !port_taken(reg, p) && udp_bindable(p) {
             return Ok(p);
         }
@@ -187,7 +189,7 @@ fn allocate_port(reg: &Registry, requested: Option<u16>) -> Result<u16, ApiErr> 
     Err(err(
         StatusCode::INTERNAL_SERVER_ERROR,
         "noAvailablePort",
-        "no free udp port from 9994",
+        "no free udp port from 9993",
         None,
     ))
 }
@@ -390,6 +392,8 @@ pub async fn planets_import(
         last_node_id: None,
         data_dir,
         port,
+        port_explicit: requested_port.is_some(),
+        tcp_fallback_relay: None,
         running: false,
         enabled: true,
         net_local: Default::default(),
@@ -464,6 +468,23 @@ pub async fn planets_patch(
     }
     if let Some(v) = body.get("color").and_then(|v| v.as_str()) {
         reg.planets[i].color = Some(v.into());
+    }
+    if let Some(v) = body.get("tcpFallbackRelay") {
+        let parsed = match v.as_str() {
+            Some(s) if !s.is_empty() => {
+                if s.parse::<std::net::SocketAddr>().is_err() {
+                    return Err(err(
+                        StatusCode::BAD_REQUEST,
+                        "badRelayAddr",
+                        &format!("tcpFallbackRelay must be \"ip:port\", got: {s:?}"),
+                        None,
+                    ));
+                }
+                Some(s.to_string())
+            }
+            _ => None, // null / 空串 = 清除
+        };
+        reg.planets[i].tcp_fallback_relay = parsed;
     }
     let pid = reg.planets[i].id.clone();
     let detail = to_detail(&reg.planets[i], live.as_ref());
