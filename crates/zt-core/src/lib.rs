@@ -19,6 +19,12 @@ pub mod routes;
 pub mod sa;
 pub mod state;
 
+mod transport;
+pub use transport::{
+    codec, is_global_ipv4, plan_wire, bind_secondary, TcpCmd, TcpTunnelState, TcpUp,
+    TransportInfo, WirePlan, WireRoute, TCP_LOCAL_SOCKET,
+};
+
 pub use config::{IpNet, ManagedRoute, NetConfig, NetConfigOp, NetStatus, NodeEvent, NodeParams, NodeSink};
 pub use device::{DevicePlane, FrameIn, FrameInTx, FrameInTxSlot};
 pub use ifaddr::local_ipv4s;

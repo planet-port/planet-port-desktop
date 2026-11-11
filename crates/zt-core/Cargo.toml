@@ -13,6 +13,9 @@ tun-rs = { version = "2", default-features = false }
 # route_manager:BSD 路由 socket / netlink 应用 managed 路由,Apache-2.0
 route_manager = "0.2"
 
+# rand:副端口随机起点(对齐官方 _getRandomPort),MIT/Apache-2.0
+rand = "0.8"
+
 # libc:pipe/poll/getifaddrs(驱动线程阻塞原语 + 接口枚举),MIT/Apache-2.0;
 # Windows 全程不用(驱动走 mpsc + 独立 UDP 读线程,接口枚举走 getifaddrs crate)
 [target.'cfg(not(windows))'.dependencies]
