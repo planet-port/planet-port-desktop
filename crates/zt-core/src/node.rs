@@ -354,13 +354,17 @@ impl NodeHandle {
         // winsock SOCKET(收发同一底层 socket,读线程侧句柄值为复制件);须在读线程 move 走克隆前取值
         #[cfg(windows)]
         let local_socket = udp_rd.as_raw_socket() as i64;
-        // Windows:副口克隆给读线程,句柄值同上须在克隆 move 走前取值
+        // Windows:副口克隆给读线程,句柄值同上须在克隆 move 走前取值;克隆
+        // 失败不中止启动,由下方 spawn 块整体放弃副口(与绑定失败同语义)
         #[cfg(windows)]
         let (secondary_rd, secondary_local) = match secondary.as_ref() {
-            Some(s) => (
-                Some(s.try_clone().map_err(NodeError::Io)?),
-                Some(s.as_raw_socket() as i64),
-            ),
+            Some(s) => match s.try_clone() {
+                Ok(rd) => (Some(rd), Some(s.as_raw_socket() as i64)),
+                Err(e) => {
+                    eprintln!("[node] 副口克隆 socket 失败,放弃副口通道: {e}");
+                    (None, None)
+                }
+            },
             None => (None, None),
         };
         let (frame_tx, frame_rx) = channel();
@@ -505,6 +509,12 @@ impl NodeHandle {
                         (*inner).transport_pub.lock().unwrap().secondary_port = None;
                     }
                 }
+            }
+        } else {
+            // 克隆失败已在 try_clone 处告警:整体放弃副口,与绑定失败同语义
+            unsafe {
+                (*inner).secondary = None;
+                (*inner).transport_pub.lock().unwrap().secondary_port = None;
             }
         }
         // 回调出口通道与 sink 一并交给驱动线程消费(事件送达 = on_event/on_net_config)
@@ -860,6 +870,8 @@ unsafe fn run_driver(mut d: Driver) {
                     polls[1].fd = secondary_fd;
                     if let Some(s) = &sec {
                         let _ = s.set_nonblocking(true);
+                        // 新口起点干净:清掉旧 fd 残留的已报状态,避免挡掉新口首次 ERR 日志
+                        poll_reported[1] = false;
                     }
                 }
                 // Windows:停旧读线程(own=false)→ 拉起新读线程;返回保留给
@@ -1216,11 +1228,13 @@ unsafe fn spawn_secondary_reader(d: &Driver, sec: Option<UdpSocket>) -> Option<U
     if let Some(old) = (*d.inner).sec_reader_running.take() {
         old.store(false, Ordering::SeqCst);
     }
+    // winsock SOCKET:核心按此值回程匹配副口,须为 Inner 持有的原 socket 句柄值
+    // (Windows try_clone 返回新句柄,与原值不等);须在克隆 move 走前取值
+    let sock_id = sock.as_raw_socket() as i64;
     let Ok(rd) = sock.try_clone() else {
         eprintln!("[node] 副口读线程克隆 socket 失败,副口暂只发不收");
         return Some(sock);
     };
-    let sock_id = rd.as_raw_socket() as i64;
     let own = Arc::new(AtomicBool::new(true));
     let spawned = std::thread::Builder::new()
         .name("zt-udp-sec-reader".into())
