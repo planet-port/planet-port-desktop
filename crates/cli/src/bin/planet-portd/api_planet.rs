@@ -443,6 +443,34 @@ pub async fn planets_patch(
     Path(id): Path<String>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiErr> {
+    // relay 解析/校验前置:必须在任何内存变更之前完成,非法值立即 400。
+    // 否则「带非法 relay 的多字段 PATCH」会先改掉 name/icon 再失败,
+    // 造成 GET 看到新值而盘上未写、重启回退的部分应用
+    let relay: Option<Option<String>> = match body.get("tcpFallbackRelay") {
+        None => None,
+        Some(Value::Null) => Some(None),            // null = 清除
+        Some(Value::String(s)) if s.is_empty() => Some(None), // 空串 = 清除
+        Some(Value::String(s)) => {
+            if s.parse::<std::net::SocketAddr>().is_err() {
+                return Err(err(
+                    StatusCode::BAD_REQUEST,
+                    "badRelayAddr",
+                    &format!("tcpFallbackRelay must be \"ip:port\", got: {s:?}"),
+                    None,
+                ));
+            }
+            Some(Some(s.clone()))
+        }
+        // 非字符串非 null(数字/布尔等)类型不符,不再静默清除
+        Some(_) => {
+            return Err(err(
+                StatusCode::BAD_REQUEST,
+                "badRelayAddr",
+                "tcpFallbackRelay must be a string (\"ip:port\") or null",
+                None,
+            ));
+        }
+    };
     let live = live_of(&st, &id)?;
     let mut reg = st.registry.lock().unwrap();
     let i = find_entry_mut(&mut reg, &id)?;
@@ -469,21 +497,7 @@ pub async fn planets_patch(
     if let Some(v) = body.get("color").and_then(|v| v.as_str()) {
         reg.planets[i].color = Some(v.into());
     }
-    if let Some(v) = body.get("tcpFallbackRelay") {
-        let parsed = match v.as_str() {
-            Some(s) if !s.is_empty() => {
-                if s.parse::<std::net::SocketAddr>().is_err() {
-                    return Err(err(
-                        StatusCode::BAD_REQUEST,
-                        "badRelayAddr",
-                        &format!("tcpFallbackRelay must be \"ip:port\", got: {s:?}"),
-                        None,
-                    ));
-                }
-                Some(s.to_string())
-            }
-            _ => None, // null / 空串 = 清除
-        };
+    if let Some(parsed) = relay {
         reg.planets[i].tcp_fallback_relay = parsed;
     }
     let pid = reg.planets[i].id.clone();
