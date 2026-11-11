@@ -174,6 +174,23 @@ fn show(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
     println!("lastNodeId {}", d.last_node_id.unwrap_or_else(|| "—".into()));
     println!("networks  {}", d.network_count);
     println!("port      {}", d.port);
+    let transport = d
+        .transport
+        .as_ref()
+        .map(|t| {
+            let mut s = format!("udp/{}", t.primary_port);
+            if let Some(sec) = t.secondary_port {
+                s.push_str(&format!("+{sec}"));
+            }
+            s.push_str(&format!(" tcp={}", t.tcp));
+            if let Some(r) = &t.relay {
+                s.push_str(&format!("({r})"));
+            }
+            s
+        })
+        .unwrap_or_else(|| "—".into());
+    println!("transport {transport}");
+    println!("relay     {}", d.tcp_fallback_relay.clone().unwrap_or_else(|| "—".into()));
     Ok(())
 }
 

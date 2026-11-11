@@ -77,6 +77,14 @@ pub struct PlanetDetail {
     #[serde(default = "default_true")]
     pub enabled: bool,
     pub online: bool,
+    /// 通道状态快照(与 PlanetStatus.transport 同构);实例未运行时为 None。
+    /// serde default:旧版 CLI 反序列化旧 daemon 响应仍成功
+    #[serde(default)]
+    pub transport: Option<TransportStatus>,
+    /// TCP 兜底 relay 配置态(registry 持久值,与 PATCH 请求体字段名对称);
+    /// 运行时实际装配值看 transport.relay。None = 未配置
+    #[serde(default)]
+    pub tcp_fallback_relay: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

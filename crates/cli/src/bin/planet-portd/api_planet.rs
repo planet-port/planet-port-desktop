@@ -79,16 +79,19 @@ pub(crate) fn to_status(e: &RegistryEntry, live: Option<&LiveInfo>) -> PlanetSta
         latency_ms: if online { live.unwrap().latency_ms } else { None },
         network_count: live.map(|l| l.network_count).unwrap_or_else(|| e.net_local.len()),
         port: e.port,
-        // 实例未运行(无 live)或节点槽位已空 → None;tcp 枚举转小写字符串
-        transport: live
-            .and_then(|l| l.transport.as_ref())
-            .map(|t| TransportStatus {
-                primary_port: t.primary_port,
-                secondary_port: t.secondary_port,
-                tcp: format!("{:?}", t.tcp).to_lowercase(),
-                relay: t.relay.map(|r| r.to_string()),
-            }),
+        transport: transport_of(live),
     }
+}
+
+/// live → transport 投影(实例未运行或节点槽位已空 → None;tcp 枚举转小写字符串)
+fn transport_of(live: Option<&LiveInfo>) -> Option<TransportStatus> {
+    live.and_then(|l| l.transport.as_ref())
+        .map(|t| TransportStatus {
+            primary_port: t.primary_port,
+            secondary_port: t.secondary_port,
+            tcp: format!("{:?}", t.tcp).to_lowercase(),
+            relay: t.relay.map(|r| r.to_string()),
+        })
 }
 
 /// 详情投影:roots 来自导入时解析的 world 文件
@@ -110,6 +113,8 @@ fn to_detail(e: &RegistryEntry, live: Option<&LiveInfo>) -> PlanetDetail {
         status: if e.running { "running" } else { "stopped" }.into(),
         enabled: e.enabled,
         online: live.map(|l| l.online).unwrap_or(false),
+        transport: transport_of(live),
+        tcp_fallback_relay: e.tcp_fallback_relay.clone(),
     }
 }
 
