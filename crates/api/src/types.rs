@@ -32,6 +32,23 @@ pub struct PlanetStatus {
     pub latency_ms: Option<u64>,
     pub network_count: usize,
     pub port: u16,
+    /// 通道状态(主口/副口/TCP 隧道);实例未运行时为 None
+    #[serde(default)]
+    pub transport: Option<TransportStatus>,
+}
+
+/// 通道状态快照(/status 各 planet 的 transport 段)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransportStatus {
+    /// 主 UDP 口(9993 优先分配的端口)
+    pub primary_port: u16,
+    /// 副 UDP 口(主口被过滤时启用;未启用 None)
+    pub secondary_port: Option<u16>,
+    /// TCP 隧道状态:disabled | idle | connecting | established
+    pub tcp: String,
+    /// 隧道目标 relay 地址(未配置 None)
+    pub relay: Option<String>,
 }
 
 fn default_true() -> bool {

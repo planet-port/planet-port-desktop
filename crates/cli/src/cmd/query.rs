@@ -85,7 +85,7 @@ pub fn info(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
         v.get("planets").cloned().unwrap_or(Value::Null),
     )
     .unwrap_or_default();
-    let mut t = new_table(&["PLANET", "STATUS", "ADDRESS", "VERSION", "LATENCY"]);
+    let mut t = new_table(&["PLANET", "STATUS", "ADDRESS", "VERSION", "LATENCY", "TRANSPORT"]);
     for p in rows {
         // 三态对齐 list:停止=未连接、运行且根可达=已连接、运行但离线=连接中
         // (旧版 ONLINE/OFFLINE/stopped 混在一列,口径与 list 对不上)
@@ -100,7 +100,29 @@ pub fn info(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
             .latency_ms
             .map(|l| format!("{l}ms"))
             .unwrap_or_else(|| "—".into());
-        t.add_row(vec![p.name, status, dash(p.node_id), dash(p.core_version), latency]);
+        // 通道形态:主口[+副口],TCP 隧道激活再标 /tcp;未运行 —
+        let transport = p
+            .transport
+            .as_ref()
+            .map(|t| {
+                let mut s = format!("udp/{}", t.primary_port);
+                if let Some(sec) = t.secondary_port {
+                    s.push_str(&format!("+{sec}"));
+                }
+                if t.tcp == "established" {
+                    s.push_str("/tcp");
+                }
+                s
+            })
+            .unwrap_or_else(|| "—".into());
+        t.add_row(vec![
+            p.name,
+            status,
+            dash(p.node_id),
+            dash(p.core_version),
+            latency,
+            transport,
+        ]);
     }
     println!("{t}");
     Ok(())

@@ -29,7 +29,7 @@ use axum::{
 };
 use planet_port_api::types::{MoonEntry, PeerEntry};
 use serde_json::{json, Value};
-use zt_core::PeerRole;
+use zt_core::{PeerRole, TcpTunnelState};
 
 use crate::api_net::{filter_planet, net_local_of, not_running, resolve_running_planet};
 use crate::registry::MoonRecord;
@@ -452,6 +452,26 @@ pub async fn dump(
         "planet {name} (world {}) status={status} port={}\n",
         entry.world_id, entry.port
     );
+
+    // transport:通道形态一行(主口/副口/TCP 隧道),UDP 受限排查的第一线索。
+    // disabled(未配 relay)不带 relay 段;副口未启用整段省略
+    if let Some(rt) = &rt {
+        if let Some(t) = rt.transport() {
+            let sec = t.secondary_port.map(|p| format!(" secondary=udp/{p}")).unwrap_or_default();
+            let tcp = match t.tcp {
+                TcpTunnelState::Disabled => " disabled".to_string(),
+                other => format!(
+                    " tcp={}{relay}",
+                    format!("{other:?}").to_lowercase(),
+                    relay = t.relay.map(|r| format!("({r})")).unwrap_or_default()
+                ),
+            };
+            out.push_str(&format!(
+                "transport: primary=udp/{port}{sec}{tcp}\n",
+                port = t.primary_port
+            ));
+        }
+    }
 
     // networks:每网络 nwid / status / assigned 地址
     out.push_str("networks:\n");

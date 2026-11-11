@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use axum::http::StatusCode;
 use axum::Json;
 use planet_port_api::types::ApiError;
-use zt_core::{DevicePlane, IpNet, NodeHandle};
+use zt_core::{DevicePlane, IpNet, NodeHandle, TransportInfo};
 
 use crate::events::Ring;
 use crate::registry::{NetLocal, Registry};
@@ -78,6 +78,11 @@ impl PlanetRuntime {
         self.with_node(|n| format!("{:010x}", n.address()))
     }
 
+    /// 通道状态快照(实例已停 → None)
+    pub fn transport(&self) -> Option<TransportInfo> {
+        self.with_node(|n| n.transport())
+    }
+
     /// join(命令转发驱动线程,阻塞等应答;调用方须放 spawn_blocking)
     pub fn node_join(&self, nwid: u64) -> Result<(), zt_core::NodeError> {
         match self.node.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref() {
@@ -134,6 +139,8 @@ pub struct LiveInfo {
     pub core_version: String,
     pub latency_ms: Option<u64>,
     pub network_count: usize,
+    /// 通道状态快照(实例已停 / 节点槽位已空 → None)
+    pub transport: Option<TransportInfo>,
 }
 
 /// 一条分享链接记录:token → (planet id, 过期时间 unix 秒)

@@ -18,7 +18,7 @@ use axum::{
 
 /// handlers 统一的错误类型(体积小,避免 clippy result_large_err)
 type ApiErr = (StatusCode, Json<planet_port_api::types::ApiError>);
-use planet_port_api::types::{PlanetDetail, PlanetKind, PlanetStatus, ShareLink};
+use planet_port_api::types::{PlanetDetail, PlanetKind, PlanetStatus, ShareLink, TransportStatus};
 use serde_json::{json, Value};
 
 use crate::registry::{Registry, RegistryEntry};
@@ -79,6 +79,15 @@ pub(crate) fn to_status(e: &RegistryEntry, live: Option<&LiveInfo>) -> PlanetSta
         latency_ms: if online { live.unwrap().latency_ms } else { None },
         network_count: live.map(|l| l.network_count).unwrap_or_else(|| e.net_local.len()),
         port: e.port,
+        // 实例未运行(无 live)或节点槽位已空 → None;tcp 枚举转小写字符串
+        transport: live
+            .and_then(|l| l.transport.as_ref())
+            .map(|t| TransportStatus {
+                primary_port: t.primary_port,
+                secondary_port: t.secondary_port,
+                tcp: format!("{:?}", t.tcp).to_lowercase(),
+                relay: t.relay.map(|r| r.to_string()),
+            }),
     }
 }
 

@@ -68,18 +68,20 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 impl NodeSink for DaemonSink {
     fn on_event(&mut self, ev: NodeEvent) {
-        // kind 一律 "status";Fatal 额外置 stopping(节点已不可用)
-        let (msg, fatal) = match ev {
-            NodeEvent::Up => ("节点已启动".to_string(), false),
-            NodeEvent::Online => ("节点上线".to_string(), false),
-            NodeEvent::Offline => ("节点离线".to_string(), false),
-            NodeEvent::Down => ("核心已停止".to_string(), false),
-            NodeEvent::IdentityCollision => ("身份冲突:与本 planet 已有节点地址相同".to_string(), true),
-            NodeEvent::TransportChanged(m) => (format!("通道变更: {m}"), false),
-            NodeEvent::Fatal(m) => (format!("致命错误: {m}"), true),
+        // kind:常规生命周期事件记 "status",通道转换(副口换绑/隧道建断)记
+        // "transport"(诊断面按 kind 区分排查线索);Fatal 额外置 stopping
+        // (节点已不可用)
+        let (kind, msg, fatal) = match ev {
+            NodeEvent::Up => ("status", "节点已启动".to_string(), false),
+            NodeEvent::Online => ("status", "节点上线".to_string(), false),
+            NodeEvent::Offline => ("status", "节点离线".to_string(), false),
+            NodeEvent::Down => ("status", "核心已停止".to_string(), false),
+            NodeEvent::IdentityCollision => ("status", "身份冲突:与本 planet 已有节点地址相同".to_string(), true),
+            NodeEvent::Fatal(m) => ("status", format!("致命错误: {m}"), true),
+            NodeEvent::TransportChanged(m) => ("transport", format!("通道变更: {m}"), false),
         };
-        // 先记 status 事件,再触发自动收尾:保证 events 里 Fatal 在 autoStopped 之前
-        self.events.push(&self.planet_id, "status", &msg);
+        // 先记事件,再触发自动收尾:保证 events 里 Fatal 在 autoStopped 之前
+        self.events.push(&self.planet_id, kind, &msg);
         if fatal {
             self.stopping.store(true, Ordering::SeqCst);
             // Fatal 后核心已不可用,只记事件会留下僵尸实例(占端口/数据目录):
@@ -733,6 +735,7 @@ pub fn live_infos(state: &AppState) -> HashMap<String, LiveInfo> {
                     None
                 },
                 network_count: rt.networks().len(),
+                transport: rt.transport(),
             };
             (rt.planet_id.clone(), info)
         })
