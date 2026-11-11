@@ -874,6 +874,7 @@ unsafe fn run_driver(mut d: Driver) {
     let mut last_mcast_ms: i64 = i64::MIN / 4; // 首圈立即做一次订阅
     let mut last_health_ms: i64 = i64::MIN / 4; // 首圈立即做一次巡检
     let mut last_transport_ms: i64 = i64::MIN / 4; // 首圈立即做一次通道巡检
+    let mut last_tcp_ms: i64 = i64::MIN / 4; // TCP 触发/回退巡检(独立 2.5s 周期,首圈立即)
     let mut last_tcp_attempt_ms: i64 = i64::MIN / 4; // TCP connect 节流(i64::MIN/4 = 首个 tick 即可触发)
     let mut last_online_ms: i64 = now_ms();
     // TCP 状态快照已同步到的值(transport_pub 同步去重:只在状态变化时短锁写)
@@ -944,7 +945,7 @@ unsafe fn run_driver(mut d: Driver) {
                 Err(_) => break,
             }
         }
-        // 通道层巡检:副口换绑(离线 >120s)/TCP 隧道触发与回退
+        // 通道层巡检:副口换绑(离线 >120s)
         if now - last_transport_ms >= transport::TRANSPORT_TICK_MS {
             last_transport_ms = now;
             let online = {
@@ -995,6 +996,11 @@ unsafe fn run_driver(mut d: Driver) {
                     let _ = (*d.inner).event_out.send(NodeEvent::TransportChanged(ev));
                 }
             }
+        }
+        // TCP 隧道触发/回退:独立 2.5s 周期(TCP_RETRY_THROTTLE_MS)。不挂在上面
+        // 30s 通道 tick 上——掉 UDP 后最坏要等 30s 才切隧道,恢复 UDP 后同样滞后
+        if now - last_tcp_ms >= transport::TCP_RETRY_THROTTLE_MS {
+            last_tcp_ms = now;
             // TCP 隧道:60s 无 global 直收触发 connect(2.5s 节流);
             // Established 且 30s 内有直收 → 主动关(fail forward,UDP 优先)
             let state = inner.tcp_state;
@@ -1003,7 +1009,8 @@ unsafe fn run_driver(mut d: Driver) {
                 if state == TcpTunnelState::Established {
                     if since_rx < transport::TCP_FALLBACK_WINDOW_MS {
                         unsafe { (*d.inner).tcp_state = TcpTunnelState::Idle };
-                        let _ = inner.tcp_cmd_tx.send(transport::TcpCmd::Close);
+                        // 非阻塞投递:队列满时丢弃,下个周期重发(节流计时兜底防风暴)
+                        let _ = inner.tcp_cmd_tx.try_send(transport::TcpCmd::Close);
                         let _ = inner.event_out.send(NodeEvent::TransportChanged(
                             "tcp tunnel closed (udp recovered)".into(),
                         ));
@@ -1013,8 +1020,15 @@ unsafe fn run_driver(mut d: Driver) {
                 {
                     if let Some(relay) = inner.relay {
                         last_tcp_attempt_ms = now;
-                        unsafe { (*d.inner).tcp_state = TcpTunnelState::Connecting };
-                        let _ = inner.tcp_cmd_tx.send(transport::TcpCmd::Connect(relay));
+                        // 非阻塞投递:队列满即 Err,保持当前状态(勿卡 Connecting),
+                        // 节流已刷新防风暴,下个周期重试
+                        if inner
+                            .tcp_cmd_tx
+                            .try_send(transport::TcpCmd::Connect(relay))
+                            .is_ok()
+                        {
+                            unsafe { (*d.inner).tcp_state = TcpTunnelState::Connecting };
+                        }
                     }
                 }
             }
@@ -1695,6 +1709,9 @@ fn run_tcp_tunnel(
                     Ok(mut s) => {
                         let _ = s.set_nodelay(true);
                         let _ = s.set_read_timeout(Some(Duration::from_millis(50)));
+                        // 写超时:链路停滞(middlebox 黑洞等)时 write_all 不得永久阻塞,
+                        // 否则积压填满队列后驱动线程的控制 send 也会挂起(节点冻结)
+                        let _ = s.set_write_timeout(Some(Duration::from_secs(5)));
                         let mut hello = Vec::with_capacity(9);
                         transport::codec::encode_hello(major as u8, minor as u8, rev as u16, &mut hello);
                         if s.write_all(&hello).is_ok() {
