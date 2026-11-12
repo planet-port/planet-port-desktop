@@ -14,6 +14,9 @@ crates/pocs/fixtures/
 # 本地 scratch(打包演练产物等,一律进 tmp/)
 /tmp/
 
+# tcp-proxy 编译产物(scripts/build-tcp-proxy.sh)
+/dist-tcp-proxy/
+
 # 构建产物与本地会话文件
 /dist/
 /claude-session*
