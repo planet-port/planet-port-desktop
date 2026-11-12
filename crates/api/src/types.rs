@@ -35,6 +35,9 @@ pub struct PlanetStatus {
     /// 通道状态(主口/副口/TCP 隧道);实例未运行时为 None
     #[serde(default)]
     pub transport: Option<TransportStatus>,
+    /// TCP 兜底 relay 配置态(registry 持久值);None = 未配置
+    #[serde(default)]
+    pub tcp_fallback_relay: Option<String>,
 }
 
 /// 通道状态快照(/status 各 planet 的 transport 段)

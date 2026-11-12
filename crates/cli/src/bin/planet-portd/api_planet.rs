@@ -83,6 +83,7 @@ pub(crate) fn to_status(e: &RegistryEntry, live: Option<&LiveInfo>) -> PlanetSta
         network_count: live.map(|l| l.network_count).unwrap_or_else(|| e.net_local.len()),
         port: e.port,
         transport: transport_of(live),
+        tcp_fallback_relay: e.tcp_fallback_relay.clone(),
     }
 }
 
