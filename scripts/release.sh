@@ -110,4 +110,25 @@ git commit -m "chore(release): v$NEXT" -m "由 scripts/release.sh 生成，版�
 # （tag 不上去则 cargo-dist 的 Release 工作流不触发）
 git tag -a "v$NEXT" -m "Release v$NEXT"
 
-echo "完成：v$NEXT 已提交并打 tag（附注）。推送到远端时记得：git push --follow-tags"
+# 发版后将开发版本占位到「下一版本-dev」：dev 构建永不与已发布正式版同号
+# （否则 dev 升级安装时与线上同名版本无法区分，方向判定也失真）。占位号
+# 只是标识，下次发版时会被上面 cliff 算出的正式号覆盖——正式版后保守取
+# patch+1（cargo-release 的 dev-version 同款惯例），beta 后取 beta 序号 +1。
+# 提交位于 tag 之后，不进本次发版产物
+case "$NEXT" in
+    *-beta.*)
+        DEV="${NEXT%-beta.*}-beta.$((${NEXT##*-beta.} + 1))-dev" ;;
+    *)
+        _rest="${NEXT#*.}"
+        DEV="${NEXT%%.*}.${_rest%%.*}.$((${_rest##*.} + 1))-dev" ;;
+esac
+DEV="$DEV" perl -0777 -pi -e 's/^version = "[^"]*"/version = "$ENV{DEV}"/m' Cargo.toml
+grep -q "^version = \"$DEV\"" Cargo.toml || {
+    echo "错误：Cargo.toml 开发版本占位失败" >&2
+    exit 1
+}
+cargo update -w
+git add Cargo.toml Cargo.lock
+git commit -m "chore(release): 开发版本占位 v$DEV" -m "发版后 dev 分支保持领先一个开发版本号，避免开发构建与已发布正式版同号。"
+
+echo "完成：v$NEXT 已提交并打 tag（附注），开发版本已占位 v$DEV。推送到远端时记得：git push --follow-tags"

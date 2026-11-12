@@ -129,29 +129,42 @@ fn installed_version() -> Option<String> {
     s.split_whitespace().last().map(String::from)
 }
 
-/// 点分数值比较(a < b?)。逐段取前导数字比大小,缺段按 0,非数字段
-/// (如预发布后缀)同样退化为 0——只服务确认措辞的升降级判定,不追求
-/// 语义化版本的完整序(相等时调用方已按同版本短路)
+/// 点分数值比较(a < b?)。覆盖本项目的版本形态:X.Y.Z(正式)、
+/// X.Y.Z-beta.N、X.Y.Z-beta.N-dev(发版后的开发占位号)——序取 SemVer
+/// 语义:正式版高于一切 beta,同 beta 号时 -dev 最低(beta.2-dev < beta.2)。
+/// 非常规输入(非数字段)逐项退化为 0——只服务确认措辞的升降级判定,
+/// 不追求语义化版本的完整序(相等时调用方已按同版本短路)
 fn version_lt(a: &str, b: &str) -> bool {
-    let num = |s: &str| -> u64 {
-        s.chars()
-            .take_while(|c| c.is_ascii_digit())
-            .collect::<String>()
-            .parse()
-            .unwrap_or(0)
-    };
-    let mut sa = a.split('.');
-    let mut sb = b.split('.');
-    loop {
-        match (sa.next(), sb.next()) {
-            (None, None) => return false,
-            (x, y) => {
-                let (x, y) = (num(x.unwrap_or("0")), num(y.unwrap_or("0")));
-                if x != y {
-                    return x < y;
-                }
+    let parse = |v: &str| {
+        let (core, rest) = match v.split_once('-') {
+            Some((c, r)) => (c, Some(r)),
+            None => (v, None),
+        };
+        let mut it = core.split('.');
+        let mut seg = || it.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+        let core = (seg(), seg(), seg());
+        // 正式版(无预发布段)序号取 MAX,天然高于一切 beta.N
+        let (beta, dev) = match rest {
+            Some(r) => {
+                let n = r
+                    .strip_suffix("-dev")
+                    .unwrap_or(r)
+                    .rsplit('.')
+                    .next()
+                    .and_then(|s| s.parse::<i64>().ok())
+                    .unwrap_or(0);
+                (n, r.ends_with("-dev"))
             }
-        }
+            None => (i64::MAX, false),
+        };
+        (core, beta, dev)
+    };
+    let ((ca, ba, da), (cb, bb, db)) = (parse(a), parse(b));
+    use std::cmp::Ordering::*;
+    match (ca.cmp(&cb), ba.cmp(&bb)) {
+        (Equal, Equal) => da && !db,
+        (Less, _) | (_, Less) => true,
+        _ => false,
     }
 }
 
