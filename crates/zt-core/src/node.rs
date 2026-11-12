@@ -354,7 +354,7 @@ impl NodeHandle {
         let udp = UdpSocket::bind(("0.0.0.0", params.bind_port)).map_err(NodeError::Io)?;
         // 副口:随机绑一个(20000-65500),失败仅告警不阻断——主口照常,离线 120s
         // 后由驱动 tick 重试换绑(对齐官方 allowSecondaryPort 默认行为)
-        let secondary = transport::bind_secondary(|| rand::random::<u32>());
+        let secondary = transport::bind_secondary(rand::random::<u32>);
         if secondary.is_none() {
             eprintln!("[node] 副口绑定失败(1000 次尝试),暂无副口通道");
         }
@@ -960,7 +960,7 @@ unsafe fn run_driver(mut d: Driver) {
             if !online && now - last_online_ms > transport::SECONDARY_REBIND_AFTER_MS {
                 let old = unsafe { (*d.inner).secondary.take() };
                 drop(old);
-                let sec = transport::bind_secondary(|| rand::random::<u32>());
+                let sec = transport::bind_secondary(rand::random::<u32>);
                 #[cfg(not(windows))]
                 {
                     // 成败都同步 polls:成功指到新 fd,失败落回 -1(否则 poll
@@ -990,7 +990,7 @@ unsafe fn run_driver(mut d: Driver) {
                     let mut snap_guard = (*d.inner).transport_pub.lock().unwrap();
                     let mut snap = snap_guard.clone();
                     snap.secondary_port =
-                        (*d.inner).secondary.as_ref().map(|s| port_of(s)).filter(|p| *p != 0);
+                        (*d.inner).secondary.as_ref().map(port_of).filter(|p| *p != 0);
                     *snap_guard = snap;
                     drop(snap_guard);
                     let _ = (*d.inner).event_out.send(NodeEvent::TransportChanged(ev));

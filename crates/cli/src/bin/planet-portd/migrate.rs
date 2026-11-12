@@ -148,11 +148,11 @@ fn relocate(old: &Path, new: &Path) -> std::io::Result<()> {
     // 跨设备:递归拷贝后逐文件校验大小,全对才删源
     copy_dir(old, new)?;
     verify_dir(old, new)?;
-    fs::remove_dir_all(old).map_err(|e| {
-        // 删源失败不视为搬迁失败(新副本已可用),仅日志
+    // 删源失败不视为搬迁失败(新副本已可用):verify 已保证新路径完整,
+    // 采纳新路径;若上抛反而留下"registry 仍指旧路径+源半删"的身份重置窗口
+    if let Err(e) = fs::remove_dir_all(old) {
         eprintln!("[migrate] 旧目录删除失败(可手工清理): {e}");
-        e
-    })?;
+    }
     Ok(())
 }
 
