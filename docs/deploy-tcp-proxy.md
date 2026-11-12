@@ -10,19 +10,25 @@ planet-port 的副端口探测通常能撞出活流恢复连接;当 UDP 完全�
 proxy 在服务器本地代为 UDP 转发到根。
 
 ```
-planet-port ──TCP 443──▶ tcp-proxy ──UDP 127.0.0.1:9993──▶ zerotier-one(根)
+planet-port ──TCP 9443──▶ tcp-proxy ──UDP 127.0.0.1:9993──▶ zerotier-one(根)
 ```
 
-组件源码为官方 ZeroTier 仓库 `tcp-proxy/`(Apache-2.0)。
+组件源码为官方 ZeroTier 仓库 `tcp-proxy/`(Apache-2.0)。官方源码监听口
+宏写死 443 且二进制无端口参数,本仓库编译脚本默认改为 **9443**(避开
+443 常被 Web 服务占用),可用环境变量覆盖,见下。
 
 ## 编译
 
 ```bash
 ./scripts/build-tcp-proxy.sh x86_64-linux-gnu   # 按服务器 uname -m 选
 # 服务器是 aarch64 则: ./scripts/build-tcp-proxy.sh aarch64-linux-gnu
+# 自定义监听口: TCP_PROXY_PORT=8443 ./scripts/build-tcp-proxy.sh x86_64-linux-gnu
 ```
 
-产物 `dist-tcp-proxy/tcp-proxy-x86_64-linux-gnu`。先 `ssh root@<服务器> uname -m` 确认架构(x86_64 → x86_64-linux-gnu;aarch64 → aarch64-linux-gnu)。
+产物 `dist-tcp-proxy/tcp-proxy-x86_64-linux-gnu`(默认监听 9443;自定义口
+产物名带 `-p<port>` 后缀,如 `tcp-proxy-x86_64-linux-gnu-p8443`)。先
+`ssh root@<服务器> uname -m` 确认架构(x86_64 → x86_64-linux-gnu;aarch64
+→ aarch64-linux-gnu)。
 
 Apache-2.0 要求:分发二进制须附源码获取方式(官方仓库
 https://github.com/zerotier/ZeroTierOne )与 Apache-2.0 许可文本;
@@ -35,7 +41,7 @@ scp dist-tcp-proxy/tcp-proxy-x86_64-linux-gnu root@124.222.91.224:/usr/local/bin
 ssh root@124.222.91.224 chmod +x /usr/local/bin/tcp-proxy
 ```
 
-systemd 单元 `/etc/systemd/system/tcp-proxy.service`(官方仓库
+systemd 单元 `/etc/systemd/system/zt-tcp-proxy.service`(官方仓库
 tcp-proxy/zerotier-proxy.service 同款语义):
 
 ```ini
@@ -44,26 +50,26 @@ Description=ZeroTier TCP fallback proxy
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/tcp-proxy
+ExecStart=/usr/local/bin/zt-tcp-proxy
 Restart=always
 RestartSec=5
-# 监听 TCP 443(默认;改端口须同步客户端 relay 配置)
+# 监听 TCP 9443(本仓库编译产物默认;改端口须同步客户端 relay 配置)
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 ```bash
-systemctl daemon-reload && systemctl enable --now tcp-proxy
-ss -tlnp | grep 443   # 确认监听
+systemctl daemon-reload && systemctl enable --now zt-tcp-proxy
+ss -tlnp | grep 9443   # 确认监听
 ```
 
-防火墙/安全组放行 TCP 443 入站(腾讯云 lighthouse 控制台安全组)。
+防火墙/安全组放行 TCP 9443 入站(腾讯云 lighthouse 控制台安全组)。
 
 ## 客户端配置(planet-port)
 
 ```bash
-planet-port planet set-relay gozi25 --relay 124.222.91.224:443
+planet-port planet set-relay gozi25 --relay 124.222.91.224:9443
 planet-port dump --planet gozi25   # 看 transport: ... tcp=established(...)
 planet-port planet set-relay gozi25   # 不带 --relay 即清除
 ```
