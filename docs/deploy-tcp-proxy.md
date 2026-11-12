@@ -69,10 +69,17 @@ ss -tlnp | grep 9443   # 确认监听
 ## 客户端配置(planet-port)
 
 ```bash
-planet-port planet set-relay gozi25 --relay 124.222.91.224:9443
+# 三种写法等价(relay 与根同机时推荐精简形,端点随 planet 自动对齐):
+planet-port planet set-relay gozi25 --relay 124.222.91.224:9443   # 完整
+planet-port planet set-relay gozi25 --relay :9443                 # 复用根端点 ip
+planet-port planet set-relay gozi25 --relay                       # 根端点 ip + 默认 9443
+# 纯端口号 --relay 9443 与 :9443 同义;不带 --relay 即清除
 planet-port dump --planet gozi25   # 看 transport: ... tcp=established(...)
-planet-port planet set-relay gozi25   # 不带 --relay 即清除
+planet-port planet set-relay gozi25
 ```
+
+relay 只是兜底:UDP 正常时隧道不激活(`tcp=idle`),60 秒无 global UDP
+直收才建立,UDP 恢复后 30 秒内主动关闭(fail forward 回 UDP)。
 
 ## 验证
 

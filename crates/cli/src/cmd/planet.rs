@@ -16,11 +16,13 @@ pub enum PlanetCmd {
     Show { id: String },
     /// Rename a planet
     Rename { id: String, new_name: String },
-    /// Set/clear TCP fallback relay (ip:port, official tcp-proxy deployment)
+    /// Set/clear TCP fallback relay (official tcp-proxy deployment)
     SetRelay {
         id: String,
-        /// Omit to clear
-        #[arg(long)]
+        /// Relay address: full "ip:port"; ":port" or bare port reuses the
+        /// planet's first root ip; bare flag = first root ip + default 9443.
+        /// Omit --relay to clear.
+        #[arg(long, num_args = 0..=1, default_missing_value = "")]
         relay: Option<String>,
     },
     /// Export planet binary to stdout or file
@@ -201,9 +203,49 @@ fn rename(client: &Client, id: &str, new_name: &str, json: bool) -> Result<(), C
     Ok(())
 }
 
-/// 设置/清除 per-planet TCP 兜底 relay(relay 为 None 时序列化为 null,
+/// relay 精简形展开默认口:取 tcp-proxy 编译产物的默认监听口
+/// (scripts/build-tcp-proxy.sh,改默认口须同步这里)
+const DEFAULT_RELAY_PORT: &str = "9443";
+
+/// 展开 relay 精简形为完整 ip:port:完整形原样;":port" 与纯数字端口复用
+/// planet 首个根端点的 ip(relay 与根同机部署是文档推荐形态);展开发生在
+/// CLI 层,registry 永远存完整形,daemon 不感知省略语法
+fn expand_relay(client: &Client, id: &str, raw: &str) -> Result<String, CliError> {
+    let shorthand = raw.is_empty()
+        || raw.starts_with(':')
+        || raw.chars().all(|c| c.is_ascii_digit());
+    if !shorthand {
+        return Ok(raw.to_string());
+    }
+    let port = if raw.is_empty() {
+        DEFAULT_RELAY_PORT.to_string()
+    } else {
+        raw.trim_start_matches(':').to_string()
+    };
+    if port.parse::<u16>().is_err() {
+        return Err(CliError::Usage(format!("relay 端口非法: {raw}")));
+    }
+    let v = client.get_json(&endpoints::planet(id))?;
+    let d: PlanetDetail = serde_json::from_value(v.get("planet").cloned().unwrap_or(Value::Null))
+        .map_err(|e| CliError::Io(e.to_string()))?;
+    // roots 元素为 "ip:port";rsplit 防 ip 含冒号的形态(未来 IPv6)
+    let ip = d
+        .roots
+        .iter()
+        .find_map(|r| r.rsplit_once(':').map(|(ip, _)| ip))
+        .ok_or_else(|| {
+            CliError::Usage("planet 无可用根端点,无法展开 relay 精简形,请用完整 ip:port".into())
+        })?;
+    Ok(format!("{ip}:{port}"))
+}
+
+/// 设置/清除 per-planet TCP 兜底 relay(--relay 缺省时序列化为 null,
 /// daemon 侧按清除处理;地址格式由服务端校验)
 fn set_relay(client: &Client, id: &str, relay: Option<String>, json: bool) -> Result<(), CliError> {
+    let relay = match relay {
+        None => None,
+        Some(raw) => Some(expand_relay(client, id, &raw)?),
+    };
     let body = json!({ "tcpFallbackRelay": relay });
     let resp = client.patch_json(&endpoints::planet(id), &body)?;
     print_result(client, "set-relay", id, json, &resp);
