@@ -131,4 +131,4 @@ cargo update -w
 git add Cargo.toml Cargo.lock
 git commit -m "chore(release): 开发版本占位 v$DEV" -m "发版后 dev 分支保持领先一个开发版本号，避免开发构建与已发布正式版同号。"
 
-echo "完成：v$NEXT 已提交并打 tag（附注），开发版本已占位 v$DEV。推送到远端时记得：git push --follow-tags"
+echo "完成：v$NEXT 已提交并打 tag（附注），开发版本已占位 ${DEV} 。推送到远端时记得：git push --follow-tags"
