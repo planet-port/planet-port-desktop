@@ -5,7 +5,7 @@ members = ["crates/api", "crates/cli", "crates/zt-sys", "crates/zt-core", "crate
 [workspace.package]
 # 开发版本约定:发版脚本(release.sh)发完 tag 后 bump 到「下一版本-dev」,
 # 发布时脚本会以计算出的正式版本号覆盖本行——dev 构建永不与正式版同号
-version = "0.4.0-beta.2-dev"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/planet-port/planet-port-desktop"

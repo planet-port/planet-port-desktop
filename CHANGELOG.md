@@ -2,14 +2,39 @@
 
 所有显著变更均记录于此。版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
-## v0.4.0-beta.1（2026-11-09）
+## v0.4.0（2026-11-12）
 ### 修复
 
 - **ci：**补回 release.sh 可执行位
+- **zt-core：**Windows 副口换绑句柄身份错位与两处告警语义
+- **zt-core：**TCP 隧道写超时与控制路径非阻塞防节点冻结
+- **daemon：**PATCH 校验前置防部分应用并收紧 relay 类型检查
+- **daemon：**迁移补 dataDir 祖先/嵌套守卫防递归与误拖
+- **diag：**PlanetDetail 补 transport 与 relay 配置态回显
+- **cli：**info 表显示节点地址与版本,列结构对齐官方口径
+- **core：**终审必修项——迁移删源失败不上抛与 clippy 闭包清理
+### 文档
+
+- tcp-proxy 部署指引
 ### 新增
 
 - **ci：**新增网页发版工作流
 - **release：**接入 git-cliff 自动发版并统一网页发版
+- **scripts：**新增 zerotier-one 官方服务启停脚本
+- **zt-core：**通道层纯逻辑(伪TLS线协议/选路决策/副口绑定)
+- **zt-core：**副端口通道——离线换绑撞活流对齐官方
+- **zt-core：**TCP 隧道兜底通道(伪TLS线协议)
+- **daemon：**per-planet TCP relay 配置与 9993 优先端口分配
+- **daemon：**registry 遗留条目启动迁移与 relay 装配
+- **diag：**通道状态可见性(dump/info/transport 事件)
+- **cli：**info 表末尾增加 NETWORKS 网络计数列
+- **build：**tcp-proxy 默认监听口改为 9443 并支持自定义
+- **release：**开发版本占位 -dev 号,与已发布正式版永不同号
+- **cli：**set-relay 支持精简形,复用 planet 根端点展开完整地址
+- **cli：**info 表增 RELAY 列显示 TCP 兜底 relay 配置态
+### 构建
+
+- **scripts：**tcp-proxy 编译脚本(macOS 本地 + zig 交叉 Linux)
 ## v0.3.5（2026-11-07）
 ### 修复
 
