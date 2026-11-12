@@ -85,7 +85,7 @@ pub fn info(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
         v.get("planets").cloned().unwrap_or(Value::Null),
     )
     .unwrap_or_default();
-    let mut t = new_table(&["PLANET", "ADDRESS", "VERSION", "STATUS", "LATENCY"]);
+    let mut t = new_table(&["PLANET", "ADDRESS", "VERSION", "STATUS", "LATENCY", "NETWORKS"]);
     for p in rows {
         // 三态对齐 list:停止=未连接、运行且根可达=已连接、运行但离线=连接中
         // (旧版 ONLINE/OFFLINE/stopped 混在一列,口径与 list 对不上)
@@ -106,6 +106,8 @@ pub fn info(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
             dash(p.core_version),
             status,
             latency,
+            // 运行中取实时 join 数,停止回退 registry 登记(net_local)
+            p.network_count.to_string(),
         ]);
     }
     println!("{t}");
