@@ -19,10 +19,13 @@
 ### info — 聚合状态表 ❇
 
 ```
-PLANET    STATUS  ADDRESS     VERSION  LATENCY
-gozi25    已连接  92c680e88f  1.16.2   59ms
-official  未连接  —           —        —
+PLANET    ADDRESS     VERSION  STATUS  LATENCY
+gozi25    92c680e88f  1.16.2   已连接  59ms
+official  —           —        未连接  —
 ```
+
+节点地址/版本是本地事实,实例运行即显示(连接中也显示,仅 LATENCY 为 —);
+停止的行星两者为 —。
 
 `-j`(完整 PlanetStatus 数组):
 

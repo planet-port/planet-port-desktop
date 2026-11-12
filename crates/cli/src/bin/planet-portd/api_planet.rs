@@ -74,8 +74,11 @@ pub(crate) fn to_status(e: &RegistryEntry, live: Option<&LiveInfo>) -> PlanetSta
         status: if e.running { "running" } else { "stopped" }.into(),
         enabled: e.enabled,
         online,
-        node_id: if online { Some(live.unwrap().node_id.clone()) } else { None },
-        core_version: if online { Some(live.unwrap().core_version.clone()) } else { None },
+        // 节点地址/核心版本是本地事实:实例运行即有(connecting 阶段也显示)。
+        // latency 才依赖根可达,保持 online 门控。空串 = 节点槽位已空(停止
+        // 流程中),归一为 None
+        node_id: live.map(|l| l.node_id.clone()).filter(|s| !s.is_empty()),
+        core_version: live.map(|l| l.core_version.clone()),
         latency_ms: if online { live.unwrap().latency_ms } else { None },
         network_count: live.map(|l| l.network_count).unwrap_or_else(|| e.net_local.len()),
         port: e.port,
