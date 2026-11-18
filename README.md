@@ -23,8 +23,8 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 | 系统 | 产物类型 | 完成程度 | 最低系统版本 |
 |---|---|---|---|
 | macOS（Apple Silicon / Intel） | tar.xz + 安装脚本 | ✅ 已发布可用（launchd 服务、feth 数据面、DNS 托管完整） | macOS 12+ |
-| Ubuntu / Linux Mint 等 Debian 系 | tar.xz + 安装脚本（后续 deb） | ✅ 已发布可用（systemd 服务全流程 e2e：多机实测覆盖 amd64 / arm64、升级后数据保留与 planet 自动恢复、与官方 zerotier-one 共存） | Ubuntu 22.04+ / Mint 21+ |
-| Debian | 同上（与 Ubuntu 共用 Linux 产物） | ✅ 同上 | Debian 12+ |
+| Ubuntu / Linux Mint 等 Debian 系 | tar.xz + 安装脚本（后续 deb） | ✅ 已发布可用（systemd 服务全流程 e2e：多机实测覆盖 amd64 / arm64、升级后数据保留与 planet 自动恢复、与官方 zerotier-one 共存） | Ubuntu 20.04+ / Mint 20+ |
+| Debian | 同上（与 Ubuntu 共用 Linux 产物） | ✅ 同上 | Debian 11+ |
 | Windows | zip + 安装脚本（后续 MSI） | ✅ 已发布可用：wintun 数据面、SCM 服务化、CLI 全命令、DNS NRPT、install.ps1 / 离线 zip 安装链路；Win11 实机安装级 e2e 通过，Win10 纸面支持未实测 | Windows 10+ |
 | Termux（Android） | 不提供 | ❌ 不计划支持 Termux 环境安装，Android 请直接使用 Android 应用 | 不适用 |
 | Rocky Linux 9 等 RHEL 系 | tar.xz + 安装脚本 | ✅ 安装级可用（Rocky 9 容器实测：安装、systemd 服务、启停与恢复全通过；SELinux enforcing 未测不在承诺内） | Rocky 8+ |
@@ -32,14 +32,14 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 
 > 最低版本说明：Linux 系在 manylinux_2_28 容器内构建（glibc ≥ 2.28，覆盖 RHEL/Rocky 8+、Ubuntu 20.04+、Debian 11+ 等主流发行版）；macOS 12+ 为设计目标，当前仅在 macOS 26（Apple Silicon）实测；Windows 10+ 为纸面下限（按支持面收敛），当前仅在 Windows 11 实测。
 
-架构与可行性结论见 [docs/2026-10-28-desktop-port-feasibility.md](docs/2026-10-28-desktop-port-feasibility.md) 。
-
 ## 特色
 
-- **多 Planet 管理**：官方与多份私有 Planet 同机并存，每 planet 独立身份与数据目录；本地文件 / URL 导入，别名、启停、导出、临时分享链接一站管理；join / leave、跨 planet 聚合查询（网络 / peers / moons）
+- **多 Planet 管理**：官方与多份私有 Planet 同机并存，每 planet 独立数据目录；身份按全局 identityMode（默认共享）共享或独立；本地文件 / URL 导入，别名、启停、导出、临时分享链接一站管理；join / leave、跨 planet 聚合查询（网络 / peers / moons）
 - **默认路由与 DNS 自由掌控**：`routeViaZeroTier` 开关、`dnsMode=none|network|custom`，全部陈述式配置，脚本友好
 - **Moon 支持**：orbit / deorbit / 导入 `.moon` 文件
-- **身份模式**：daemon 级全局开关，默认共享——所有 planet 复用 config 根全局身份（`identity.public/secret`，同一节点地址）；`identity use shared|independent` 一键切换，independent 下每 planet 各用 dataDir 独立身份；`identity import` 导入官方 ZeroTier 身份（自动停禁官方服务，沿用原节点地址与网络成员资格）
+- **UDP 三通道降级**：主口 9993 优先；UDP 被滤时自动换绑副口（随机 20000-65499，离线 120s 触发），仍无直连 60s 自动建 TCP 隧道兜底，恢复后 30s 内自动回 UDP
+- **TCP 兜底 relay**：`planet set-relay` 按 planet 配置 TCP 兜底中继（需部署官方 tcp-proxy），与三通道降级配合兜住 UDP 全被滤的严苛网络
+- **身份模式**：daemon 级全局开关，默认共享——所有 planet 复用 config 根全局身份（`identity.public/secret`，同一节点地址）；`identity use shared|independent` 一键切换，independent 下每 planet 在各自 dataDir 各持一份身份；`identity import` 导入官方 ZeroTier 身份（自动停禁官方服务，沿用原节点地址与网络成员资格）
 - **服务化常驻**：launchd（macOS）/ systemd（Linux）/ Windows 服务一键安装，开机自启、崩溃自动拉起；SIGTERM 优雅退出（逐 planet 红线收尾，保留期望状态，`service start` 后自动恢复）；重启后自动 re-join 已加入网络
 - **事件日志**：`events --follow` 按 ts 游标增量跟踪状态变更
 - **多语言 CLI**：简中 / 繁中 / 英语，跟随系统语言自动选择（无需配置），语言文件可扩展
@@ -53,7 +53,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 curl -fsSL https://raw.githubusercontent.com/planet-port/planet-port-desktop/main/scripts/install.sh | sudo bash
 
 # 指定版本 / 只装二进制不装服务
-curl -fsSL https://raw.githubusercontent.com/planet-port/planet-port-desktop/main/scripts/install.sh | sudo bash -s -- v0.3.0 --no-service
+curl -fsSL https://raw.githubusercontent.com/planet-port/planet-port-desktop/main/scripts/install.sh | sudo bash -s -- v0.4.0 --no-service
 
 # 卸载(数据目录默认保留;--purge 彻底清除)
 sudo bash scripts/uninstall.sh [--purge]
@@ -86,9 +86,9 @@ sudo planet-port service stop        # SIGTERM 优雅退出;保留期望状态,s
 
 ### planet 定位与命令参考
 
-多 planet 并存时，变更类命令（join / leave / set / orbit / deorbit / dump / moon import）按定位链落到恰好一个 planet：显式 `--planet` > 环境变量 `PLANET_PORT_PLANET`（`eval $(planet-port use <x>)` 设置）> 唯一 running 自动选中 > 交互式 TTY 弹单选列表（非交互报 `409` 列候选，不猜）；查询类命令默认聚合展示，`--planet` 为过滤。
+多 planet 并存时，变更类命令（join / leave / set / orbit / deorbit / dump / moon import）按定位链落到恰好一个 planet：显式 `--planet` > 环境变量 `PLANET_PORT_PLANET`（`eval $(planet-port use <x>)` 设置）> 唯一 running 自动选中 > 多 planet 歧义时报 `409 planetAmbiguous` 并在 stderr 列出候选，不猜、不做选择；查询类命令默认聚合展示，`--planet` 为过滤。
 
-完整 CLI 规范（全局选项、地址与鉴权协商、交互式多选、全部命令、行为说明、退出码）见 [COMMANDS.md](COMMANDS.md) 。
+完整 CLI 规范（全局选项、地址与鉴权协商、多 planet 定位规则、全部命令、行为说明、退出码）见 [COMMANDS.md](COMMANDS.md) 。
 
 ## 架构
 
@@ -109,9 +109,9 @@ flowchart LR
 ```
 
 - **特权收敛**：提权只有一次 `service install`；daemon 以 root 建虚拟网卡、装路由，CLI / GUI 永不提权（ZeroTier / Tailscale 同款模式）
-- **Planet 隔离**：每 planet 一个 zt-core Node 实例，独立身份、独立数据目录、独立 UDP 端口
+- **Planet 隔离**：每 planet 一个 zt-core Node 实例，独立数据目录、独立 UDP 端口（身份随全局 identityMode 共享或各持一份）
 - **活性协商**：daemon 启动写 `port` 文件（实际监听端口）与 `authtoken.secret`；port 文件存在即活性信号，daemon 退出时最后删除它。CLI 未显式指定 URL 时靠它协商地址
-- **自动恢复**：registry 的 `running` 是**期望状态**——`service stop`（SIGTERM 优雅退出）保留它，daemon 启动时自动拉起全部期望运行的 planet 并按登记的本地网络配置逐网络 re-join（zt-core 的 `networks.d/<nwid>.conf` 只是 netconf 缓存，不承载成员关系）；用户显式 `planet-port stop` 落 `running=false`，重启后不拉起
+- **自动恢复**：registry 的 `running` 是**期望状态**——`service stop`（SIGTERM 优雅退出）保留它，daemon 启动时自动拉起全部期望运行的 planet 并按登记的本地网络配置逐网络 re-join（zt-core 的 `networks.d/<nwid>.conf` 只是 netconf 缓存，不承载成员关系）；`planet disable` 是持久禁用（落 `running=false`，重启后不拉起），`planet enable` 则置回期望运行
 
 ### 目录
 
@@ -121,6 +121,7 @@ flowchart LR
 | `crates/api`(planet-port-api) | REST 契约类型与端点构造(CLI 与 daemon 共用) |
 | `crates/zt-sys` / `crates/zt-core` | ZeroTier 1.16.2 核心 FFI(-sys 绑定 + safe wrapper) |
 | `crates/pocs` | 可行性验证代码 |
+| `crates/poc4` | Windows POC 遗存（独立 driver / store / sa 实现，未进产品链路） |
 
 ## 开发
 
@@ -144,7 +145,7 @@ CLI 手工回归清单（对 planet-portd 实测的基准）见 [docs/cli-regres
 
 ### 发版流水线
 
-发版由 cargo-dist CI 自动完成：推 tag（如 `v0.3.0`）触发 [.github/workflows/release.yml](.github/workflows/release.yml)（由 `dist generate` 生成），构建并上传各平台产物。该 workflow 内含对 `DIST_RELEASE_TOKEN` 的手工替换；重新生成后必须复查该替换是否保留。
+发版由 cargo-dist CI 自动完成：推 tag（如 `v0.4.0`）触发 [.github/workflows/release.yml](.github/workflows/release.yml)（由 `dist generate` 生成），构建并上传各平台产物。该 workflow 内含对 `DIST_RELEASE_TOKEN` 的手工替换；重新生成后必须复查该替换是否保留。
 
 ## 致谢
 
