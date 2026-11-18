@@ -32,7 +32,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 
 > 最低版本说明：Linux 系在 manylinux_2_28 容器内构建（glibc ≥ 2.28，覆盖 RHEL/Rocky 8+、Ubuntu 20.04+、Debian 11+ 等主流发行版）；macOS 12+ 为设计目标，当前仅在 macOS 26（Apple Silicon）实测；Windows 10+ 为纸面下限（按支持面收敛），当前仅在 Windows 11 实测。
 
-架构与可行性结论见 [docs/2026-10-28-desktop-port-feasibility.md](docs/2026-10-28-desktop-port-feasibility.md) ，CLI/API 设计见 [docs/superpowers/specs/2026-10-28-cli-api-design.md](docs/superpowers/specs/2026-10-28-cli-api-design.md) 。
+架构与可行性结论见 [docs/2026-10-28-desktop-port-feasibility.md](docs/2026-10-28-desktop-port-feasibility.md) 。
 
 ## 特色
 
