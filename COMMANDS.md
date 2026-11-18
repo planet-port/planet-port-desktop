@@ -187,4 +187,4 @@ Windows 上 `install` 同样可用:把同目录三件套(planet-port.exe / plane
 
 ---
 
-详细行为背景见 [README.md](README.md) ,手工回归清单见 [docs/2026-10-29-cli-regression-checklist.md](docs/2026-10-29-cli-regression-checklist.md) 。
+详细行为背景见 [README.md](README.md) ,手工回归清单见 [docs/cli-regression-checklist.md](docs/cli-regression-checklist.md) 。

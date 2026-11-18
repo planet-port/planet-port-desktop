@@ -140,7 +140,7 @@ CLI 侧环境变量（`PLANET_PORT_URL` / `PLANET_PORT_TOKEN` / `PLANET_PORT_CON
 
 ### 回归验证
 
-CLI 手工回归清单（对 planet-portd 实测的基准）见 [docs/2026-10-29-cli-regression-checklist.md](docs/2026-10-29-cli-regression-checklist.md) 。
+CLI 手工回归清单（对 planet-portd 实测的基准）见 [docs/cli-regression-checklist.md](docs/cli-regression-checklist.md) 。
 
 ### 发版流水线
 
