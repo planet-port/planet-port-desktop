@@ -40,7 +40,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 - **UDP 三通道降级**：主口 9993 优先；UDP 被滤时自动换绑副口（随机 20000-65499，离线 120s 触发），仍无直连 60s 自动建 TCP 隧道兜底，恢复后 30s 内自动回 UDP
 - **TCP 兜底 relay**：`planet set-relay` 按 planet 配置 TCP 兜底中继（需部署官方 tcp-proxy），与三通道降级配合兜住 UDP 全被滤的严苛网络
 - **身份模式**：daemon 级全局开关，默认共享——所有 planet 复用 config 根全局身份（`identity.public/secret`，同一节点地址）；`identity use shared|independent` 一键切换，independent 下每 planet 在各自 dataDir 各持一份身份；`identity import` 导入官方 ZeroTier 身份（自动停禁官方服务，沿用原节点地址与网络成员资格）
-- **服务化常驻**：launchd（macOS）/ systemd（Linux）/ Windows 服务一键安装，开机自启、崩溃自动拉起；SIGTERM 优雅退出（逐 planet 红线收尾，保留期望状态，`service start` 后自动恢复）；重启后自动 re-join 已加入网络
+- **服务化常驻**：launchd（macOS）/ systemd（Linux）/ Windows 服务一键安装，开机自启、崩溃自动拉起；SIGTERM 优雅退出（逐 planet 红线收尾）；daemon 重启后按派生规则自动恢复 planet（enabled 且已加入本地网络才运行），并自动 re-join 已加入网络
 - **事件日志**：`events --follow` 按 ts 游标增量跟踪状态变更
 - **多语言 CLI**：简中 / 繁中 / 英语，跟随系统语言自动选择（无需配置），语言文件可扩展
 
@@ -64,7 +64,7 @@ sudo bash scripts/uninstall.sh [--purge]
 首次使用：
 
 ```bash
-planet-port add ./planet.mine --name mine     # 导入私有 planet 并立即上线(也可用官方 planet)
+planet-port add ./planet.mine --name mine     # 导入私有 planet(只登记,join 网络后按派生规则自动运行,也可用官方 planet)
 eval $(planet-port use mine)                   # 设默认 planet(本 shell)
 planet-port join 5cf54f181554090f              # 加入网络(16 位 ID)
 planet-port listnetworks                       # 等控制器在 ZeroTier Central 授权后状态变 RUNNING
@@ -79,9 +79,9 @@ GUI 挂了 / 不开不影响隧道——daemon 独立常驻，全部功能均可
 
 ```bash
 sudo planet-port service install     # 拷贝二进制 + 写系统服务(launchd / systemd / Windows 服务) + bootstrap(开机自启/崩溃拉起)
-sudo planet-port service start       # 拉起,并按期望状态自动恢复 planet
+sudo planet-port service start       # 拉起 daemon,并按派生规则自动恢复 planet
 planet-port service status           # 无需 root 查看状态
-sudo planet-port service stop        # SIGTERM 优雅退出;保留期望状态,start 后恢复
+sudo planet-port service stop        # SIGTERM 优雅退出;登记不变,start 后按派生规则恢复
 ```
 
 ### planet 定位与命令参考
@@ -111,7 +111,7 @@ flowchart LR
 - **特权收敛**：提权只有一次 `service install`；daemon 以 root 建虚拟网卡、装路由，CLI / GUI 永不提权（ZeroTier / Tailscale 同款模式）
 - **Planet 隔离**：每 planet 一个 zt-core Node 实例，独立数据目录、独立 UDP 端口（身份随全局 identityMode 共享或各持一份）
 - **活性协商**：daemon 启动写 `port` 文件（实际监听端口）与 `authtoken.secret`；port 文件存在即活性信号，daemon 退出时最后删除它。CLI 未显式指定 URL 时靠它协商地址
-- **自动恢复**：registry 的 `running` 是**期望状态**——`service stop`（SIGTERM 优雅退出）保留它，daemon 启动时自动拉起全部期望运行的 planet 并按登记的本地网络配置逐网络 re-join（zt-core 的 `networks.d/<nwid>.conf` 只是 netconf 缓存，不承载成员关系）；`planet disable` 是持久禁用（落 `running=false`，重启后不拉起），`planet enable` 则置回期望运行
+- **自动恢复**：planet 运行由派生规则决定——**enabled 且已加入本地网络**（registry `net_local` 非空）才运行，`running` 只是实际运行登记；`service stop`（SIGTERM 优雅退出）不改变登记，daemon 启动时按派生规则拉起 planet 并按登记的本地网络配置逐网络 re-join（zt-core 的 `networks.d/<nwid>.conf` 只是 netconf 缓存，不承载成员关系）；`planet disable` 是持久禁用（重启后不拉起），`planet enable` 则置回，有本地网络时自动拉起
 
 ### 目录
 

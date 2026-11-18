@@ -107,10 +107,10 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 
 | 命令 | 说明 |
 |---|---|
-| `planet list` | 登记清单(ICON emoji / ID / STATUS / NETWORKS / PORT);STATUS 为 `running`/`stopped`/`disabled` 三值——禁用是持久开关,与运行状态正交,disabled 前缀避免「stopped 但其实被禁用」的误读 |
+| `planet list` | 登记清单(ICON emoji / ID / STATUS / NETWORKS / PORT);STATUS 为 `running`/`stopped`/`disabled` 三值——底层 status 为 running 时显示 `running`,否则整值替换为 `disabled`(enabled=false)或 `stopped`,避免「stopped 但其实被禁用」的误读(禁用是持久开关,与运行状态正交) |
 | `planet show <name\|id>` | 详情(worldId、类型、roots、transport(UDP/TCP 端口与 relay)、relay、来源、大小、修订时间、端口等);修订时间文本模式为本地时间,`-j` 保留 epoch |
 | `planet rename <name\|id> <新名>` | 重命名别名 |
-| `planet set-relay <name\|id> [--relay <ip:port>]` | 设置/清除 **per-planet** TCP 兜底 relay(需自行部署官方 tcp-proxy,见 docs/deploy-tcp-proxy.md);不带 `--relay` 标志 = 清除;`--relay` 支持精简形,展开规则:完整 `ip:port` 原样;`:端口` 与裸端口复用 planet **首个根端点 IP**(裸端口/缺省值默认 9443,与 tcp-proxy 编译默认监听口一致);展开发生在 CLI 层,registry 永远存完整形;地址格式由服务端校验 |
+| `planet set-relay <name\|id> [--relay <ip:port>]` | 设置/清除 **per-planet** TCP 兜底 relay(需自行部署官方 tcp-proxy,见 docs/deploy-tcp-proxy.md);不带 `--relay` 标志 = 清除;`--relay` 支持精简形,展开规则:完整 `ip:port` 原样;`:端口` 与裸端口(纯数字)复用 planet **首个根端点 IP** 且端口取所给值;仅 `--relay` 标志不带值时端口取缺省 9443(与 tcp-proxy 编译默认监听口一致);展开发生在 CLI 层,registry 永远存完整形;地址格式由服务端校验 |
 | `planet enable <name\|id>` | 启用(持久):有本地网络 → daemon 侧按派生规则自动拉起并按登记配置 re-join |
 | `planet disable <name\|id>` | 禁用(持久):在跑立即停;禁用期间 join / enable 恢复 / boot 一律不运行,重启后也不拉起 |
 | `planet export <name\|id> [-o <file>]` | 导出 planet 二进制;缺省 `-o` 写 stdout |
@@ -126,7 +126,7 @@ zerotier-one 并存时,导入官方身份可让两套客户端共用同一节点
 | 命令 | 说明 |
 |---|---|
 | `identity`(缺省)/ `identity list` | 当前身份模式与身份清单:全局身份节点地址,各 planet 的 node id 与 running/stopped 状态;`-j` 输出完整 IdentityOverview |
-| `identity import [--path <file\|dir>] [--force] [--mode shared\|independent] [--planet-identity official\|keep]` | 导入官方 ZeroTier 身份(`identity.secret` 或其所在目录)为全局身份;`--path` 省略时自动探测。执行前先调 **只读预检**(`/identity/import/preflight`)拿导入决策事实——旧版 daemon 无此路由回 404,CLI 据此报**版本错配**(需升级 daemon),不会误触发正式导入;已有全局身份时须 `--force`(交互下确认,回车=不继续,非交互报用法错);`--mode` 未指定时交互二选一,**非交互必填**否则退出码 2;`--mode independent` 且登记中存在与官方身份同源的 planet 时,`--planet-identity` 决定该 planet 用官方身份还是保留自有身份(缺省保留,交互下询问)。导入成功后依次提示:官方服务处置结果、官方客户端当前 planet 的登记/缺失指引、模式切换结果、被取代 node id 在控制器侧的成员记录清理指引 |
+| `identity import [--path <file\|dir>] [--force] [--mode shared\|independent] [--planet-identity official\|keep]` | 导入官方 ZeroTier 身份(`identity.secret` 或其所在目录)为全局身份;`--path` 省略时自动探测。执行前先调 **只读预检**(`/identity/import/preflight`)拿导入决策事实——旧版 daemon 无此路由回 404,CLI 据此报**版本错配**(需升级 daemon),不会误触发正式导入;已有全局身份时须 `--force`(交互下确认,回车=不继续,非交互报用法错);`--mode` 未指定时交互二选一,**非交互必填**否则退出码 2;`--mode independent` 且登记中存在与官方身份同源的 planet 时,`--planet-identity` 决定该 planet 用官方身份还是保留自有身份(缺省保留,交互下询问)。导入成功后依次提示:官方服务处置结果、官方客户端当前 planet 的登记/缺失指引、模式切换结果、planet 身份替换回执(independent 下该 planet 换用官方身份时,下次运行生效)、被取代 node id 在控制器侧的成员记录清理指引 |
 | `identity use <shared\|independent>` | 切换全局身份模式(shared = 各 planet 复用导入身份,运行地址会变;independent = 各 planet 身份保持不变);切换被 409 拒绝时如实报错,不做任何变更 |
 
 ## shell 上下文
