@@ -221,7 +221,7 @@ sudo ./target/release/planet-port install
 (Windows 的升级 / 卸载 / 验证命令见上文「Windows 安装」。)
 
 - **升级**:重复执行任一安装方式即可(数据目录与 planet 登记保留,daemon 按
-  registry 期望状态自动恢复);
+  派生规则自动恢复);
 - **卸载**:
 
 ```bash
