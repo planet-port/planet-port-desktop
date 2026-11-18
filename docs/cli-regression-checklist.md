@@ -31,7 +31,7 @@
 | `set ... bogus=1` | exit=2 | `error: unknown key "bogus"; valid: ...`,exit=2 | 通过 |
 | `orbit` / `deorbit` / `moon import` | 200/201 OK;listmoons 复查 | orbit/deorbit `200 ... OK`,moon import `201`;listmoons 增删一致 | 通过 |
 | `dump --planet official` | 单 planet 文本 | 输出 networks/peers/events 概要;不带 `--planet` 时报候选 | 通过 |
-| `planet list/show/rename/export/share` + 顶层 `add/remove/start/stop` | 各自预期 | 全部通过;交互确认拒绝时 exit=130(2026-10-30 修复,原为 0);export stdout/`-o` 均可(remove 为自动 leave + 删除语义) | 通过 |
+| `planet list/show/rename/export/share` + 顶层 `add/remove/start/stop`（顶层 start/stop 已移除,现并入 planet enable/disable） | 各自预期 | 全部通过;交互确认拒绝时 exit=130(2026-10-30 修复,原为 0);export stdout/`-o` 均可(remove 为自动 leave + 删除语义) | 通过 |
 | `use company` + eval 后 `join` | 定位链② 生效 | `PLANET_PORT_PLANET=company join` 直接落到 company,无歧义报错 | 通过 |
 | `use 不存在` | exit=2,stdout 无输出 | `error: planet "nosuchplanet" not found`,stdout 0 字节,exit=2 | 通过 |
 | `events [--planet] [--follow]` | 表格/增量输出 | 过滤生效;`--follow` 每 2s 增量输出新事件 | 通过 |
@@ -63,3 +63,23 @@
 |---|---|---|---|
 | `list` / `listnetworks` 多 managed IP | 列内逐行堆叠全量展示 | 3 IP(含超长畸形 CIDR)实测:续行对齐 MANAGED-IPS 列起点,无截断 | 通过 |
 | 全命令 `-j` 覆盖 | stdout 纯 JSON,机器可解析 | 14 条命令(info/list/dump/events/use/planet 组/service status/get/network show 等)连发实测全部 exit 0 且 JSON 合法;`use` 与 service 四动作补齐 `-j`(service 动作需 root,代码路径回归) | 通过 |
+
+## v0.4 命令面(v0.3/v0.4 新增回归点)
+
+以下为 v0.3(identity)/ v0.4(set-relay、enable/disable、info RELAY 列)新增
+命令面的回归点,**尚未逐条实测**,回填实测结果后并入上方基准表;
+命令口径与 [COMMANDS.md](../COMMANDS.md) / `crates/cli` 当前实现对齐:
+
+| 命令 | 预期 |
+|---|---|
+| `identity`(缺省)/ `identity list` | 三段 stdout:身份模式行(`身份模式: 共享(全部 planet 复用全局身份)`)、全局身份行(未建立时提示 `可 identity import 导入官方身份`)、每 planet 一行 `名称 / node id / running\|stopped`;`-j` 输出完整 IdentityOverview |
+| `identity import --path <identity.secret>` | 先打只读预检,通过后正式导入;stdout 回执依次为:`已导入全局身份: <node>` → 官方客户端当前 planet 的登记/缺失指引 → 模式切换回执 →(independent 且换用官方身份时)`planet <名> 已换用官方身份` →(有被取代 id 时)控制器侧成员记录清理指引 |
+| `identity import`(旧 daemon,无 preflight 路由) | 版本错配拦截:`error: daemon 版本过旧不支持导入预检,请先升级 planet-portd 再执行 identity import`,exit=2,不触发正式导入 |
+| `identity use shared` ↔ `identity use independent` | stderr 警告 `…将变更节点地址,成员资格需重新授权`,stdout `身份模式已切换为 …,planet 下次运行时生效`;切换被 409 拒绝时如实报错,不做任何变更且不打印警告 |
+| `planet set-relay <p> --relay :9443` / `--relay 9443` / `--relay <ip>:9443` | 三种形态回执均为 `<label> 200 set-relay OK`;`:端口` 与裸端口展开为首根 IP+所给端口,完整形原样;回显链:`info` RELAY 列 = `planet show` 的 transport/relay 行 = 所设完整地址;再执行不带 `--relay` 清除,两处回显回到 `—` |
+| `planet enable <p>` / `planet disable <p>` | disable 后 `planet list` STATUS 翻为 `disabled`、`info` 状态翻为 `未连接`,在跑实例立即停;enable(有本地网络)按派生规则自动拉起回到 `running`/`已连接`;daemon 重启后按派生规则(enabled ∧ net_local 非空)恢复,disabled 的不拉起 |
+| TCP 兜底实测路径(家宽 UDP 被滤环境) | 配置 relay 且 relay 可达时:`planet show` transport 行 `tcp=established(<relay地址>)`,`listpeers` 根条目 PATH 显示 `(relay)`,连接实际走 TCP 隧道;UDP 恢复后回落 UDP 主通道 |
+| `events --planet <p> --limit N` | 输出条数按 N 截取(缺省 40);`--follow` 每 2s 增量,Ctrl-C 退出 |
+| `service logs --lines N --follow` | tail 末 N 行(缺省 50)/持续跟踪;日志文件不存在 exit=1 |
+| `remove <p> -j`(无 `--yes`) | 拒绝执行:`error: --json requires --yes for remove (confirmation prompt would corrupt stdout)`,exit=2(交互确认拒绝才是 exit=130) |
+| `install -j`(版本差异且无 `--yes`) | 同款约束:`error: --json requires --yes for install when version differs …`,exit=2 |

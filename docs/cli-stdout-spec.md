@@ -8,7 +8,9 @@
 
 本文为现行基准,随版本演进持续更新。
 标注说明:❇ = 以下输出为实机采集(gozi25 + official 双登记环境);
-▣ = 变更类命令未在实网执行,样例按代码行为给出。
+▣ = 变更类命令未在实网执行,样例按代码行为给出;
+◇ = v0.3/v0.4 新增样例,按 `crates/cli` 当前代码行为给出(未实机采集);
+❇ 样例中 v0.4 补充的列/行(如 info 的 RELAY 列)同 ◇ 口径。
 
 单行星命令在登记 ≥2 个行星时必须显式 `--planet`(或 `PLANET_PORT_PLANET`),
 否则报错退出码 2,下文样例均带显式指定。
@@ -17,16 +19,18 @@
 
 ## 状态查询
 
-### info — 聚合状态表 ❇
+### info — 聚合状态表 ❇(RELAY 列为 v0.4 补充,◇ 口径)
 
 ```
-PLANET    ADDRESS     VERSION  STATUS  LATENCY  NETWORKS
-gozi25    92c680e88f  1.16.2   已连接  59ms     2
-official  —           —        未连接  —        1
+PLANET    ADDRESS     VERSION  STATUS  LATENCY  RELAY                NETWORKS
+gozi25    92c680e88f  1.16.2   已连接  59ms     124.222.91.224:9443  2
+official  —           —        未连接  —        —                    1
 ```
 
 节点地址/版本是本地事实,实例运行即显示(连接中也显示,仅 LATENCY 为 —);
 停止的行星两者为 —。NETWORKS 运行中取实时 join 数,停止回退 registry 登记数。
+RELAY 显示 TCP 兜底 relay **配置态**(`planet set-relay` 所设完整地址,
+未配置为 `—`);隧道实时状态看 dump / `planet show` 的 transport 行。
 
 `-j`(完整 PlanetStatus 数组):
 
@@ -34,11 +38,17 @@ official  —           —        未连接  —        1
 {
   "planets": [
     { "id": "3530253632", "name": "gozi25", "status": "running", "online": true,
+      "enabled": true,
       "nodeId": "92c680e88f", "coreVersion": "1.16.2", "latencyMs": 59,
-      "networkCount": 2, "port": 9994, "type": "custom", "icon": "", "color": "" },
+      "networkCount": 2, "port": 9994, "type": "custom", "icon": "", "color": "",
+      "tcpFallbackRelay": "124.222.91.224:9443",
+      "transport": { "primaryPort": 9993, "secondaryPort": null,
+                     "tcp": "established", "relay": "124.222.91.224:9443" } },
     { "id": "149604618", "name": "official", "status": "stopped", "online": false,
+      "enabled": true,
       "nodeId": null, "coreVersion": null, "latencyMs": null,
-      "networkCount": 1, "port": 9995, "type": "custom", "icon": "", "color": "" }
+      "networkCount": 1, "port": 9995, "type": "custom", "icon": "", "color": "",
+      "tcpFallbackRelay": null, "transport": null }
   ]
 }
 ```
@@ -279,9 +289,13 @@ ICON  PLANET    ID          STATUS   NETWORKS  PORT
 🪐    official  149604618   stopped  1         9995
 ```
 
-`-j`:`{ "planets": [ PlanetStatus, ... ] }`(同 info -j)。
+STATUS 为整值 `running` / `disabled` / `stopped`(v0.4 起):底层 status 为
+running 时显示 `running`,否则按持久开关显示 `disabled`(enabled=false)或
+`stopped`——禁用与运行状态正交,避免「stopped 但其实被禁用」的误读。
 
-### planet show — 详情 ❇
+`-j`:`{ "planets": [ PlanetStatus, ... ] }`(同 info -j,含 `enabled` 字段)。
+
+### planet show — 详情 ❇(transport/relay 两行为 v0.4 补充,◇ 口径)
 
 ```
 planet    🪐 gozi25
@@ -296,7 +310,11 @@ revision  2025-07-26 23:13:26.865
 lastNodeId 92c680e88f
 networks  2
 port      9994
+transport udp/9993 tcp=established(124.222.91.224:9443)
+relay     124.222.91.224:9443
 ```
+
+transport 行格式:`udp/<主口>`(启用副口时追加 `+<副口>`)+ ` tcp=<disabled|idle|connecting|established>`(配置 relay 且隧道有目标时追加 `(<relay地址>)`);relay 行为 TCP 兜底 relay 配置态,未配置为 `—`。实例未运行时 transport 为 `—`。
 
 `-j`:`{ "planet": { PlanetDetail } }`,修订时间保留 epoch。
 
@@ -305,6 +323,25 @@ port      9994
 ```
 gozi25(3530253632) 200 rename OK
 ```
+
+### planet set-relay — 设置/清除 TCP 兜底 relay ◇
+
+文本模式单行回执,设置与清除同格式(落点标签规则同变更类通用口径):
+
+```
+gozi25(3530253632) 200 set-relay OK
+```
+
+- 参数形态:`--relay <ip:port>`(完整形,原样保存)/ `--relay :<端口>` 与
+  `--relay <裸端口>`(精简形,CLI 层展开为 planet **首根 IP**+所给端口)/
+  仅 `--relay` 不带值(端口取缺省 9443)/ 不带 `--relay` 标志(清除,存 null);
+- 回显链:设置后 `info` 的 RELAY 列与 `planet show` 的 transport/relay 行
+  均回显所设**完整地址**;清除后两处回到 `—`;
+- 地址合法性由服务端校验:非法值 `error 400: tcpFallbackRelay must be
+  "ip:port", got: ...`(exit=1);精简形展开失败(planet 无根端点/端口非法)
+  为 CLI 用法错 `error: relay 端口非法: <raw>` 等(exit=2)。
+
+`-j`:`{ "planet": { PlanetDetail } }`(与 rename 同款 PATCH 响应体)。
 
 ### planet export — 导出二进制 ❇
 
@@ -320,6 +357,89 @@ http://127.0.0.1:9998/share/0cc0366d8ad27afd9d2f9dda
 ```
 
 `-j`:`{ "url": "...", "expiresAt": 1793341008 }`(epoch)。
+
+---
+
+## 身份管理(identity) ◇
+
+身份模式是 daemon 级全局开关:`shared`(默认)= 全部 planet 复用全局身份;
+`independent` = 各 planet 保持自有身份。
+
+### identity(缺省)/ identity list — 身份模式与清单
+
+stdout 依次为模式行、全局身份行、每 planet 一行(planet 行为
+`名称␣␣node id␣␣状态` 双空格直拼,不做列对齐;无身份的 planet node id 为 `-`):
+
+```
+身份模式: 共享(全部 planet 复用全局身份)
+全局身份: 92c680e88f
+gozi25  92c680e88f  running
+official  -  stopped
+```
+
+全局身份未建立时第二行为:
+
+```
+全局身份: (未建立,可 identity import 导入官方身份)
+```
+
+`-j`:完整 IdentityOverview(`{ "mode": "shared", "global": { "exists": true,
+"nodeId": "92c680e88f" }, "planets": [ { "id", "name", "nodeId", "running" } ] }`)。
+
+### identity import — 导入官方身份
+
+执行前先打**只读预检**:旧版 daemon 无预检路由(404)或响应缺 preflight
+标记时,stderr 报 `error: daemon 版本过旧不支持导入预检,请先升级
+planet-portd 再执行 identity import`(exit=2),不触发正式导入。
+
+已有全局身份且未 `--force`:
+
+- 非交互(含 `-j`):stderr `error: 已有全局身份 <old>,覆盖导入需加 --force
+  (或交互终端下确认)`,exit=2;
+- 交互终端:确认提问经 **stdout** 打印(`将覆盖现有全局身份 <old>,继续?
+  [y/N]`,注意:该提问不走 stderr,与本文件全局口径不同,仅在交互终端出现),
+  非 y/N → stdout `已取消导入`,exit=0。
+
+`--mode` 未指定时非交互直接报用法错 `error: 非交互环境需显式指定
+--mode shared|independent`(exit=2);交互终端 stdout 二选一提问。
+
+导入成功回执为 **stdout 序列**,各段按条件依次出现:
+
+```
+已导入全局身份: 92c680e88f
+官方客户端当前 planet 已导入为 gozi25;原已加入的网络直接 join 即可恢复,无需重新授权
+身份模式已切换为 共享(全部 planet 复用全局身份),planet 下次运行时生效
+planet gozi25 已换用官方身份,下次运行时生效
+被替换的节点地址 <id1>, <id2> 在各网络的成员记录不会自动删除,请到控制器(如 ztnet / ZeroTier Central)手动清理
+```
+
+- 第 1 行:官方服务存在并被停用时为 `已导入全局身份: <node>(官方服务已停止
+  并禁用自启)`;本机未检测到官方客户端时追加一行 `本机未检测到官方
+  ZeroTier 客户端(身份文件可能来自其它机器)`;
+- 第 2 行:官方客户端当前 planet 已登记时如上;未登记时改为一行指引
+  `官方客户端当前 自定义 planet(worldId <worldId>)尚未导入;恢复原网络请先执行: planet-port add <planet文件路径>`;
+- 第 3 行:仅模式实际发生变化时出现;
+- 第 4 行:仅 `--mode independent` 且同源 planet 换用官方身份时出现
+  (下次运行生效);
+- 第 5 行:仅存在被新身份取代的 node id 时出现。
+
+`-j`:stdout 仅导入响应体的 pretty JSON(`nodeId`/`serviceAction`/
+`officialPlanet`/`modeChanged`/`identityMode`/`planetIdentityApplied`/
+`supersededNodeIds` 等),无上述人话序列。
+
+### identity use <shared|independent> — 切换身份模式
+
+成功后先 stderr 警告再 stdout 回执(管道安全:数据行仍在 stdout):
+
+```
+身份模式已切换为 独立(每 planet 各自身份),planet 下次运行时生效
+# 注意: 切换身份模式后部分或全部 planet 将变更节点地址,受影响网络的成员资格需重新授权   ← stderr
+```
+
+切换被 409 拒绝时如实透传 API 错误(`error 409: <message>` 走 stderr,
+stdout 为空),不做任何变更且**不打印**上述警告(警告只在成功后输出)。
+
+`-j`:切换响应体 pretty JSON;警告照走 stderr。
 
 ---
 
@@ -377,6 +497,7 @@ install/uninstall/start/stop 需 root;进度提示走 stderr,`-j` 时 stdout 仅
 | 未知 set key | `error: unknown key "allowDefault"; ZeroTier's allowDefault ≈ "routeViaZeroTier" here; valid: ...` | 2 |
 | daemon 不在线 | `planet-portd is not running (try: planet-port service start)` | 3 |
 | remove 确认拒绝 | `已取消` | 130 |
+| `-j` 无 `--yes` 执行 remove / install ◇ | `error: --json requires --yes for remove (confirmation prompt would corrupt stdout)` / `error: --json requires --yes for install when version differs (<old> -> <new>)` | 2 |
 
 通用 API 错误格式:`error <code>: <message>`(409 定位类由 CLI 改写为上表指引样式,
 跟随 CLI 语言)。
@@ -389,4 +510,4 @@ install/uninstall/start/stop 需 root;进度提示走 stderr,`-j` 时 stdout 仅
 | 1 | 运行错误(API 4xx/5xx、IO) |
 | 2 | 用法错误、planet 歧义、service 组未以 root 运行 |
 | 3 | daemon 不在线 |
-| 130 | 用户中止(remove 确认拒绝) |
+| 130 | 用户中止(remove / install 交互确认拒绝) |
