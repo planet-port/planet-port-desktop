@@ -55,7 +55,7 @@ systemd 服务)。发版由 cargo-dist CI 在推 tag 时自动完成。
 指定版本 / 跳过服务:
 
 ```bash
-curl -fsSL …/install.sh | sudo bash -s -- v0.1.1        # 指定版本
+curl -fsSL …/install.sh | sudo bash -s -- v0.4.0        # 指定版本
 curl -fsSL …/install.sh | sudo bash -s -- --no-service  # 只落盘二进制(macOS 含软链),不装服务
 ```
 
@@ -105,7 +105,7 @@ build 26200,Win10 未实测。产物为 zip(`planet-port-x86_64-pc-windows-msvc.
 ```powershell
 Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/planet-port/planet-port-desktop/main/scripts/install.ps1 -OutFile install.ps1
 powershell -ExecutionPolicy Bypass -File .\install.ps1                 # 装 latest(最新非 prerelease)
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version 0.1.3  # 指定版本:0.1.3 / v0.1.3 / 0.1.3-beta.1 均可
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version v0.4.0  # 指定版本:v0.4.0 / 0.4.0 / 0.4.0-beta.1 均可
 ```
 
 在 cmd(旧命令行)中同样可装:cmd 不识别 .ps1,但上面的
@@ -172,9 +172,8 @@ sc.exe query planetportd
   服务器的新建 UDP 会话丢弃(已建立流放行、新建流零回包),表现为客户端反复
   发 HELLO 但一直 `REQUESTING_CONFIGURATION` 不上线;伪装热点的出口也可能
   桥接回同一家庭宽带(tracert 二跳即家宽网关可辨)。换真实移动网络可对照
-  验证;POC 实机排查记录见
-  docs/2026-10-31-windows-poc-report.md §3.6。Windows 防火墙无需手动放行
-  (出站发起的 UDP 流由有状态检测放行回包);
+  验证。POC 实机排查已确认:Windows 防火墙无需手动放行,出站发起的
+  UDP 流由有状态检测放行回包;
 - **IPv6 已知边界**:wintun 为 L3 设备 + ARP 垫层,设备面 IPv6 帧静默丢弃
   (计 v6drop),IPv6 地址与托管路由不安装;IPv4 数据面不受影响;
 - **wintun.dll 许可**:随包分发的 wintun 0.14.1 依官方 Prebuilt Binaries

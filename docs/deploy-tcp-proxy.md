@@ -41,7 +41,7 @@ scp dist-tcp-proxy/tcp-proxy-x86_64-linux-gnu root@124.222.91.224:/usr/local/bin
 ssh root@124.222.91.224 chmod +x /usr/local/bin/tcp-proxy
 ```
 
-systemd 单元 `/etc/systemd/system/zt-tcp-proxy.service`(官方仓库
+systemd 单元 `/etc/systemd/system/tcp-proxy.service`(官方仓库
 tcp-proxy/zerotier-proxy.service 同款语义):
 
 ```ini
@@ -50,7 +50,7 @@ Description=ZeroTier TCP fallback proxy
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/zt-tcp-proxy
+ExecStart=/usr/local/bin/tcp-proxy
 Restart=always
 RestartSec=5
 # 监听 TCP 9443(本仓库编译产物默认;改端口须同步客户端 relay 配置)
@@ -60,7 +60,7 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-systemctl daemon-reload && systemctl enable --now zt-tcp-proxy
+systemctl daemon-reload && systemctl enable --now tcp-proxy
 ss -tlnp | grep 9443   # 确认监听
 ```
 
