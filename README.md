@@ -26,7 +26,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 | Ubuntu / Linux Mint 等 Debian 系 | tar.xz + 安装脚本（后续 deb） | ✅ 已发布可用（systemd 服务全流程 e2e：多机实测覆盖 amd64 / arm64、升级后数据保留与 planet 自动恢复、与官方 zerotier-one 共存） | Ubuntu 22.04+ / Mint 21+ |
 | Debian | 同上（与 Ubuntu 共用 Linux 产物） | ✅ 同上 | Debian 12+ |
 | Windows | zip + 安装脚本（后续 MSI） | ✅ 已发布可用：wintun 数据面、SCM 服务化、CLI 全命令、DNS NRPT、install.ps1 / 离线 zip 安装链路；Win11 实机安装级 e2e 通过，Win10 纸面支持未实测 | Windows 10+ |
-| Termux（Android） | 待定 | 📐 待定（zerotier-one 官方亦不发布 Termux 包，仅社区仓库有） | 待定 |
+| Termux（Android） | 不提供 | ❌ 不计划支持 Termux 环境安装，Android 请直接使用 Android 应用 | 不适用 |
 | Rocky Linux 9 等 RHEL 系 | tar.xz + 安装脚本 | ✅ 安装级可用（Rocky 9 容器实测：安装、systemd 服务、启停与恢复全通过；SELinux enforcing 未测不在承诺内） | Rocky 8+ |
 | 其它（FreeBSD / Arch 等） | 待定 | 📐 待定 | 待定 |
 
