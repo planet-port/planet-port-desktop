@@ -13,7 +13,7 @@ pub fn get_daemon_state(state: tauri::State<'_, SharedState>) -> Value {
 
 #[tauri::command]
 pub fn get_status() -> Result<Value, GuiError> {
-    discover()?.get_json("/status")
+    discover()?.get_json(endpoints::status())
 }
 #[tauri::command]
 pub fn get_planets() -> Result<Value, GuiError> {

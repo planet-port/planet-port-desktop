@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-const INSTALL_URL = 'https://raw.githubusercontent.com/planet-port/planet-port-desktop/main';
+/// 安装脚本走 api.github.com contents 通道(raw.githubusercontent.com 部分网络 TCP 直连被断,api 域可达)
+const INSTALL_URL = 'https://api.github.com/repos/planet-port/planet-port-desktop/contents/scripts';
 
 function detectOs(): 'macos' | 'windows' | 'linux' {
   const ua = navigator.userAgent;
@@ -20,10 +21,13 @@ function CmdBlock({ label, cmd }: { label: string; cmd: string }) {
         <button
           className="btn"
           onClick={() => {
-            void navigator.clipboard.writeText(cmd).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            });
+            void navigator.clipboard
+              .writeText(cmd)
+              .then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              })
+              .catch(() => {}); // 剪贴板权限被拒时静默,不打断引导流程
           }}
         >
           {copied ? t('guide.copied') : t('guide.copy')}
@@ -40,8 +44,8 @@ export default function OfflineGuide({ installed }: { installed: boolean }) {
   const win = os === 'windows';
   const sudo = win ? '' : 'sudo ';
   const installCmd = win
-    ? `Invoke-WebRequest -UseBasicParsing ${INSTALL_URL}/scripts/install.ps1 -OutFile install.ps1\npowershell -ExecutionPolicy Bypass -File .\\install.ps1`
-    : `curl -fsSL ${INSTALL_URL}/scripts/install.sh | sudo bash`;
+    ? `Invoke-WebRequest -UseBasicParsing -Headers @{Accept='application/vnd.github.raw'} "${INSTALL_URL}/install.ps1?ref=main" -OutFile install.ps1\npowershell -ExecutionPolicy Bypass -File .\\install.ps1`
+    : `curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALL_URL}/install.sh?ref=main" | sudo bash`;
   return (
     <div className="guide">
       <h2>{installed ? t('guide.titleInstalled') : t('guide.titleNotInstalled')}</h2>
