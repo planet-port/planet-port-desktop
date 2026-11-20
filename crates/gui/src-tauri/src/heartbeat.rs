@@ -24,9 +24,11 @@ pub fn spawn(app: AppHandle) {
             crate::tray::refresh(&app);
         }
         if transitioned {
-            let _ = app.emit(if online { "daemon-online" } else { "daemon-offline" }, ());
             crate::tray::refresh(&app);
         }
+        // 每 tick 常态广播在线状态:前端启动时的一次性读取可能与状态翻转 emit 互相错过
+        // (webview 监听器注册晚于翻转),错过后会永久停留离线引导页,常态 emit 保证 ≤3s 收敛
+        let _ = app.emit(if online { "daemon-online" } else { "daemon-offline" }, ());
         std::thread::sleep(TICK);
     });
 }
