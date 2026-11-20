@@ -393,8 +393,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14        # Apple Silicon dmg
-          - os: macos-13        # Intel dmg
+          # macos-13(2025-12)/macos-14(2026-11-02)已退役,统一 macos-15;
+          # Intel dmg 在 ARM runner 上交叉编译(--target x86_64-apple-darwin)
+          - os: macos-15        # Apple Silicon dmg
+          - os: macos-15        # Intel dmg(交叉编译)
+            target: x86_64-apple-darwin
           - os: windows-latest  # NSIS x64
           - os: ubuntu-22.04    # AppImage x64(glibc 2.35+,与 CLI manylinux 基线不同,README 注明)
     runs-on: ${{ matrix.os }}
@@ -421,9 +424,16 @@ jobs:
         # tauri 2 以 CLI 调用目录(crates/gui)为 beforeBuildCommand 的 cwd，
         # conf 内命令按该 cwd 书写(pnpm build/dev)
         shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           pnpm --dir crates/gui install --frozen-lockfile
-          pnpm --dir crates/gui tauri build
+          if [ -n "$TARGET" ]; then
+            rustup target add "$TARGET"
+            pnpm --dir crates/gui tauri build --target "$TARGET"
+          else
+            pnpm --dir crates/gui tauri build
+          fi
       - name: Upload bundles to release
         shell: bash
         env:
@@ -432,6 +442,7 @@ jobs:
           shopt -s nullglob
           files=(
             target/release/bundle/dmg/*.dmg
+            target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
             target/release/bundle/nsis/*.exe
             target/release/bundle/appimage/*.AppImage
           )
