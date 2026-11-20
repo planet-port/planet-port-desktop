@@ -94,13 +94,28 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
     let parts: Vec<&str> = id.split('|').collect();
     match parts[0] {
         "net" if parts.len() == 3 => {
-            // 点击已勾选网络 = leave;planet 维度随条目携带
-            let _ = commands::leave_network(parts[2].to_string(), Some(parts[1].to_string()));
-            refresh(app); // 立即反映;下次心跳会再校准
+            // 点击已勾选网络 = leave;planet 维度随条目携带。
+            // 动作含同步 HTTP(超时 10s),必须在独立线程执行,否则冻结主线程/菜单;
+            // 结果(图标+菜单)与失败提示分别经 refresh 与 tray-error 事件回传
+            let app = app.clone();
+            let nwid = parts[2].to_string();
+            let planet = parts[1].to_string();
+            std::thread::spawn(move || {
+                if let Err(e) = commands::leave_network(nwid, Some(planet)) {
+                    notify_error(&app, &e);
+                }
+                refresh(&app); // 立即反映;下次心跳会再校准
+            });
         }
         "planet" => {
-            let _ = commands::enable_planet(parts[1].to_string());
-            refresh(app);
+            let app = app.clone();
+            let planet = parts[1].to_string();
+            std::thread::spawn(move || {
+                if let Err(e) = commands::enable_planet(planet) {
+                    notify_error(&app, &e);
+                }
+                refresh(&app);
+            });
         }
         "join" => {
             let _ = app.emit("navigate", serde_json::json!({ "to": "networks", "focusJoin": true }));
@@ -110,6 +125,16 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
         "quit" => app.exit(0),
         _ => {}
     }
+}
+
+/// 托盘动作失败回传前端 toast(GuiError 各变体均带 message)
+fn notify_error(app: &AppHandle, e: &crate::api_client::GuiError) {
+    let message = match e {
+        crate::api_client::GuiError::Offline { message }
+        | crate::api_client::GuiError::Usage { message }
+        | crate::api_client::GuiError::Api { message, .. } => message.clone(),
+    };
+    let _ = app.emit("tray-error", message);
 }
 
 fn show_main(app: &AppHandle) {

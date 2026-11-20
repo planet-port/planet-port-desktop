@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { api } from './api/client';
+import { useToast } from './components/Toaster';
 import Networks from './pages/Networks';
 import OfflineGuide from './pages/OfflineGuide';
 import Overview from './pages/Overview';
@@ -13,6 +14,7 @@ export type Page = 'overview' | 'networks' | 'planets' | 'peers';
 
 export default function App() {
   const { t, i18n } = useTranslation();
+  const toast = useToast();
   const [page, setPage] = useState<Page>('overview');
   const [online, setOnline] = useState(false);
   const [installed, setInstalled] = useState(true);
@@ -30,9 +32,14 @@ export default function App() {
         if (e.payload.focusJoin) setFocusJoin(n => n + 1);
         setPage(e.payload.to);
       }),
+      // 托盘动作失败提示(Rust 侧在后台线程执行,失败经此回传)
+      listen<string>('tray-error', e => toast.error(e.payload)),
     ].map(p => p.then(f => f));
-    return () => void Promise.all(unsubs);
-  }, []);
+    // 每个 unlisten 必须真正执行,否则重复挂载后监听泄漏
+    return () => {
+      for (const p of unsubs) void p.then(f => f());
+    };
+  }, [toast]);
 
   const body = !online ? (
     <OfflineGuide installed={installed} />

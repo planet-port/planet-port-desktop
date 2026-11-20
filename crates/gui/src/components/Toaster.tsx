@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 
 interface Toast {
   id: number;
@@ -19,7 +19,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => setItems(v => v.filter(i => i.id !== id)), 4000);
   }, []);
   return (
-    <Ctx.Provider value={{ ok: t => push('ok', t), error: t => push('error', t) }}>
+    <Ctx.Provider value={useMemo(() => ({ ok: t => push('ok', t), error: t => push('error', t) }), [push])}>
       {children}
       <div className="toasts">
         {items.map(i => (
