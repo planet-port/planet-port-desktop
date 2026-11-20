@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api, asError } from '../api/client';
 import type { NetworkEntry } from '../api/types';
+import ConfirmDialog from '../components/ConfirmDialog';
+import QueryError from '../components/QueryError';
 import { useToast } from '../components/Toaster';
 
 export default function Networks({ focusJoinSignal }: { focusJoinSignal: number }) {
@@ -12,6 +14,8 @@ export default function Networks({ focusJoinSignal }: { focusJoinSignal: number 
   const [nwid, setNwid] = useState('');
   const [planetFilter, setPlanetFilter] = useState('');
   const [editing, setEditing] = useState<NetworkEntry | null>(null);
+  // 待离开网络(wry 不支持 window.confirm,离开须应用内对话框确认)
+  const [pendingLeave, setPendingLeave] = useState<NetworkEntry | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 复用概览的 status 查询(同 key 共享缓存)，仅用于 planet 过滤下拉
@@ -119,7 +123,7 @@ export default function Networks({ focusJoinSignal }: { focusJoinSignal: number 
                     <button
                       className="btn danger"
                       disabled={leave.isPending}
-                      onClick={() => window.confirm(t('networks.leaveConfirm')) && leave.mutate(r)}
+                      onClick={() => setPendingLeave(r)}
                     >
                       {t('networks.leave')}
                     </button>
@@ -130,8 +134,24 @@ export default function Networks({ focusJoinSignal }: { focusJoinSignal: number 
           </tbody>
         </table>
       )}
-      {rows.length === 0 && <div className="empty">{t('networks.empty')}</div>}
+      {q.isError ? (
+        <QueryError error={q.error} />
+      ) : (
+        rows.length === 0 && <div className="empty">{t('networks.empty')}</div>
+      )}
       {editing && <NetworkDialog row={editing} onClose={() => setEditing(null)} onDone={invalidate} />}
+      <ConfirmDialog
+        open={pendingLeave !== null}
+        title={t('networks.leave')}
+        message={pendingLeave ? `${t('networks.leaveConfirm')} · ${pendingLeave.nwid}` : ''}
+        confirmLabel={t('networks.leave')}
+        danger
+        onConfirm={() => {
+          if (pendingLeave) leave.mutate(pendingLeave);
+          setPendingLeave(null);
+        }}
+        onCancel={() => setPendingLeave(null)}
+      />
     </div>
   );
 }

@@ -2,8 +2,10 @@ export default {
   nav: { overview: 'Overview', networks: 'Networks', planets: 'Planets', peers: 'Peers' },
   daemon: { online: 'daemon online', offline: 'daemon offline' },
   common: {
-    yes: 'Yes', no: 'No', save: 'Save', cancel: 'Cancel', delete: 'Delete',
+    yes: 'Yes', no: 'No', save: 'Save', cancel: 'Cancel', delete: 'Delete', confirm: 'Confirm',
     saved: 'Saved', empty: 'No data',
+    loadError: 'Failed to load',
+    authError: 'Authentication failed: token does not match the daemon. Check PLANET_PORT_TOKEN or reinstall the service',
   },
   overview: {
     empty: 'No planets yet. Import one on the Planets page.',
@@ -56,7 +58,6 @@ export default {
   guide: {
     titleInstalled: 'daemon installed but not running',
     titleNotInstalled: 'planet-port daemon not detected',
-    hintInstalled: 'Run this in a terminal to start the service (admin required):',
     hintNotInstalled: 'Run this in a terminal to install (admin required):',
     start: 'Start service', stop: 'Stop service', status: 'Status', logs: 'Logs',
     copy: 'Copy', copied: 'Copied',

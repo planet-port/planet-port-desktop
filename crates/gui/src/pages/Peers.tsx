@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
+import QueryError from '../components/QueryError';
 
 export default function Peers() {
   const { t } = useTranslation();
@@ -36,7 +37,11 @@ export default function Peers() {
           </tbody>
         </table>
       )}
-      {rows.length === 0 && <div className="empty">{t('peers.empty')}</div>}
+      {q.isError ? (
+        <QueryError error={q.error} />
+      ) : (
+        rows.length === 0 && <div className="empty">{t('peers.empty')}</div>
+      )}
     </div>
   );
 }

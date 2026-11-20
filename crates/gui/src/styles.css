@@ -165,6 +165,8 @@ select.input { cursor: pointer; }
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
 }
 .dialog h3 { margin: 0 0 14px; }
+.dialog.confirm { width: 380px; }
+.dialog-message { margin: 0; line-height: 1.6; word-break: break-word; }
 .field { display: block; margin: 10px 0; }
 .field .input { width: 100%; margin-top: 4px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }

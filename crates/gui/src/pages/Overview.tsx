@@ -1,14 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
+import QueryError from '../components/QueryError';
 
 export default function Overview() {
   const { t } = useTranslation();
-  const { data, dataUpdatedAt } = useQuery({ queryKey: ['status'], queryFn: api.status, refetchInterval: 3000 });
+  const { data, dataUpdatedAt, isError, error } = useQuery({ queryKey: ['status'], queryFn: api.status, refetchInterval: 3000 });
   const planets = data?.planets ?? [];
   return (
     <div className="page">
-      {planets.length === 0 ? (
+      {isError ? (
+        <QueryError error={error} />
+      ) : planets.length === 0 ? (
         <div className="empty">{t('overview.empty')}</div>
       ) : (
         <div className="cards">

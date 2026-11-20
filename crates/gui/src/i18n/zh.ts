@@ -2,8 +2,10 @@ export default {
   nav: { overview: '概览', networks: '网络', planets: 'Planet', peers: '节点' },
   daemon: { online: 'daemon 在线', offline: 'daemon 离线' },
   common: {
-    yes: '是', no: '否', save: '保存', cancel: '取消', delete: '删除',
+    yes: '是', no: '否', save: '保存', cancel: '取消', delete: '删除', confirm: '确定',
     saved: '已保存', empty: '暂无数据',
+    loadError: '加载失败',
+    authError: '鉴权失败：token 与 daemon 不匹配，请检查 PLANET_PORT_TOKEN 或重装服务',
   },
   overview: {
     empty: '还没有 planet。到「Planet」页导入一个。',
@@ -56,7 +58,6 @@ export default {
   guide: {
     titleInstalled: 'daemon 已安装但未运行',
     titleNotInstalled: '未检测到 planet-port daemon',
-    hintInstalled: '在终端执行以下命令启动服务（需管理员权限）：',
     hintNotInstalled: '在终端执行以下命令完成安装（需管理员权限）：',
     start: '启动服务', stop: '停止服务', status: '查看状态', logs: '查看日志',
     copy: '复制', copied: '已复制',

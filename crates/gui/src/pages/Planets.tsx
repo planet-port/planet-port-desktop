@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api, asError } from '../api/client';
 import type { PlanetStatus } from '../api/types';
+import ConfirmDialog from '../components/ConfirmDialog';
+import QueryError from '../components/QueryError';
 import { useToast } from '../components/Toaster';
 
 export default function Planets() {
@@ -10,6 +12,8 @@ export default function Planets() {
   const qc = useQueryClient();
   const toast = useToast();
   const [source, setSource] = useState('');
+  // 待删除 planet(wry 不支持 window.confirm,删除须应用内对话框二次确认)
+  const [pendingRemove, setPendingRemove] = useState<PlanetStatus | null>(null);
 
   // 与概览共享 status 缓存
   const q = useQuery({ queryKey: ['status'], queryFn: api.status, refetchInterval: 3000 });
@@ -43,10 +47,8 @@ export default function Planets() {
   });
 
   /// 删除运行中 planet 需二次确认并说明影响(spec §6)
-  const confirmRemove = (p: PlanetStatus) => {
-    const msg = p.status === 'running' ? t('planets.removeRunningConfirm', { name: p.name }) : t('planets.removeConfirm', { name: p.name });
-    if (window.confirm(msg)) remove.mutate(p.id);
-  };
+  const removeMessage = (p: PlanetStatus) =>
+    p.status === 'running' ? t('planets.removeRunningConfirm', { name: p.name }) : t('planets.removeConfirm', { name: p.name });
 
   return (
     <div className="page">
@@ -83,7 +85,7 @@ export default function Planets() {
                     {t('planets.enable')}
                   </button>
                 )}
-                <button className="btn danger" onClick={() => confirmRemove(p)}>
+                <button className="btn danger" disabled={remove.isPending} onClick={() => setPendingRemove(p)}>
                   {t('common.delete')}
                 </button>
               </footer>
@@ -91,7 +93,23 @@ export default function Planets() {
           ))}
         </div>
       )}
-      {planets.length === 0 && <div className="empty">{t('planets.empty')}</div>}
+      {q.isError ? (
+        <QueryError error={q.error} />
+      ) : (
+        planets.length === 0 && <div className="empty">{t('planets.empty')}</div>
+      )}
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        title={t('common.delete')}
+        message={pendingRemove ? removeMessage(pendingRemove) : ''}
+        confirmLabel={t('common.delete')}
+        danger
+        onConfirm={() => {
+          if (pendingRemove) remove.mutate(pendingRemove.id);
+          setPendingRemove(null);
+        }}
+        onCancel={() => setPendingRemove(null)}
+      />
     </div>
   );
 }

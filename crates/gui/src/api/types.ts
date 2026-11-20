@@ -60,7 +60,7 @@ export interface PeerEntry {
 export interface GuiError {
   kind: 'offline' | 'api' | 'usage';
   status?: number;
-  code?: string;
+  code?: string | null;
   message: string;
   candidates?: string[] | null;
 }
