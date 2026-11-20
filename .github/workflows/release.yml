@@ -383,3 +383,58 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+
+  # GUI(Tauri)桌面安装包:与 cargo-dist 产物同 tag 发布。
+  # 依赖链:host 完成(Release 已建)后才上传;PR 仅 plan 不触发本 job。
+  gui:
+    if: ${{ !github.event.pull_request }}
+    needs: host
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14        # Apple Silicon dmg
+          - os: macos-13        # Intel dmg
+          - os: windows-latest  # NSIS x64
+          - os: ubuntu-22.04    # AppImage x64(glibc 2.35+,与 CLI manylinux 基线不同,README 注明)
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: crates/gui/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - name: Install Linux GUI deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev build-essential file
+      - name: Build GUI bundles
+        # tauri 2 以 CLI 调用目录(crates/gui)为 beforeBuildCommand 的 cwd，
+        # conf 内 `pnpm --dir ..` 会落到 crates/ 导致 exec 失败，此处内联覆盖;
+        # conf 修正后可移除 --config。
+        shell: bash
+        run: |
+          pnpm --dir crates/gui install --frozen-lockfile
+          pnpm --dir crates/gui tauri build --config '{"build":{"beforeBuildCommand":"pnpm build"}}'
+      - name: Upload bundles to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob
+          files=(
+            target/release/bundle/dmg/*.dmg
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/appimage/*.AppImage
+          )
+          echo "uploading: ${files[*]}"
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber

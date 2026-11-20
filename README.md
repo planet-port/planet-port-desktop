@@ -1,6 +1,6 @@
 # Planet Port Desktop 🪐
 
-**Planet Port Desktop** 是一款开源的桌面端 ZeroTier 客户端，基于 ZeroTier 1.16 官方核心（Rust FFI 直链）打造。它让你在 macOS / Linux / Windows 上轻松完成异地组网与虚拟局域网管理：多 Planet 并存（官方 + 自建私有 Planet），默认路由与 DNS 全自由掌控。采用「特权 daemon + 薄客户端」架构：`planet-portd` 守护进程持核心与虚拟网卡，`planet-port` CLI 与规划中的 GUI 都是纯 API 客户端，GUI 不开、隧道照跑。
+**Planet Port Desktop** 是一款开源的桌面端 ZeroTier 客户端，基于 ZeroTier 1.16 官方核心（Rust FFI 直链）打造。它让你在 macOS / Linux / Windows 上轻松完成异地组网与虚拟局域网管理：多 Planet 并存（官方 + 自建私有 Planet），默认路由与 DNS 全自由掌控。采用「特权 daemon + 薄客户端」架构：`planet-portd` 守护进程持核心与虚拟网卡，`planet-port` CLI 与 GUI 都是纯 API 客户端，GUI 不开、隧道照跑。
 
 > 非官方客户端，与 ZeroTier, Inc. 无隶属关系。
 
@@ -8,13 +8,13 @@
 
 | 平台 | CLI | GUI |
 |---|---|---|
-| macOS | ✅ | 📐 |
-| Linux | ✅ | 📐 |
-| Windows | ✅ | 📐 |
+| macOS | ✅ | ✅ |
+| Linux | ✅ | ✅ |
+| Windows | ✅ | ✅ |
 
 ✅ 可用 · 📐 规划中
 
-CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（托盘常驻），daemon + CLI 已覆盖全部功能，GUI 不开、隧道照跑。
+CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 基于 Tauri 2（托盘常驻），桌面安装包随 tag 发布：macOS dmg（Apple Silicon / Intel）、Windows NSIS、Linux AppImage。daemon + CLI 已覆盖全部功能，GUI 不开、隧道照跑。
 
 ### 系统支持与最低版本
 
@@ -30,7 +30,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 选型 Tauri 2（
 | Rocky Linux 9 等 RHEL 系 | tar.xz + 安装脚本 | ✅ 安装级可用（Rocky 9 容器实测：安装、systemd 服务、启停与恢复全通过；SELinux enforcing 未测不在承诺内） | Rocky 8+ |
 | 其它（FreeBSD / Arch 等） | 待定 | 📐 待定 | 待定 |
 
-> 最低版本说明：Linux 系在 manylinux_2_28 容器内构建（glibc ≥ 2.28，覆盖 RHEL/Rocky 8+、Ubuntu 20.04+、Debian 11+ 等主流发行版）；macOS 12+ 为设计目标，当前仅在 macOS 26（Apple Silicon）实测；Windows 10+ 为纸面下限（按支持面收敛），当前仅在 Windows 11 实测。
+> 最低版本说明：Linux 系在 manylinux_2_28 容器内构建（glibc ≥ 2.28，覆盖 RHEL/Rocky 8+、Ubuntu 20.04+、Debian 11+ 等主流发行版）；macOS 12+ 为设计目标，当前仅在 macOS 26（Apple Silicon）实测；Windows 10+ 为纸面下限（按支持面收敛），当前仅在 Windows 11 实测。桌面 GUI 安装包中，Linux AppImage 在 ubuntu-22.04 构建，要求 glibc ≥ 2.35，与 CLI 的 manylinux 2.28 基线不同；macOS dmg 分 Apple Silicon / Intel 两包。
 
 ## 特色
 
@@ -95,7 +95,7 @@ sudo planet-port service stop        # SIGTERM 优雅退出;登记不变,start �
 ```mermaid
 flowchart LR
     CLI["planet-port(CLI 薄客户端)"]
-    GUI["Planet Port GUI(规划中)"]
+    GUI["Planet Port GUI"]
     subgraph DAEMON["planet-portd(root daemon,系统服务常驻)"]
         API["本地 REST API(127.0.0.1:port,X-ZT1-Auth 鉴权)"]
         REG["registry(planet 登记:数据目录/UDP 端口/本地网络配置)"]
