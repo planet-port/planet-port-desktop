@@ -21,11 +21,11 @@ pub fn spawn(app: AppHandle) {
         };
         if online {
             refresh_snapshot(&app);
-            // Task 9 接入托盘后此处追加: crate::tray::refresh(&app);
+            crate::tray::refresh(&app);
         }
         if transitioned {
             let _ = app.emit(if online { "daemon-online" } else { "daemon-offline" }, ());
-            // Task 9 接入托盘后此处追加: crate::tray::refresh(&app);
+            crate::tray::refresh(&app);
         }
         std::thread::sleep(TICK);
     });

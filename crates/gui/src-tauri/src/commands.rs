@@ -2,6 +2,7 @@ use crate::api_client::{discover, GuiError};
 use crate::SharedState;
 use planet_port_api::endpoints;
 use serde_json::{json, Value};
+use tauri::Manager;
 
 /// 心跳维护的在线/安装状态（webview 启动初期一次拉取）
 #[tauri::command]
@@ -54,10 +55,13 @@ pub fn set_network(nwid: String, planet: Option<String>, body: Value) -> Result<
 pub fn get_peers(planet: Option<String>) -> Result<Value, GuiError> {
     discover()?.get_json(&endpoints::peers(planet.as_deref()))
 }
-/// 前端语言切换同步托盘菜单（Task 9 消费 lang 字段；此处先落状态）
-/// 本任务版本不含 tray 同步（tray 模块 Task 9 才创建）
+/// 前端语言切换同步托盘菜单（菜单文案随 GUI 语言重建）
 #[tauri::command]
-pub fn set_lang(lang: String, state: tauri::State<'_, SharedState>) -> Result<(), GuiError> {
-    state.lock().unwrap().lang = lang;
+pub fn set_lang(lang: String, app: tauri::AppHandle) -> Result<(), GuiError> {
+    // 块作用域:先释放 SharedState 锁再刷新托盘(tray::refresh 内部也会 lock)
+    {
+        app.state::<SharedState>().lock().unwrap().lang = lang;
+    }
+    crate::tray::refresh(&app);
     Ok(())
 }

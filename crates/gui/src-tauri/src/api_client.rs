@@ -80,7 +80,6 @@ fn make_agent(timeout: Option<Duration>) -> ureq::Agent {
 }
 
 /// 探活：2s 超时 GET /version；任何 HTTP 响应（含 401）= 端口上有服务
-#[allow(dead_code)] // Task 4（heartbeat）消费
 pub fn probe_online() -> bool {
     let agent = make_agent(Some(PROBE_TIMEOUT));
     let req = ureq::http::Request::builder()

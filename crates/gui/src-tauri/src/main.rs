@@ -3,6 +3,7 @@
 mod api_client;
 mod commands;
 mod heartbeat;
+mod tray;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -34,7 +35,17 @@ fn main() {
             snapshot_networks: serde_json::Value::Array(Vec::new()),
         }))
         .setup(|app| {
+            tray::init(app.handle())?;
             heartbeat::spawn(app.handle().clone());
+            // 关窗 = 隐藏到托盘,不退出进程(spec §5.4)
+            let win = app.get_webview_window("main").unwrap();
+            let w = win.clone();
+            win.on_window_event(move |e| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = e {
+                    api.prevent_close();
+                    let _ = w.hide();
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
