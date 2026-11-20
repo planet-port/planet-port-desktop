@@ -1,0 +1,3 @@
+# pnpm 12 起项目级设置迁到本文件；esbuild 的安装脚本需显式放行，否则 install 以非零退出码失败
+allowBuilds:
+  esbuild: true

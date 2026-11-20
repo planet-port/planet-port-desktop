@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/api", "crates/cli", "crates/zt-sys", "crates/zt-core", "crates/pocs", "crates/poc4"]
+members = ["crates/api", "crates/cli", "crates/zt-sys", "crates/zt-core", "crates/pocs", "crates/poc4", "crates/gui/src-tauri"]
 
 [workspace.package]
 # 开发版本约定:发版脚本(release.sh)发完 tag 后 bump 到「下一版本-dev」,

@@ -1,0 +1,27 @@
+{
+  "name": "planet-port-gui",
+  "private": true,
+  "version": "0.4.1-dev",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5",
+    "@tauri-apps/api": "^2",
+    "i18next": "^25",
+    "react": "^19",
+    "react-dom": "^19",
+    "react-i18next": "^15"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "typescript": "^5",
+    "vite": "^7"
+  }
+}

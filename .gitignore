@@ -21,3 +21,9 @@ crates/pocs/fixtures/
 /dist/
 /claude-session*
 docs/superpowers/
+
+# GUI 前端(Tauri)依赖与构建产物
+node_modules/
+crates/gui/dist/
+# tauri-build 每次构建自动重生成的权限清单与 schema
+crates/gui/src-tauri/gen/schemas/
