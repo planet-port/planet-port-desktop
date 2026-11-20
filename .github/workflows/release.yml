@@ -419,12 +419,11 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev build-essential file
       - name: Build GUI bundles
         # tauri 2 以 CLI 调用目录(crates/gui)为 beforeBuildCommand 的 cwd，
-        # conf 内 `pnpm --dir ..` 会落到 crates/ 导致 exec 失败，此处内联覆盖;
-        # conf 修正后可移除 --config。
+        # conf 内命令按该 cwd 书写(pnpm build/dev)
         shell: bash
         run: |
           pnpm --dir crates/gui install --frozen-lockfile
-          pnpm --dir crates/gui tauri build --config '{"build":{"beforeBuildCommand":"pnpm build"}}'
+          pnpm --dir crates/gui tauri build
       - name: Upload bundles to release
         shell: bash
         env:
