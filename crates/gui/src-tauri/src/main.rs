@@ -2,6 +2,7 @@
 
 mod api_client;
 mod commands;
+mod heartbeat;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -11,6 +12,8 @@ pub struct GuiState {
     pub online: bool,
     pub installed: bool,
     pub lang: String,
+    pub snapshot_planets: serde_json::Value,
+    pub snapshot_networks: serde_json::Value,
 }
 
 pub type SharedState = Mutex<GuiState>;
@@ -27,7 +30,13 @@ fn main() {
             online: false,
             installed: api_client::installed(),
             lang: String::from("zh"),
+            snapshot_planets: serde_json::Value::Array(Vec::new()),
+            snapshot_networks: serde_json::Value::Array(Vec::new()),
         }))
+        .setup(|app| {
+            heartbeat::spawn(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_daemon_state,
             commands::get_status,
