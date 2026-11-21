@@ -1,4 +1,4 @@
-# planet-port Windows 线上安装脚本
+﻿# planet-port Windows 线上安装脚本
 #
 # 用法:
 #   powershell -ExecutionPolicy Bypass -File install.ps1 [-Version 0.1.3]
