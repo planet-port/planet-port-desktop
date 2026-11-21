@@ -17,6 +17,12 @@ describe('offline guide', () => {
     await browser.$('.guide').waitForDisplayed({ timeout: 20000 });
   });
 
+  it('无内嵌资源时降级手动引导(不出现自动安装按钮)', async () => {
+    // CI 走 --no-bundle 且无 resources 目录 → embedded_manifest 返回 null →
+    // OfflineGuide 退回纯手动引导,不挂载 SetupWizard,install-btn 不应存在
+    await expect(browser.$('[data-testid="install-btn"]')).not.toBeDisplayed();
+  });
+
   it('语言切换可用(zh ↔ en)', async () => {
     const zh = await browser.$('.lang button:nth-child(1)');
     const en = await browser.$('.lang button:nth-child(2)');
