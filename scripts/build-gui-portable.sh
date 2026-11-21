@@ -16,6 +16,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# 锚定仓库根:cargo(靠 cwd 找 workspace)与 bootstrap.sh(相对路径 CORE_DIR=Core)都依赖调用目录,
+# 跨目录绝对路径调用时若不切根,Core/ 会被拉到错误位置
+cd "$ROOT"
 GUI="$ROOT/crates/gui"
 HOST="$(rustc -vV | awk '/^host:/ {print $2}')"
 TRIPLE="${1:-${TARGET:-}}"
@@ -50,7 +53,10 @@ if [ "$WIN_TARGET" = 1 ]; then
   # wintun 随便携包分发;SHA256 与 dist 管线同款口径,不符即中止
   cp "$ROOT/third_party/wintun/wintun.dll" "$RES/"
   want="e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce"
-  got="$(sha256sum "$RES/wintun.dll" | awk '{print $1}')"
+  # SHA256 工具探测:macOS 无 sha256sum,优先 shasum,Linux/CI 用 sha256sum(与 bootstrap.sh 同款口径)
+  SHA256_TOOL=(shasum -a 256)
+  command -v shasum >/dev/null 2>&1 || SHA256_TOOL=(sha256sum)
+  got="$("${SHA256_TOOL[@]}" "$RES/wintun.dll" | awk '{print $1}')"
   [ "$got" = "$want" ] || { echo "wintun.dll SHA256 不符(实际 ${got:0:16}…),拒绝组包" >&2; exit 1; }
 else
   cp "$BIN/planet-portd" "$BIN/planet-port" "$RES/"

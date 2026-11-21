@@ -31,6 +31,9 @@ crates/gui/dist/
 # tauri-build 每次构建自动重生成的权限清单与 schema
 crates/gui/src-tauri/gen/schemas/
 # GUI 内嵌资源(scripts/build-gui-portable.sh 组包产物,不入库)
-crates/gui/src-tauri/resources/
+# 用 /* 而非整目录忽略:tauri-build 对 resources 声明的目录"存在即可",不存在则硬失败;
+# 反排除 .gitkeep 保证干净 checkout 与 tauri dev 也能过构建
+crates/gui/src-tauri/resources/*
+!crates/gui/src-tauri/resources/.gitkeep
 
 .env.gozi84

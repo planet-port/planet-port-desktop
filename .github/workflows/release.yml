@@ -398,7 +398,7 @@ jobs:
           - os: macos-15        # Apple Silicon dmg
           - os: macos-15        # Intel dmg(交叉编译)
             target: x86_64-apple-darwin
-          - os: windows-latest  # NSIS x64 + 免安装 zip
+          - os: windows-latest  # 免安装 zip(x64 便携包,替代 NSIS)
           - os: ubuntu-22.04    # AppImage x64(glibc 2.35+,与 CLI manylinux 基线不同,README 注明)
     runs-on: ${{ matrix.os }}
     steps:
@@ -437,7 +437,6 @@ jobs:
           files=(
             target/release/bundle/dmg/*.dmg
             target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
-            target/release/bundle/nsis/*.exe
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/*portable.zip
           )
