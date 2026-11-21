@@ -128,18 +128,38 @@ const WAIT_ONLINE_SECS: u64 = 30;
 #[cfg(not(target_os = "windows"))]
 const WAIT_ONLINE_SECS: u64 = 15;
 
+/// 安装 in-flight 位:同一时刻只允许一路提权安装(防双击/多窗口并发弹 UAC/密码框)
+static INSTALL_IN_FLIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// tauri command:释放内嵌资源到 staging 并提权执行 `planet-port install`。
 /// 成败不经返回值:提权子进程耗时由用户驱动,invoke 立即返回 Ok(()) 仅表示流程已启动,
 /// 结果走 install-done / install-failed(String) 事件,中间态走 install-progress(String)
 #[tauri::command]
 pub fn start_install(app: tauri::AppHandle) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    // 原子 swap 抢占占位:并发触发直接拒绝(前端已有按钮禁用作主防线,此处为纵深防御)
+    if INSTALL_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        return Err("install already in progress".to_string());
+    }
+    let started = stage_and_spawn(&app);
+    // 启动期失败(缺资源/拷贝 staging)不会产生后台线程,占位须就地释放
+    if started.is_err() {
+        INSTALL_IN_FLIGHT.store(false, Ordering::SeqCst);
+    }
+    started
+}
+
+/// 清旧 staging → 拷贝内嵌资源 → 起后台线程提权安装;Ok 仅代表流程已启动
+fn stage_and_spawn(app: &tauri::AppHandle) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
     use tauri::Emitter;
-    let dir = resource_dir(&app).ok_or("embedded resources missing")?;
+    let dir = resource_dir(app).ok_or("embedded resources missing")?;
     let staging = app.path().app_data_dir().map_err(|e| e.to_string())?.join("staging");
     // 清旧 staging 后整目录拷贝资源(staging 是我们自己的领地,递归拷贝安全)
     let _ = std::fs::remove_dir_all(&staging);
     copy_dir(&dir, &staging).map_err(|e| format!("copy staging: {e}"))?;
     let cli = staging.join(exe_file_name("planet-port"));
+    let app = app.clone();
     std::thread::spawn(move || {
         // 先宣告进入提权阶段:mac 密码框/Windows UAC 可能长时间挂起,前端须即刻切安装态
         let _ = app.emit("install-progress", "elevating");
@@ -153,6 +173,8 @@ pub fn start_install(app: tauri::AppHandle) -> Result<(), String> {
             let reason = if !ok { "install-exit-nonzero" } else { "daemon-timeout" };
             let _ = app.emit("install-failed", reason);
         }
+        // 结果落地后释放占位,允许下一次安装/升级
+        INSTALL_IN_FLIGHT.store(false, Ordering::SeqCst);
     });
     Ok(())
 }
@@ -326,5 +348,15 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         assert!(tcp_probe(port), "已监听端口应探测成功");
         assert!(!tcp_probe(1), "保留端口 1 未监听,应探测失败");
+    }
+
+    /// in-flight 位互斥语义:首次 swap 抢占成功(旧值 false),二次 swap 必得 true(被拒);
+    /// 本组测试是唯一触碰该位的用例,进程内初始值恒为 false
+    #[test]
+    fn install_in_flight_swap_is_exclusive() {
+        use std::sync::atomic::Ordering;
+        assert!(!INSTALL_IN_FLIGHT.swap(true, Ordering::SeqCst), "首次抢占应成功");
+        assert!(INSTALL_IN_FLIGHT.swap(false, Ordering::SeqCst), "二次 swap 应读到占用中");
+        assert!(!INSTALL_IN_FLIGHT.load(Ordering::SeqCst), "释放后应回到空闲");
     }
 }

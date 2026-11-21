@@ -69,3 +69,9 @@ export interface DaemonState {
   online: boolean;
   installed: boolean;
 }
+
+/// bundle 内嵌安装资源清单(embedded_manifest 返回;dev/未组包时为 null)
+export interface EmbeddedManifest {
+  version: string;
+  target: string;
+}

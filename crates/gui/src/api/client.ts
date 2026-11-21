@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { DaemonState, GuiError, NetworkEntry, PeerEntry, PlanetStatus } from './types';
+import type { DaemonState, EmbeddedManifest, GuiError, NetworkEntry, PeerEntry, PlanetStatus } from './types';
 
 /// invoke 失败时 reject 值即 Rust 侧序列化的 GuiError 结构
 export function asError(e: unknown): GuiError {
@@ -12,6 +12,11 @@ async function cmd<T>(name: string, args?: Record<string, unknown>): Promise<T> 
 
 export const api = {
   daemonState: () => cmd<DaemonState>('get_daemon_state'),
+  /// 内嵌安装资源清单:null = 无内嵌资源,前端退回手动引导
+  embeddedManifest: () => cmd<EmbeddedManifest | null>('embedded_manifest'),
+  /// 启动提权安装:Ok 仅代表流程已启动,结果走 install-done/failed 事件;
+  /// 提权前失败(缺资源/拷贝 staging)走 rejection,前端须 catch 转 failed 态
+  startInstall: () => cmd<void>('start_install'),
   status: () => cmd<{ planets: PlanetStatus[] }>('get_status'),
   planets: () => cmd<{ planets: PlanetStatus[] }>('get_planets'),
   addPlanet: (source: string) => cmd('add_planet', { source }),

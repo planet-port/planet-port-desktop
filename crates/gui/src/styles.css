@@ -125,6 +125,10 @@ select.input { cursor: pointer; }
 .hint { color: var(--muted); margin-top: 12px; }
 .guide { max-width: 720px; }
 .guide h2 { margin: 8px 0 4px; }
+.guide details { margin-top: 10px; }
+.guide summary { cursor: pointer; }
+.wizard .fail { color: var(--danger); }
+.wizard .fail p { margin: 8px 0; }
 .muted { color: var(--muted); }
 .cmd { margin: 14px 0; }
 .cmd-head {
