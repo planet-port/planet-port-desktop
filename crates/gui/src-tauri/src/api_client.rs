@@ -64,8 +64,13 @@ fn resolve_port(raw: &str) -> u16 {
 }
 
 fn resolve_base() -> String {
-    let port = std::fs::read_to_string(port_file()).map(|s| resolve_port(&s)).unwrap_or(DEFAULT_API_PORT);
-    format!("http://127.0.0.1:{port}")
+    format!("http://127.0.0.1:{}", api_port())
+}
+
+/// 当前 daemon API 端口:port 文件 → 合法端口,否则默认 9998。
+/// 独立成 pub(crate) 供 bootstrap 轮询复用(daemon 启动可能换端口,须每次重读)
+pub(crate) fn api_port() -> u16 {
+    std::fs::read_to_string(port_file()).map(|s| resolve_port(&s)).unwrap_or(DEFAULT_API_PORT)
 }
 
 fn make_agent(timeout: Option<Duration>) -> ureq::Agent {

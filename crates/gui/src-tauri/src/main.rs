@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod api_client;
+mod bootstrap;
 mod commands;
 mod heartbeat;
 mod tray;
@@ -50,6 +51,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_daemon_state,
+            bootstrap::embedded_manifest,
+            bootstrap::start_install,
             commands::get_status,
             commands::get_planets,
             commands::add_planet,
