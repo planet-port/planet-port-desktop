@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { EmbeddedManifest } from '../api/types';
 import CmdBlock from '../components/CmdBlock';
 import type { InstallPhase } from './setup';
+
+/// install-done 后等待 daemon-online 的时限:超时本地转 failed,交还重试出口
+const DONE_WAIT_MS = 15_000;
 
 /// 安装失败 reason → i18n key;事件通道只承载这两个枚举(其余 reject 串走 failGeneric)
 const FAIL_KEY: Record<string, string> = {
@@ -13,7 +16,7 @@ const FAIL_KEY: Record<string, string> = {
 };
 
 /// 安装态 UI:内嵌资源一键安装/升级。成败不经 invoke 返回值,走 install-done/failed 事件;
-/// 成功后本组件不做任何动作 —— daemon-online 事件让 App 切主界面
+/// 成功后 daemon-online 事件让 App 切主界面,本组件仅做有限等待兜底(见 DONE_WAIT_MS)
 export default function SetupWizard({
   manifest,
   installed,
@@ -26,19 +29,35 @@ export default function SetupWizard({
   const { t } = useTranslation();
   const [phase, setPhase] = useState<InstallPhase>('idle');
   const [reason, setReason] = useState('');
+  // install-done 兜底计时器句柄:失败事件或组件卸载时撤除
+  const doneTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     const unsubs = [
       listen('install-progress', () => setPhase('installing')),
-      // done 后 daemon-online 接管切页;维持安装态避免成功瞬间闪出按钮
-      listen('install-done', () => setPhase('installing')),
+      // done 后 daemon-online 接管切页;维持安装态避免成功瞬间闪出按钮。
+      // 但 tcp_probe 裸 TCP 误判(API 端口被无关进程占用)时 Rust 照发 done,
+      // HTTP 探活却判离线,daemon-online 永不到达 —— 故起 15s 有限等待,
+      // 超时按 daemon-timeout 转 failed(failTimeout 文案),避免死锁在「正在安装」
+      listen('install-done', () => {
+        setPhase('installing');
+        clearTimeout(doneTimer.current);
+        doneTimer.current = setTimeout(() => {
+          setPhase('failed');
+          setReason('daemon-timeout');
+        }, DONE_WAIT_MS);
+      }),
       listen<string>('install-failed', e => {
+        // 真实失败事件优先于本地超时兜底,先撤掉待触发的计时器以免覆盖 reason
+        clearTimeout(doneTimer.current);
         setPhase('failed');
         setReason(String(e.payload));
       }),
     ].map(p => p.then(f => f));
     // 每个 unlisten 必须真正执行,否则重复挂载后监听泄漏
     return () => {
+      // daemon-online 到达 → App 切页卸载本组件,计时器随之撤除
+      clearTimeout(doneTimer.current);
       for (const u of unsubs) void u.then(f => f());
     };
   }, []);

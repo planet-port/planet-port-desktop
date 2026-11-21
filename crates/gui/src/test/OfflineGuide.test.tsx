@@ -151,6 +151,32 @@ describe('OfflineGuide 双态', () => {
     expect(screen.queryByTestId('install-fail')).not.toBeInTheDocument();
   });
 
+  it('install-done 后 15s 内 daemon-online 未到达:超时转 failed,展示超时文案与重试按钮', async () => {
+    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    render(<OfflineGuide installed={false} />);
+    // 先用真实时钟完成 render/findBy(findBy 依赖定时器轮询),再切 fake timers 推进等待窗口
+    fireEvent.click(await screen.findByTestId('install-btn'));
+    vi.useFakeTimers();
+    try {
+      emit('install-done', undefined);
+      expect(screen.queryByTestId('install-fail')).not.toBeInTheDocument();
+      // 窗口未满不误报
+      act(() => {
+        vi.advanceTimersByTime(14_999);
+      });
+      expect(screen.queryByTestId('install-fail')).not.toBeInTheDocument();
+      // 满 15s 且 daemon-online 仍未来(tcp_probe 误判场景):本地转 failed 兜底
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      const fail = screen.getByTestId('install-fail');
+      expect(fail).toHaveTextContent('服务未在预期时间内上线');
+      expect(screen.getByTestId('install-retry')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('卸载后解除安装事件监听(unlisten 真正执行,不泄漏)', async () => {
     manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
     const { unmount } = render(<OfflineGuide installed={false} />);
