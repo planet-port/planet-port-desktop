@@ -1,3 +1,6 @@
 # pnpm 12 起项目级设置迁到本文件；esbuild 的安装脚本需显式放行，否则 install 以非零退出码失败
+# edgedriver/geckodriver 为 wdio 驱动包装包，同因被 pnpm 12 拦截(build-gui-portable.sh 组包脚本会跑 install)
 allowBuilds:
   esbuild: true
+  edgedriver: true
+  geckodriver: true

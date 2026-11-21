@@ -30,5 +30,7 @@ node_modules/
 crates/gui/dist/
 # tauri-build 每次构建自动重生成的权限清单与 schema
 crates/gui/src-tauri/gen/schemas/
+# GUI 内嵌资源(scripts/build-gui-portable.sh 组包产物,不入库)
+crates/gui/src-tauri/resources/
 
 .env.gozi84

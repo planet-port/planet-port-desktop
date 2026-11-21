@@ -384,7 +384,7 @@ jobs:
           persist-credentials: false
           submodules: recursive
 
-  # GUI(Tauri)桌面安装包:与 cargo-dist 产物同 tag 发布。
+  # GUI(Tauri)桌面安装包 + 免安装包:与 cargo-dist 产物同 tag 发布。
   # 依赖链:host 完成(Release 已建)后才上传;PR 仅 plan 不触发本 job。
   gui:
     if: ${{ !github.event.pull_request }}
@@ -398,7 +398,7 @@ jobs:
           - os: macos-15        # Apple Silicon dmg
           - os: macos-15        # Intel dmg(交叉编译)
             target: x86_64-apple-darwin
-          - os: windows-latest  # NSIS x64
+          - os: windows-latest  # NSIS x64 + 免安装 zip
           - os: ubuntu-22.04    # AppImage x64(glibc 2.35+,与 CLI manylinux 基线不同,README 注明)
     runs-on: ${{ matrix.os }}
     steps:
@@ -420,20 +420,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev build-essential file
-      - name: Build GUI bundles
-        # tauri 2 以 CLI 调用目录(crates/gui)为 beforeBuildCommand 的 cwd，
-        # conf 内命令按该 cwd 书写(pnpm build/dev)
+      # 组包脚本内含:bootstrap(拉 ZT 核心源码)→ daemon/cli 构建 → resources 组装
+      # → tauri build(win 走 no-bundle 自组 planet-port-<ver>-x64-portable.zip);
+      # 交叉目标经 TARGET 环境变量传入,daemon/cli 与 GUI 同 target
+      - name: Build portable GUI
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
-        run: |
-          pnpm --dir crates/gui install --frozen-lockfile
-          if [ -n "$TARGET" ]; then
-            rustup target add "$TARGET"
-            pnpm --dir crates/gui tauri build --target "$TARGET"
-          else
-            pnpm --dir crates/gui tauri build
-          fi
+        run: bash scripts/build-gui-portable.sh "${TARGET}"
       - name: Upload bundles to release
         shell: bash
         env:
@@ -445,6 +439,7 @@ jobs:
             target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
             target/release/bundle/nsis/*.exe
             target/release/bundle/appimage/*.AppImage
+            target/release/bundle/*portable.zip
           )
           echo "uploading: ${files[*]}"
           gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
