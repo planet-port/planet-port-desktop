@@ -83,11 +83,13 @@ pub fn run(yes: bool, json: bool) {
             std::process::exit(1);
         }
     }
-    // 从已安装路径运行 install:跳过自拷贝(rename 同路径会自删)
+    // 从已安装路径运行 install:canonicalize 会解析软链,比对的是统一 bin 目录
+    // 里的真身,同一真身才跳过自拷贝(rename 同路径会自删)
     let installed = fs::canonicalize(&cli_src).ok()
         == fs::canonicalize(service::CLI_BIN).ok();
 
-    // 3. 落盘 + PATH 入口(macOS:App Support+软链;Linux:直接 /usr/local/bin)
+    // 3. 落盘 + PATH 入口(两平台同构:统一 bin 目录 + /usr/local/bin 软链,
+    //    macOS 是 App Support/bin,Linux 是 /usr/local/lib/planet-port/bin)
     service::install_cli(&cli_src, &daemon_src, installed, json);
 
     // 4. 服务安装(拷 daemon 已在上方完成,函数内的同路径自拷会跳过;

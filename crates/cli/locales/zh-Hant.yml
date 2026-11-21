@@ -58,6 +58,7 @@
   cli.service.installedData: "  數據:   %{dir}"
   cli.service.copyFailed: "拷貝二進位 %{src} → %{dst} 失敗: %{e}"
   cli.service.renameFailed: "替換二進位 %{path} 失敗: %{e}"
+  cli.service.linkFailed: "建立軟鏈 %{path} 失敗: %{e}"
   cli.service.unloaded: "已卸載執行中的服務 %{label}"
   cli.service.notRunningSkip: "服務未在執行,跳過卸載步驟"
   cli.service.removed: "已刪除 %{plist} 與 %{bin}"

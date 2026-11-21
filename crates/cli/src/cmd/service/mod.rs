@@ -200,6 +200,60 @@ pub(crate) fn port_of(base: &str) -> u16 {
     base.rsplit(':').next().and_then(|p| p.parse().ok()).unwrap_or(0)
 }
 
+// ---- 安装布局决策(纯函数,便于单测) ----
+
+// Linux 落盘使用的迁移决策;linux.rs 经 cfg 只在 Linux 编译,决策逻辑上收到
+// 本模块,单测才能在 mac 开发机随 cargo test 一并跑(test 目标下其余平台也编译)
+#[cfg(any(target_os = "linux", test))]
+#[derive(Debug, PartialEq)]
+pub(crate) enum LayoutPlan {
+    /// 全新安装:直接落 BIN_DIR + 建软链
+    Fresh,
+    /// 旧直落形态:先把 /usr/local/bin 真实文件移入 BIN_DIR,再重建软链
+    Migrate,
+    /// 已是新形态:仅覆盖 BIN_DIR 内文件,软链不动
+    InPlace,
+}
+
+/// prev_real: /usr/local/bin/planet-port 存在且不是软链(旧形态真实文件)
+/// link_ok: 软链已指向 BIN_DIR 目标
+#[cfg(any(target_os = "linux", test))]
+fn plan_layout(prev_real: bool, link_ok: bool) -> LayoutPlan {
+    if link_ok {
+        LayoutPlan::InPlace
+    } else if prev_real {
+        LayoutPlan::Migrate
+    } else {
+        LayoutPlan::Fresh
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    #[test]
+    fn fresh_when_nothing_installed() {
+        assert_eq!(plan_layout(false, false), LayoutPlan::Fresh);
+    }
+
+    #[test]
+    fn migrate_from_legacy_real_file() {
+        assert_eq!(plan_layout(true, false), LayoutPlan::Migrate);
+    }
+
+    #[test]
+    fn inplace_when_link_already_points_to_bin_dir() {
+        assert_eq!(plan_layout(false, true), LayoutPlan::InPlace);
+    }
+
+    #[test]
+    fn link_wins_over_legacy() {
+        // 软链已就位时即使误判有真实文件也走 InPlace(软链存在则真实文件必已迁走)
+        assert_eq!(plan_layout(true, true), LayoutPlan::InPlace);
+    }
+}
+
 // ---- 子命令实现 ----
 
 fn status(json: bool) -> Result<(), CliError> {

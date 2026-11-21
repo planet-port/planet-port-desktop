@@ -1,7 +1,8 @@
 //! systemd 服务管理(Linux 平台实现,接口与 macos.rs 对齐)。
 //!
-//! 系统落点:
-//!   /usr/local/bin/planet-port / planet-portd   ← 二进制直接落 PATH 规范位
+//! 系统落点(与 mac 的 App Support/bin + PATH 软链同构):
+//!   /usr/local/lib/planet-port/bin/{planet-port,planet-portd} ← 二进制真身
+//!   /usr/local/bin/{planet-port,planet-portd}                 ← PATH 软链
 //!   /etc/systemd/system/planet-portd.service    ← unit
 //!   /var/lib/planet-portd                       ← 数据目录(api crate 同源)
 //!   日志走 journald:journalctl -u planet-portd,无需轮转配置
@@ -12,7 +13,7 @@
 //!   systemctl restart ↔ kickstart -k(幂等重启)
 //!   systemctl stop 自带等退出,无需手动轮询 pid;stop 后 systemd 保证不拉回
 
-use super::{json_done, locate_daemon_src, probe_online, progress, wait_online};
+use super::{json_done, locate_daemon_src, plan_layout, probe_online, progress, wait_online, LayoutPlan};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -22,21 +23,45 @@ const UNIT: &str = "planet-portd";
 const UNIT_PATH: &str = "/etc/systemd/system/planet-portd.service";
 /// 数据目录:install 命令落盘 CLI/daemon 的根;--config-dir 亦指向此处
 const DATA_DIR: &str = "/var/lib/planet-portd";
-/// CLI 落点:直接落 PATH 规范位,无软链层(mod.rs 经此对外提供已装路径)
+/// 统一二进制目录(与 mac 的 App Support/bin 对齐):升级只切软链,卸载删目录
+pub(crate) const BIN_DIR: &str = "/usr/local/lib/planet-port/bin";
+/// PATH 入口软链:指向 BIN_DIR 真身(mod.rs 经 CLI_BIN 对外提供已装路径,
+/// install.rs 的 canonicalize 比对会解析软链命中真身,无需改动)
 pub(crate) const CLI_BIN: &str = "/usr/local/bin/planet-port";
 pub(crate) const BIN_PATH: &str = "/usr/local/bin/planet-portd";
 
 pub(crate) fn install(json: bool) {
-    // 1. 拷 daemon 到固定路径(unit 指向它,发布包解压路径不稳定)
+    // 0. 布局收敛:旧直落形态(真实文件在 /usr/local/bin)一次性迁入 BIN_DIR,
+    //    避免软链与旧真实文件互相覆盖;软链缺失则确保 BIN_DIR 就绪
+    let plan = plan_layout(
+        fs::symlink_metadata(CLI_BIN).map(|m| !m.file_type().is_symlink()).unwrap_or(false),
+        fs::read_link(CLI_BIN).is_ok(),
+    );
+    match plan {
+        LayoutPlan::Migrate => {
+            let _ = fs::create_dir_all(BIN_DIR);
+            for p in [CLI_BIN, BIN_PATH] {
+                let name = Path::new(p).file_name().unwrap().to_str().unwrap();
+                // 仍在使用的真实文件 rename 进 BIN_DIR(原子,不触发 ETXTBSY)
+                let _ = fs::rename(p, format!("{BIN_DIR}/{name}"));
+            }
+        }
+        LayoutPlan::Fresh => {
+            let _ = fs::create_dir_all(BIN_DIR);
+        }
+        LayoutPlan::InPlace => {}
+    }
+    // 1. 拷 daemon 到 BIN_DIR 真实路径(unit 指向它,发布包解压路径不稳定)
+    let real_daemon = format!("{BIN_DIR}/planet-portd");
     let src = locate_daemon_src();
-    let same = fs::canonicalize(&src).ok().zip(fs::canonicalize(BIN_PATH).ok())
+    let same = fs::canonicalize(&src).ok().zip(fs::canonicalize(&real_daemon).ok())
         .map(|(a, b)| a == b)
         .unwrap_or(false);
     if !same {
-        super::copy_exe(&src, BIN_PATH);
+        super::copy_exe(&src, &real_daemon);
     }
-    if let Err(e) = fs::set_permissions(BIN_PATH, fs::Permissions::from_mode(0o755)) {
-        eprintln!("{}", rust_i18n::t!("cli.service.chmodFailed", path = BIN_PATH, e = e));
+    if let Err(e) = fs::set_permissions(&real_daemon, fs::Permissions::from_mode(0o755)) {
+        eprintln!("{}", rust_i18n::t!("cli.service.chmodFailed", path = real_daemon, e = e));
         std::process::exit(1);
     }
     // 2. 数据目录先行创建:unit 显式 --config-dir,但目录须存在 daemon 才能写
@@ -46,10 +71,12 @@ pub(crate) fn install(json: bool) {
     }
     // 3. 写 unit(ExecStart 显式 --config-dir,与 macOS plist 同构,
     //    不依赖 config_dir() 的"目录已存在"隐式回退)
-    if let Err(e) = fs::write(UNIT_PATH, unit_content(BIN_PATH, DATA_DIR)) {
+    if let Err(e) = fs::write(UNIT_PATH, unit_content(&real_daemon, DATA_DIR)) {
         eprintln!("{}", rust_i18n::t!("cli.service.writeUnitFailed", path = UNIT_PATH, e = e));
         std::process::exit(1);
     }
+    // 3.5 PATH 软链(指向 BIN_DIR 真身;已有软链/普通文件一律替换,幂等重建)
+    ensure_links();
     // 4. 装载:daemon-reload 认新 unit;enable 开机自启;restart 幂等拉起
     //    (升级场景二进制已被 install 命令原子替换,restart 即换新进程)
     systemctl(&["daemon-reload"]);
@@ -64,21 +91,38 @@ pub(crate) fn install(json: bool) {
         eprintln!("{}", rust_i18n::t!("cli.service.startTimeout", log = "journalctl -u planet-portd"));
     }
     progress(json, rust_i18n::t!("cli.service.installedSvc", unit = UNIT).to_string());
-    progress(json, rust_i18n::t!("cli.service.installedBin", path = BIN_PATH).to_string());
+    progress(json, rust_i18n::t!("cli.service.installedBin", path = real_daemon).to_string());
     progress(json, rust_i18n::t!("cli.service.installedUnit", path = UNIT_PATH).to_string());
     progress(json, rust_i18n::t!("cli.service.installedData", dir = DATA_DIR).to_string());
     json_done(json, serde_json::json!({"result": "ok"}));
 }
 
-/// install.rs 步骤 3:CLI/daemon 落盘。
+/// install.rs 步骤 3:CLI/daemon 落盘 + PATH 软链。
 /// installed 参数:从已安装路径运行时跳过自拷(rename 同路径会自删);
-/// json 参数与 macos 签名对齐(预留结果回执,Linux 无软链层暂无输出)
+/// json 参数与 macos 签名对齐(软链重建静默完成,无输出)
 pub(crate) fn install_cli(cli_src: &Path, daemon_src: &Path, installed: bool, _json: bool) {
-    // Linux 无软链层:CLI/daemon 直接落 /usr/local/bin(PATH 规范位,
-    // zerotier-one 落 /usr/sbin 同理)
     if !installed {
-        super::copy_exe(cli_src, CLI_BIN);
-        super::copy_exe(daemon_src, BIN_PATH);
+        // BIN_DIR 先行:copy_exe 的临时文件落在该目录下
+        let _ = fs::create_dir_all(BIN_DIR);
+        super::copy_exe(cli_src, &format!("{BIN_DIR}/planet-port"));
+        super::copy_exe(daemon_src, &format!("{BIN_DIR}/planet-portd"));
+    }
+    ensure_links();
+}
+
+/// PATH 软链建立:/usr/local/bin/{planet-port,planet-portd} → BIN_DIR 真身。
+/// 目标位置已有任何东西(旧软链/普通文件)先移除再建,重复安装幂等
+fn ensure_links() {
+    for (name, link) in [("planet-port", CLI_BIN), ("planet-portd", BIN_PATH)] {
+        let real = format!("{BIN_DIR}/{name}");
+        let _ = fs::remove_file(link);
+        if let Some(dir) = Path::new(link).parent() {
+            let _ = fs::create_dir_all(dir);
+        }
+        if let Err(e) = std::os::unix::fs::symlink(&real, link) {
+            eprintln!("{}", rust_i18n::t!("cli.service.linkFailed", path = link, e = e));
+            std::process::exit(1);
+        }
     }
 }
 
@@ -92,9 +136,11 @@ pub(crate) fn uninstall(json: bool) {
     let _ = fs::remove_file(UNIT_PATH);
     let _ = systemctl_output(&["daemon-reload"]);
     let _ = systemctl_output(&["reset-failed", UNIT]);
-    // install 命令落盘的 CLI 与 daemon 一并清;数据目录保留
+    // install 命令落盘的 PATH 软链与 BIN_DIR 真身一并清(旧直落形态残留的
+    // 真实文件也是这两条路径,同样覆盖);数据目录保留
     let _ = fs::remove_file(CLI_BIN);
     let _ = fs::remove_file(BIN_PATH);
+    let _ = fs::remove_dir_all(BIN_DIR);
     progress(json, rust_i18n::t!("cli.service.removed", plist = UNIT_PATH, bin = BIN_PATH).to_string());
     progress(json, rust_i18n::t!("cli.service.dataKept", dir = DATA_DIR).to_string());
     json_done(json, serde_json::json!({"result": "ok"}));
