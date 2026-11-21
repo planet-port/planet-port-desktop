@@ -23,7 +23,7 @@ use serde_json::{json, Value};
 
 use crate::registry::{Registry, RegistryEntry};
 use crate::runtime;
-use crate::state::{err, AppState, LiveInfo, ShareRecord};
+use crate::state::{err, AppState, LiveInfo, PlanetRuntime, ShareRecord};
 use crate::world;
 
 fn now_unix() -> u64 {
@@ -456,6 +456,28 @@ pub async fn planets_show(
     Ok(Json(json!({ "planet": to_detail(e, live.as_ref()) })))
 }
 
+/// relay 热应用(独立 async fn:planets_patch 持 registry 锁段与其隔离,
+/// 本函数 future 的 Send 分析不涉及 registry guard)。set_relay 阻塞等驱动
+/// 应答(约一个 poll 周期),放阻塞线程池。
+async fn hot_apply_relay(
+    rt: std::sync::Arc<PlanetRuntime>,
+    relay_val: Option<String>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let g = rt
+            .node
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match g.as_ref() {
+            Some(node) => node.set_relay(relay_val).map_err(|e| e.to_string()),
+            None => Ok(()),
+        }
+    })
+    .await
+    .map_err(|e| format!("relay 热应用任务失败: {e}"))
+    .and_then(|r| r)
+}
+
 pub async fn planets_patch(
     State(st): State<AppState>,
     Path(id): Path<String>,
@@ -490,40 +512,66 @@ pub async fn planets_patch(
         }
     };
     let live = live_of(&st, &id)?;
-    let mut reg = st.registry.lock().unwrap();
-    let i = find_entry_mut(&mut reg, &id)?;
-    if let Some(n) = body.get("name").and_then(|v| v.as_str()) {
-        let self_id = reg.planets[i].id.clone();
-        if reg
-            .planets
-            .iter()
-            .any(|e| name_of(e) == n && e.id != self_id)
-        {
-            return Err(err(
-                StatusCode::CONFLICT,
-                "nameTaken",
-                &format!("planet name \"{n}\" is already taken"),
-                None,
-            )
-            );
+    // body 携带 relay 字段(=Some)时才需热应用;先取布尔避免下方 if let 的部分 move
+    let relay_touched = relay.is_some();
+    // registry 段整体入块:MusiGuard 非 Send,显式 drop 对 async 状态机的
+    // 存活分析不生效(仍保守判定跨 await 持锁),块作用域结构性终结
+    let (pid, detail, hot_relay) = {
+        let mut reg = st.registry.lock().unwrap();
+        let i = find_entry_mut(&mut reg, &id)?;
+        if let Some(n) = body.get("name").and_then(|v| v.as_str()) {
+            let self_id = reg.planets[i].id.clone();
+            if reg
+                .planets
+                .iter()
+                .any(|e| name_of(e) == n && e.id != self_id)
+            {
+                return Err(err(
+                    StatusCode::CONFLICT,
+                    "nameTaken",
+                    &format!("planet name \"{n}\" is already taken"),
+                    None,
+                )
+                );
+            }
+            reg.planets[i].name = Some(n.into());
         }
-        reg.planets[i].name = Some(n.into());
-    }
-    if let Some(v) = body.get("icon").and_then(|v| v.as_str()) {
-        reg.planets[i].icon = Some(v.into());
-    }
-    if let Some(v) = body.get("color").and_then(|v| v.as_str()) {
-        reg.planets[i].color = Some(v.into());
-    }
-    if let Some(parsed) = relay {
-        reg.planets[i].tcp_fallback_relay = parsed;
-    }
-    let pid = reg.planets[i].id.clone();
-    let detail = to_detail(&reg.planets[i], live.as_ref());
-    reg.save(&st.config_dir)
-        .map_err(|e| internal(format!("cannot save registry: {e}")))?;
+        if let Some(v) = body.get("icon").and_then(|v| v.as_str()) {
+            reg.planets[i].icon = Some(v.into());
+        }
+        if let Some(v) = body.get("color").and_then(|v| v.as_str()) {
+            reg.planets[i].color = Some(v.into());
+        }
+        if let Some(parsed) = relay {
+            reg.planets[i].tcp_fallback_relay = parsed;
+        }
+        let pid = reg.planets[i].id.clone();
+        let detail = to_detail(&reg.planets[i], live.as_ref());
+        // 热应用值:实例运行中则即时生效,已停则仅写盘(下次启动装配,非错误)
+        let hot_relay = if relay_touched {
+            Some(reg.planets[i].tcp_fallback_relay.clone())
+        } else {
+            None
+        };
+        reg.save(&st.config_dir)
+            .map_err(|e| internal(format!("cannot save registry: {e}")))?;
+        (pid, detail, hot_relay)
+    };
     st.events
         .push(&pid, "planetUpdated", "planet metadata updated");
+    // relay 热应用:运行中实例经驱动线程命令切换 TCP 隧道配置,无需重启 planet
+    // (曾致实机调试 relay 配置后不生效——旧实现仅写盘,运行态 relay/tcp_state
+    // 维持 Disabled)。set_relay 阻塞等驱动应答,放阻塞线程池
+    if let Some(relay_val) = hot_relay {
+        let rt = st.planets.lock().unwrap().get(&pid).cloned();
+        if let Some(rt) = rt {
+            if let Err(msg) = hot_apply_relay(rt, relay_val).await {
+                let full = format!("relay 已写盘但热应用失败(重启 planet 后生效): {msg}");
+                st.events.push(&pid, "planetUpdated", &full);
+                return Err(internal(full));
+            }
+        }
+    }
     Ok(Json(json!({ "planet": detail })))
 }
 

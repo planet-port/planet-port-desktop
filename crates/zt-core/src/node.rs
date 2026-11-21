@@ -95,6 +95,9 @@ pub(crate) enum Cmd {
     Leave(u64, Sender<Result<(), NodeError>>),
     Orbit(u64, u64, Sender<Result<(), NodeError>>),
     Deorbit(u64, Sender<Result<(), NodeError>>),
+    /// 热更新 TCP 兜底 relay(None = 停用)。驱动线程执行,与 tick 状态机及
+    /// relay/tcp_state 的既有读写同线程互斥
+    SetRelay(Option<String>, Sender<Result<(), NodeError>>),
     Stop,
 }
 
@@ -679,6 +682,21 @@ impl NodeHandle {
         self.send_cmd(|tx| Cmd::Deorbit(moon_world_id, tx))
     }
 
+    /// 热更新 TCP 兜底 relay(运行中节点即时生效,无需重启)。
+    /// Some("ip:port") = 配置/改址(已建隧道按新地址重连);None = 停用(关隧道)。
+    /// 地址格式非法返回 InvalidArg(不落任何状态)。红线同 send_cmd:勿在
+    /// sink 回调(驱动线程)内调用,自等自死锁。
+    pub fn set_relay(&self, relay: Option<String>) -> Result<(), NodeError> {
+        if let Some(r) = relay.as_ref() {
+            if r.parse::<std::net::SocketAddr>().is_err() {
+                return Err(NodeError::InvalidArg(format!(
+                    "relay 须为 \"ip:port\",得到: {r:?}"
+                )));
+            }
+        }
+        self.send_cmd(|tx| Cmd::SetRelay(relay, tx))
+    }
+
     /// 设备→核心帧通道发送端(设备读线程用;发出后自动唤醒驱动线程)。
     pub fn frame_in_tx(&self) -> FrameInTx {
         #[cfg(not(windows))]
@@ -940,6 +958,60 @@ unsafe fn run_driver(mut d: Driver) {
                         zt::ZT_Node_deorbit(d.node, std::ptr::null_mut(), world_id)
                     };
                     let _ = reply.send(rc_to_err("ZT_Node_deorbit", rc));
+                }
+                Ok(Cmd::SetRelay(relay, reply)) => {
+                    // 本线程独占写 Inner,与 tick 状态机/Down 上抛处理互斥。
+                    // 状态迁移:
+                    // - None(停用):任何状态 → Disabled;在途/已建隧道发 Close
+                    //   收口(tcp 线程 Down 上抛时按新 relay 置 Disabled,幂等)
+                    // - Some 且 Disabled → Idle:激活状态机等 tick 触发
+                    // - Some 且 Established/Connecting:旧隧道连的旧地址,发
+                    //   Connect(新地址)——tcp 线程 Connect 分支自带"reconnect"
+                    //   关旧逻辑;期间 Down 上抛按新 relay 置 Idle,随后
+                    //   Connected → Established,自然收敛
+                    // - Some 且 Idle:保持(下个 tick 用新地址评估)
+                    let addr: Option<std::net::SocketAddr> =
+                        relay.as_ref().and_then(|r| r.parse().ok());
+                    unsafe {
+                        (*d.inner).relay = addr;
+                        let cur = (*d.inner).tcp_state;
+                        match addr {
+                            Some(a) => match cur {
+                                TcpTunnelState::Disabled => {
+                                    (*d.inner).tcp_state = TcpTunnelState::Idle;
+                                }
+                                TcpTunnelState::Established | TcpTunnelState::Connecting => {
+                                    // 地址可能未变(同值 PATCH):Connect 重连同样正确,
+                                    // reconnect 关旧建新,无额外代价
+                                    (*d.inner).tcp_state = TcpTunnelState::Connecting;
+                                    let _ =
+                                        inner.tcp_cmd_tx.try_send(transport::TcpCmd::Connect(a));
+                                }
+                                TcpTunnelState::Idle => {}
+                            },
+                            None => {
+                                if matches!(
+                                    cur,
+                                    TcpTunnelState::Established | TcpTunnelState::Connecting
+                                ) {
+                                    let _ = inner.tcp_cmd_tx.try_send(transport::TcpCmd::Close);
+                                }
+                                (*d.inner).tcp_state = TcpTunnelState::Disabled;
+                            }
+                        }
+                        // 同步诊断快照(短锁,对齐换绑处的「clone-改-写回」模式)
+                        {
+                            let mut snap_guard = (*d.inner).transport_pub.lock().unwrap();
+                            let mut snap = snap_guard.clone();
+                            snap.tcp = (*d.inner).tcp_state;
+                            snap.relay = addr;
+                            *snap_guard = snap;
+                        }
+                    }
+                    let _ = inner.event_out.send(NodeEvent::TransportChanged(
+                        "relay updated (hot)".into(),
+                    ));
+                    let _ = reply.send(Ok(()));
                 }
                 Ok(Cmd::Stop) => return,
                 Err(_) => break,
