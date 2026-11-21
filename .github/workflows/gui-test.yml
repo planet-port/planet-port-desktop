@@ -1,0 +1,47 @@
+# GUI 逻辑层测试：前端 vitest(jsdom) + Rust 单测(契约/回退/托盘双语)。
+# 纯单测，不构建安装包；产物构建由 release.yml 的 gui job 负责。
+name: GUI Test
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-13/14 已退役（见 release.yml 同款口径），统一 macos-15
+        os: [ubuntu-22.04, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # gui 不依赖 Core 子模块，无需 recursive checkout
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: crates/gui/pnpm-lock.yaml
+      - name: 前端单测
+        shell: bash
+        run: |
+          pnpm --dir crates/gui install --frozen-lockfile
+          pnpm --dir crates/gui test
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      # Linux 虽只跑单测，但 cargo test 需完整编译 gui crate，
+      # tauri(tray-icon)/wry 编译期即要求 webkit2gtk-4.1/gtk/appindicator 头文件
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev build-essential file
+      - name: Rust 单测
+        shell: bash
+        run: cargo test -p planet-port-gui

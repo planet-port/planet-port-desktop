@@ -143,3 +143,22 @@ fn show_main(app: &AppHandle) {
         let _ = w.set_focus();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::tr;
+
+    /// 默认（zh 及任何未知值）取中文文案
+    #[test]
+    fn tr_returns_zh_for_zh() {
+        assert_eq!(tr("zh", "打开主窗口", "Open window"), "打开主窗口");
+        assert_eq!(tr("fr", "退出", "Quit"), "退出");
+    }
+
+    /// 仅显式 "en" 切英文（set_lang 切换后重建菜单走此分支）
+    #[test]
+    fn tr_returns_en_for_en() {
+        assert_eq!(tr("en", "打开主窗口", "Open window"), "Open window");
+        assert_eq!(tr("en", "退出", "Quit"), "Quit");
+    }
+}

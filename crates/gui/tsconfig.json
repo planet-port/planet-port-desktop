@@ -14,5 +14,7 @@
     "noEmit": true,
     "types": ["vite/client"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  // 测试文件只经 vitest(自带转译)运行，不参与 tsc 构建检查
+  "exclude": ["src/test"]
 }

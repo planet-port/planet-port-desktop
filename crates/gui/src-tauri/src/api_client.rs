@@ -9,9 +9,9 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// 统一错误结构，serde 序列化回 webview（前端 GuiError TS 类型与此对齐）。
-/// 字段均为小写单词，无需 camelCase rename。
+/// kind 判别值与变体名统一为小写（offline/api/usage），与 TS 契约及 spec 一致。
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "lowercase")]
 pub enum GuiError {
     Offline {
         message: String,
@@ -58,15 +58,13 @@ pub fn installed() -> bool {
     token_file().exists()
 }
 
+/// port 文件内容 → 端口号；含空白则 trim，非法/0（守护进程未写入完成）一律回退默认端口
+fn resolve_port(raw: &str) -> u16 {
+    raw.trim().parse::<u16>().ok().filter(|p| *p != 0).unwrap_or(DEFAULT_API_PORT)
+}
+
 fn resolve_base() -> String {
-    let mut port = DEFAULT_API_PORT;
-    if let Ok(s) = std::fs::read_to_string(port_file()) {
-        if let Ok(p) = s.trim().parse::<u16>() {
-            if p != 0 {
-                port = p;
-            }
-        }
-    }
+    let port = std::fs::read_to_string(port_file()).map(|s| resolve_port(&s)).unwrap_or(DEFAULT_API_PORT);
     format!("http://127.0.0.1:{port}")
 }
 
@@ -169,5 +167,99 @@ impl ApiClient {
     pub fn delete(&self, path: &str) -> Result<Value, GuiError> {
         let (c, b) = self.send("DELETE", path, None)?;
         self.parse(c, b)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Rust↔TS 契约：GuiError 各变体序列化形态必须与 src/api/types.ts 的 GuiError 对齐
+    /// （serde tag="kind" → 判别字段 kind，其余字段小写单词、无需 camelCase rename）
+    #[test]
+    fn gui_error_offline_serializes_as_tagged_object() {
+        let v = serde_json::to_value(GuiError::Offline {
+            message: String::from("daemon unreachable at http://127.0.0.1:9998"),
+        })
+        .unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({ "kind": "offline", "message": "daemon unreachable at http://127.0.0.1:9998" })
+        );
+    }
+
+    #[test]
+    fn gui_error_usage_serializes_as_tagged_object() {
+        let v = serde_json::to_value(GuiError::Usage { message: String::from("token file not found") }).unwrap();
+        assert_eq!(v, serde_json::json!({ "kind": "usage", "message": "token file not found" }));
+    }
+
+    #[test]
+    fn gui_error_api_serializes_full_fields() {
+        let v = serde_json::to_value(GuiError::Api {
+            status: 400,
+            code: Some(String::from("network_not_found")),
+            message: String::from("unknown network"),
+            candidates: Some(vec![String::from("9536600adcf2b350")]),
+        })
+        .unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "kind": "api",
+                "status": 400,
+                "code": "network_not_found",
+                "message": "unknown network",
+                "candidates": ["9536600adcf2b350"],
+            })
+        );
+    }
+
+    /// daemon 错误体缺 error/message/candidates 时 code/candidates 为 null（TS 侧 code 可为 null）
+    #[test]
+    fn gui_error_api_serializes_null_optional_fields() {
+        let v = serde_json::to_value(GuiError::Api {
+            status: 401,
+            code: None,
+            message: String::from("invalid token"),
+            candidates: None,
+        })
+        .unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "kind": "api",
+                "status": 401,
+                "code": null,
+                "message": "invalid token",
+                "candidates": null,
+            })
+        );
+    }
+
+    /// 端口发现回退：合法值原样采用，空白 trim，非法/0 回退 DEFAULT_API_PORT
+    #[test]
+    fn resolve_port_accepts_trimmed_valid_port() {
+        assert_eq!(resolve_port("8123"), 8123);
+        assert_eq!(resolve_port("  8123\n"), 8123);
+    }
+
+    #[test]
+    fn resolve_port_falls_back_on_invalid_or_zero() {
+        assert_eq!(resolve_port(""), DEFAULT_API_PORT);
+        assert_eq!(resolve_port("   \n"), DEFAULT_API_PORT);
+        assert_eq!(resolve_port("not-a-number"), DEFAULT_API_PORT);
+        assert_eq!(resolve_port("0"), DEFAULT_API_PORT);
+        // 超出 u16 范围同样视作非法
+        assert_eq!(resolve_port("70000"), DEFAULT_API_PORT);
+    }
+
+    #[test]
+    fn base_url_format_is_loopback_with_port() {
+        assert_eq!(format!("http://127.0.0.1:{}", resolve_port("8123")), "http://127.0.0.1:8123");
+        assert_eq!(
+            format!("http://127.0.0.1:{}", resolve_port("bogus")),
+            format!("http://127.0.0.1:{DEFAULT_API_PORT}")
+        );
     }
 }
