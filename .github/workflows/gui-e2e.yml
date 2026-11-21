@@ -1,0 +1,74 @@
+name: gui-e2e
+
+# GUI E2E(tauri-driver + WebdriverIO)。与 gui-test.yml(逻辑层单测)分离:
+# E2E 构建重、环境脆(xvfb/平台驱动),失败不应掩盖单测信号。
+# 矩阵只有 linux/windows——tauri-driver 全系无 macOS 支持(2.x 编译期排除,
+# 0.1.5 烂尾),mac 回归覆盖由 gui-test.yml 的 macos-15 单测承担。
+# 环境无 daemon → 走 offline suite(离线引导面);实机语义由 E2E_SUITE 控制
+on:
+  push:
+    branches: [dev]
+    paths: ['crates/gui/**', '.github/workflows/gui-e2e.yml']
+  pull_request:
+    paths: ['crates/gui/**', '.github/workflows/gui-e2e.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: crates/gui/src-tauri
+
+      # tauri-driver 走 cargo 安装(ubuntu 无 apt 包;win 无包管理器分发)。
+      # rust-cache 命中时秒过
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+        shell: bash
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      # linux:webview 需要显示服务;webkit2gtk 系统库由 GUI 构建依赖携带
+      - name: Setup xvfb (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libwebkit2gtk-4.1-dev libgtk-3-dev
+
+      - name: Build GUI release
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            pnpm --dir crates/gui tauri build --bundles app
+          else
+            pnpm --dir crates/gui tauri build --no-bundle
+          fi
+
+      - name: Run E2E (offline suite)
+        shell: bash
+        env:
+          E2E_SUITE: offline
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a pnpm --dir crates/gui test:e2e
+          else
+            pnpm --dir crates/gui test:e2e
+          fi
