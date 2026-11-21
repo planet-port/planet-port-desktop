@@ -64,6 +64,8 @@
   cli.service.copyFailed: "拷贝二进制 %{src} → %{dst} 失败: %{e}"
   cli.service.renameFailed: "替换二进制 %{path} 失败: %{e}"
   cli.service.linkFailed: "创建软链 %{path} 失败: %{e}"
+  cli.service.migrateFailed: "迁移旧二进制 %{path} → %{dst} 失败: %{e}"
+  cli.service.linkRealMissing: "真身 %{real} 不存在,跳过软链 %{link} 建立;请重新运行 planet-port install"
   cli.service.unloaded: "已卸载运行中的服务 %{label}"
   cli.service.notRunningSkip: "服务未在运行,跳过卸载步骤"
   cli.service.removed: "已删除 %{plist} 与 %{bin}"

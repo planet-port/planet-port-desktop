@@ -32,24 +32,33 @@ pub(crate) const BIN_PATH: &str = "/usr/local/bin/planet-portd";
 
 pub(crate) fn install(json: bool) {
     // 0. 布局收敛:旧直落形态(真实文件在 /usr/local/bin)一次性迁入 BIN_DIR,
-    //    避免软链与旧真实文件互相覆盖;软链缺失则确保 BIN_DIR 就绪
+    //    避免软链与旧真实文件互相覆盖;BIN_DIR 统一先行创建(三分支都可能往
+    //    里落盘,InPlace 下软链在而目录被删的残局也能自愈)
+    let _ = fs::create_dir_all(BIN_DIR);
     let plan = plan_layout(
         fs::symlink_metadata(CLI_BIN).map(|m| !m.file_type().is_symlink()).unwrap_or(false),
         fs::read_link(CLI_BIN).is_ok(),
     );
     match plan {
         LayoutPlan::Migrate => {
-            let _ = fs::create_dir_all(BIN_DIR);
             for p in [CLI_BIN, BIN_PATH] {
                 let name = Path::new(p).file_name().unwrap().to_str().unwrap();
-                // 仍在使用的真实文件 rename 进 BIN_DIR(原子,不触发 ETXTBSY)
-                let _ = fs::rename(p, format!("{BIN_DIR}/{name}"));
+                // 只有 planet-port 没有 planet-portd 的半态:旧 daemon 缺失属
+                // 预期,稍后由 copy_exe 补齐,静默跳过
+                if !Path::new(p).exists() {
+                    continue;
+                }
+                // 仍在使用的真实文件 rename 进 BIN_DIR(原子,不触发 ETXTBSY);
+                // 失败不静默:真身留在 /usr/local/bin 会被 ensure_links 消费成
+                // 悬空链,CLI 直接打断,故报错退出(重跑即恢复)
+                let dst = format!("{BIN_DIR}/{name}");
+                if let Err(e) = fs::rename(p, &dst) {
+                    eprintln!("{}", rust_i18n::t!("cli.service.migrateFailed", path = p, dst = dst, e = e));
+                    std::process::exit(1);
+                }
             }
         }
-        LayoutPlan::Fresh => {
-            let _ = fs::create_dir_all(BIN_DIR);
-        }
-        LayoutPlan::InPlace => {}
+        LayoutPlan::Fresh | LayoutPlan::InPlace => {}
     }
     // 1. 拷 daemon 到 BIN_DIR 真实路径(unit 指向它,发布包解压路径不稳定)
     let real_daemon = format!("{BIN_DIR}/planet-portd");
@@ -101,20 +110,32 @@ pub(crate) fn install(json: bool) {
 /// installed 参数:从已安装路径运行时跳过自拷(rename 同路径会自删);
 /// json 参数与 macos 签名对齐(软链重建静默完成,无输出)
 pub(crate) fn install_cli(cli_src: &Path, daemon_src: &Path, installed: bool, _json: bool) {
+    // BIN_DIR 先行:copy_exe 的临时文件落在该目录下
+    let _ = fs::create_dir_all(BIN_DIR);
     if !installed {
-        // BIN_DIR 先行:copy_exe 的临时文件落在该目录下
-        let _ = fs::create_dir_all(BIN_DIR);
         super::copy_exe(cli_src, &format!("{BIN_DIR}/planet-port"));
         super::copy_exe(daemon_src, &format!("{BIN_DIR}/planet-portd"));
+    } else if !Path::new(&format!("{BIN_DIR}/planet-port")).exists() {
+        // installed=true 只蕴含 /usr/local/bin/planet-port 与 cli_src 同一真身,
+        // 不蕴含 BIN_DIR 里有 CLI(旧直落形态的真实文件同样 canonicalize 判等):
+        // 不补拷则 ensure_links 会把该真实文件消费成悬空链,CLI 打断
+        super::copy_exe(cli_src, &format!("{BIN_DIR}/planet-port"));
     }
     ensure_links();
 }
 
 /// PATH 软链建立:/usr/local/bin/{planet-port,planet-portd} → BIN_DIR 真身。
-/// 目标位置已有任何东西(旧软链/普通文件)先移除再建,重复安装幂等
+/// 目标位置已有任何东西(旧软链/普通文件)先移除再建,重复安装幂等。
+/// 真身缺失时只告警并跳过该链,不退出:装出悬空链只会让 CLI 打断;正常
+/// 安装流(install() 拷 daemon、install_cli 补拷 CLI)都已保证真身在,
+/// 此处兜「真身被外部删除」的残局,完整 install 重跑即自愈
 fn ensure_links() {
     for (name, link) in [("planet-port", CLI_BIN), ("planet-portd", BIN_PATH)] {
         let real = format!("{BIN_DIR}/{name}");
+        if !Path::new(&real).exists() {
+            eprintln!("{}", rust_i18n::t!("cli.service.linkRealMissing", link = link, real = real));
+            continue;
+        }
         let _ = fs::remove_file(link);
         if let Some(dir) = Path::new(link).parent() {
             let _ = fs::create_dir_all(dir);

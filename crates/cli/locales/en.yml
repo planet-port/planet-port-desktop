@@ -59,6 +59,8 @@
   cli.service.copyFailed: "Failed to copy binary %{src} → %{dst}: %{e}"
   cli.service.renameFailed: "Failed to replace binary %{path}: %{e}"
   cli.service.linkFailed: "Failed to create symlink %{path}: %{e}"
+  cli.service.migrateFailed: "Failed to migrate legacy binary %{path} → %{dst}: %{e}"
+  cli.service.linkRealMissing: "Target %{real} missing, skipping symlink %{link}; rerun planet-port install"
   cli.service.unloaded: "Unloaded running service %{label}"
   cli.service.notRunningSkip: "Service not running, skipping unload"
   cli.service.removed: "Removed %{plist} and %{bin}"

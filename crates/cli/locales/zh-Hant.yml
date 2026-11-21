@@ -59,6 +59,8 @@
   cli.service.copyFailed: "拷貝二進位 %{src} → %{dst} 失敗: %{e}"
   cli.service.renameFailed: "替換二進位 %{path} 失敗: %{e}"
   cli.service.linkFailed: "建立軟鏈 %{path} 失敗: %{e}"
+  cli.service.migrateFailed: "遷移舊二進位 %{path} → %{dst} 失敗: %{e}"
+  cli.service.linkRealMissing: "真身 %{real} 不存在,跳過軟鏈 %{link} 建立;請重新執行 planet-port install"
   cli.service.unloaded: "已卸載執行中的服務 %{label}"
   cli.service.notRunningSkip: "服務未在執行,跳過卸載步驟"
   cli.service.removed: "已刪除 %{plist} 與 %{bin}"

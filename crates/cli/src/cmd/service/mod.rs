@@ -216,7 +216,8 @@ pub(crate) enum LayoutPlan {
 }
 
 /// prev_real: /usr/local/bin/planet-port 存在且不是软链(旧形态真实文件)
-/// link_ok: 软链已指向 BIN_DIR 目标
+/// link_ok: CLI_BIN 位置已是软链(仅判形态,不校验指向是否 BIN_DIR 目标;
+/// 悬空链/外指也计为 true,指向由 ensure_links 事后无条件重建兜底)
 #[cfg(any(target_os = "linux", test))]
 fn plan_layout(prev_real: bool, link_ok: bool) -> LayoutPlan {
     if link_ok {
@@ -243,7 +244,7 @@ mod layout_tests {
     }
 
     #[test]
-    fn inplace_when_link_already_points_to_bin_dir() {
+    fn inplace_when_cli_entry_is_symlink() {
         assert_eq!(plan_layout(false, true), LayoutPlan::InPlace);
     }
 
