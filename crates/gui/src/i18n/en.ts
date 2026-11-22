@@ -75,4 +75,10 @@ export default {
     retry: 'Retry',
     manualTitle: 'Manual install commands',
   },
+  qrtransfer: {
+    tooLarge: 'Too large for QR; share a file instead',
+    generating: 'Generating QR…',
+    manual: 'Manual',
+    savePng: 'Save PNG',
+  },
 };

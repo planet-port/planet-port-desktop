@@ -75,4 +75,10 @@ export default {
     retry: '重试',
     manualTitle: '手动安装命令',
   },
+  qrtransfer: {
+    tooLarge: '内容过大，无法生成二维码，请改用文件分享',
+    generating: '二维码生成中…',
+    manual: '手动',
+    savePng: '保存 PNG',
+  },
 };
