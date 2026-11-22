@@ -136,7 +136,7 @@
 
   # ---- 定位类错误(人话改写,见 main.rs die)----
   cli.error.planetAmbiguous: "error: 登记了多个 planet,请用 --planet 指定目标:"
-  cli.error.noPlanetRunning: "error: 尚未登记任何 planet,请先添加:planet-port add <file|URL>"
+  cli.error.noPlanetRunning: "error: 尚未登记任何 planet,请先添加:planet-port planet add <file|URL>"
 
   # ---- list/listnetworks 授权等待提示 ----
   cli.list.authPending: "提示: 网络 %{nwid} 正在等待控制器授权(请在 ZeroTier Central 勾选 Allow)"

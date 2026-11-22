@@ -130,7 +130,7 @@
   cli.service.nrptCleanFailed: "Failed to clean up NRPT rules: %{e}"
   # ---- locator errors (humanized, see main.rs die) ----
   cli.error.planetAmbiguous: "error: multiple planets registered; specify one with --planet:"
-  cli.error.noPlanetRunning: "error: no planet registered; add one first: planet-port add <file|URL>"
+  cli.error.noPlanetRunning: "error: no planet registered; add one first: planet-port planet add <file|URL>"
 
   # ---- list/listnetworks auth-pending hint ----
   cli.list.authPending: "hint: network %{nwid} is awaiting controller authorization (tick Allow in ZeroTier Central)"
