@@ -5,6 +5,7 @@ import { api, asError } from '../api/client';
 import type { NetworkEntry, PlanetStatus } from '../api/types';
 import NetworkCard from '../components/NetworkCard';
 import NetworkDialog from '../components/NetworkDialog';
+import PlanetIconView from '../components/PlanetIconView';
 import PlanetSettingsDialog from '../components/PlanetSettingsDialog';
 import QueryError from '../components/QueryError';
 import { useToast } from '../components/Toaster';
@@ -84,6 +85,7 @@ export default function Home() {
           return (
             <section key={p.id} className={`pgroup ${p.enabled ? '' : 'disabled'}`}>
               <header className="pgroup-head">
+                <PlanetIconView icon={p.icon} color={p.color} name={p.name} id={p.id} size={24} />
                 <span className={`dot ${p.status === 'running' ? 'on' : 'off'}`} />
                 <span className="pgroup-name">{p.name}</span>
                 <span className="small">
