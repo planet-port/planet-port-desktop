@@ -274,3 +274,12 @@ select.input { cursor: pointer; }
 .addplanet-preview { flex-direction: row; align-items: center; gap: 12px; }
 .url-row { display: flex; gap: 6px; }
 .plain { background: none; border: none; padding: 0; cursor: pointer; }
+
+/* ---- 网络详情/行星设置(Task 14/15) ---- */
+.detail-section { border-top: 1px solid var(--border); padding: 10px 0; display: flex; flex-direction: column; gap: 6px; }
+.detail-section h4 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 600; }
+.kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.kv > span:first-child { color: var(--muted); }
+.link { background: none; border: none; padding: 2px 0; text-align: left; cursor: pointer; color: var(--text); width: fit-content; }
+.link.muted, .link:disabled { color: var(--muted); cursor: default; }
+.dialog-actions .grow { flex: 1; }
