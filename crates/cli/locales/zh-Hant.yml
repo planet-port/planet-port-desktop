@@ -12,6 +12,8 @@
   cli.planet.removeConfirm: "planet \"%{id}\" 將自動退出其全部網路、停止並刪除登記,確認? [y/N] "
   cli.planet.removeAborted: 已取消
   cli.planet.shareLoopHint: "注意: 連結為回環位址,僅本機可開啟;發給他人請改用本機的區域網路 IP"
+  cli.share.copied: 已複製網路 ID 到剪貼簿
+  cli.share.copyFailed: 剪貼簿不可用,請手動複製上面的網路 ID
 
   # ---- identity ----
   cli.identity.global: "全局身份: %{node}"

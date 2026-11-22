@@ -12,6 +12,8 @@
   cli.planet.removeConfirm: "planet \"%{id}\" will leave all its networks, stop and be removed from the registry. Continue? [y/N] "
   cli.planet.removeAborted: aborted
   cli.planet.shareLoopHint: "note: link is loopback and only opens locally; share this machine's LAN IP instead"
+  cli.share.copied: Network ID copied to clipboard
+  cli.share.copyFailed: Clipboard unavailable; copy the network ID above manually
 
   # ---- identity ----
   cli.identity.global: "global identity: %{node}"

@@ -37,6 +37,10 @@ axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync"] }
 # planet URL 导入等核心逻辑共用
 zt-core = { path = "../zt-core" }
+# 网络分享二维码生成(仅矩阵输出,关默认 image 特性);MIT/Apache-2.0
+qrcode = { version = "0.14", default-features = false }
+# 剪贴板(share 复制网络 ID);MIT/Apache-2.0
+arboard = { version = "3", default-features = false }
 
 # Windows 服务管理(service/windows.rs):管理员令牌判定(TokenElevation)。
 # 仅 Windows 目标引入,MIT/Apache-2.0;版本对齐 daemon/zt-core 既有 0.59
