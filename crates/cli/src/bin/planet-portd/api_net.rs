@@ -851,9 +851,17 @@ pub async fn net_enable(
     };
     let key = format!("{nwid_u:016x}");
     // 幂等:未在禁用区时,加入态(net_local 有记录)→ 目标态已达成;
+    // 但 planet 停机时目标态只是「记录在」而网络实际不可用(典型入口:
+    // enable 拉起失败后重试,记录已回迁)——补拉起做实,与 join 行为一致,
+    // 也与 disable 幂等补脱离同构(幂等不豁免把目标态落地);
     // 两区皆无 → 404
     if !entry.net_disabled.contains_key(&key) {
         if entry.net_local.contains_key(&key) {
+            if runtime_of(&st, &pid).is_none() {
+                runtime::start_planet(&st, &pid)
+                    .await
+                    .map_err(|m| err(StatusCode::INTERNAL_SERVER_ERROR, "startFailed", &m, None))?;
+            }
             st.events.push(&pid, "networkEnabled", &format!("already enabled {nwid} (idempotent)"));
             return Ok(Json(json!({"result": "ok", "idempotent": true})));
         }
