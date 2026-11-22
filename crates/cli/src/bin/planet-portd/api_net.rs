@@ -402,6 +402,36 @@ pub async fn net_join(
             None,
         ));
     }
+    let nwid_u = parse_nwid(&nwid)?;
+    let key = format!("{nwid_u:016x}");
+    // 禁用区命中 → 自动恢复(等价 enable):回迁记录后走正常 join 路径;
+    // 未运行时随后的 start_planet 按 net_local 全量 re-join(含本网络),
+    // 已运行时镜像在锁外插入、下方 node_join 生效
+    let mut restored = None;
+    {
+        let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
+            if let Some(nd) = e.net_disabled.remove(&key) {
+                e.net_local.entry(key.clone()).or_insert(nd.local.clone());
+                if let Err(e) = reg.save(&st.config_dir) {
+                    eprintln!("[net] registry 写盘失败: {e}");
+                }
+                restored = Some(nd.local);
+            }
+        }
+    }
+    // 运行时镜像与事件在 registry 锁外补(runtime_of 取 planets 锁,
+    // 不得嵌套);planet 未运行时无镜像可插,start_planet 按 net_local 灌注
+    if let Some(nl) = restored {
+        if let Some(rt) = runtime_of(&st, &pid) {
+            rt.net_local
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .entry(nwid_u)
+                .or_insert(nl);
+        }
+        st.events.push(&pid, "networkEnabled", &format!("re-enabled {nwid} (via join)"));
+    }
     // 未运行(running=false:leave 清空后的资源性停止等)→ 自动拉起;
     // running=true 但运行时缺失的残留(上次启动失败等)同样由幂等的
     // start_planet 纠正(其内部在门闩内重读 registry,禁用竞态不放行)
@@ -411,7 +441,6 @@ pub async fn net_join(
             .map_err(|m| err(StatusCode::INTERNAL_SERVER_ERROR, "startFailed", &m, None))?;
     }
     let rt = not_running(&st, &pid)?;
-    let nwid_u = parse_nwid(&nwid)?;
     // 已加入 → 幂等成功(对齐 zerotier-cli:重复 join 不报错,批量脚本可重入)
     if rt.networks().iter().any(|c| c.nwid == nwid_u) {
         st.events.push(&rt.planet_id, "join", &format!("already joined {nwid} (idempotent)"));
@@ -430,8 +459,8 @@ pub async fn net_join(
                 None,
             )
         })?;
-    // net_local 无记录则建默认项(registry 持久层 + 运行时镜像)
-    let key = format!("{nwid_u:016x}");
+    // net_local 无记录则建默认项(registry 持久层 + 运行时镜像;禁用区
+    // 回迁的记录已在上方写入,此处 or_insert 不覆盖恢复配置)
     {
         let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == rt.planet_id) {
@@ -693,6 +722,132 @@ pub async fn net_disable(
     Ok(Json(json!({"result": "ok"})))
 }
 
+// ---- POST /networks/{nwid}/enable ----
+
+/// 启用:禁用区记录回迁 net_local 并 re-join,恢复禁用前的本地配置。
+/// planet 未运行则拉起(start_planet 按 net_local 全量恢复);已运行则
+/// 直接 join。恢复失败不回滚:记录已在 net_local,boot/join 自动重试
+/// (对齐 boot 恢复容错)。幂等:已在加入态 → 成功
+pub async fn net_enable(
+    State(st): State<AppState>,
+    Path(nwid): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiErr> {
+    let (pid, entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
+    if !entry.enabled {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "planetDisabled",
+            &format!(
+                "planet \"{}\" is disabled; enable it first",
+                crate::api_planet::name_of(&entry)
+            ),
+            None,
+        ));
+    }
+    // nwid 解析:合法 nwid 直用;否则按禁用区 name 快照(不区分大小写)——
+    // 禁用网络不在核心快照里,名字只活在快照中
+    let nwid_u = match parse_nwid(&nwid) {
+        Ok(v) => v,
+        Err(_) => {
+            let hits: Vec<(&String, &NetDisabled)> = entry
+                .net_disabled
+                .iter()
+                .filter(|(_, nd)| {
+                    nd.name
+                        .as_deref()
+                        .is_some_and(|n| n.eq_ignore_ascii_case(nwid.trim()))
+                })
+                .collect();
+            match hits.as_slice() {
+                [(k, _)] => u64::from_str_radix(k, 16)
+                    .map_err(|_| internal(format!("invalid disabled nwid key \"{k}\"")))?,
+                [] => {
+                    return Err(err(
+                        StatusCode::NOT_FOUND,
+                        "networkNotFound",
+                        &format!("network \"{nwid}\" not found (by id or name)"),
+                        None,
+                    ))
+                }
+                many => {
+                    return Err(err(
+                        StatusCode::CONFLICT,
+                        "networkAmbiguous",
+                        &format!("network name \"{nwid}\" matches {} networks", many.len()),
+                        Some(
+                            many.iter()
+                                .map(|(k, nd)| format!("{k} ({})", nd.name.clone().unwrap_or_default()))
+                                .collect(),
+                        ),
+                    ))
+                }
+            }
+        }
+    };
+    let key = format!("{nwid_u:016x}");
+    // 幂等:未在禁用区时,加入态(net_local 有记录)→ 目标态已达成;
+    // 两区皆无 → 404
+    if !entry.net_disabled.contains_key(&key) {
+        if entry.net_local.contains_key(&key) {
+            st.events.push(&pid, "networkEnabled", &format!("already enabled {nwid} (idempotent)"));
+            return Ok(Json(json!({"result": "ok", "idempotent": true})));
+        }
+        return Err(err(
+            StatusCode::NOT_FOUND,
+            "networkNotFound",
+            &format!("network \"{nwid}\" not disabled or joined on this planet"),
+            None,
+        ));
+    }
+    // 回迁(持久层)
+    let nl = {
+        let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let e = reg
+            .planets
+            .iter_mut()
+            .find(|e| e.id == pid)
+            .ok_or_else(|| internal(format!("planet \"{pid}\" disappeared")))?;
+        let nd = e
+            .net_disabled
+            .remove(&key)
+            .ok_or_else(|| internal(format!("disabled entry \"{key}\" disappeared")))?;
+        // 同 nwid 双区残留(理论不可达)以 net_local 为准:or_insert 不覆盖
+        e.net_local.entry(key).or_insert(nd.local.clone());
+        if let Err(e) = reg.save(&st.config_dir) {
+            eprintln!("[net] registry 写盘失败: {e}");
+        }
+        nd.local
+    };
+    st.events.push(&pid, "networkEnabled", &format!("enabled {nwid}"));
+    // 已运行 → 镜像 + re-join;未运行 → 拉起(start_planet 按 net_local
+    // 灌镜像并 re-join,天然覆盖恢复)
+    if let Some(rt) = runtime_of(&st, &pid) {
+        rt.net_local
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(nwid_u, nl);
+        let rt2 = Arc::clone(&rt);
+        tokio::task::spawn_blocking(move || rt2.node_join(nwid_u))
+            .await
+            .map_err(|e| internal(format!("join 任务失败: {e}")))?
+            .map_err(|e| {
+                // 失败不回滚:记录已回迁 net_local,下次 boot/join 重试
+                err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "joinFailed",
+                    &format!("re-join {nwid} failed: {e}"),
+                    None,
+                )
+            })?;
+    } else {
+        runtime::start_planet(&st, &pid)
+            .await
+            .map_err(|m| err(StatusCode::INTERNAL_SERVER_ERROR, "startFailed", &m, None))?;
+    }
+    Ok(Json(json!({"result": "ok"})))
+}
+
 // ---- POST /networks/{nwid}(set)----
 
 pub async fn net_set(
@@ -851,6 +1006,7 @@ pub fn router() -> Router<AppState> {
         .route("/networks/{nwid}/join", post(net_join))
         .route("/networks/{nwid}/leave", post(net_leave))
         .route("/networks/{nwid}/disable", post(net_disable))
+        .route("/networks/{nwid}/enable", post(net_enable))
         .route("/networks/{nwid}", post(net_set))
         .route("/events", get(events))
 }
