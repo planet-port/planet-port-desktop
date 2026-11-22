@@ -11,14 +11,15 @@
   "app": {
     "windows": [
       {
-        "title": "planet-port",
+        "title": "",
         "label": "main",
         "width": 960,
         "height": 620,
         "minWidth": 820,
         "minHeight": 520,
         "titleBarStyle": "Overlay",
-        "acceptFirstMouse": true
+        "acceptFirstMouse": true,
+        "trafficLightPosition": { "x": 20, "y": 28 }
       }
     ],
     "security": {

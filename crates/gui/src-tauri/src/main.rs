@@ -41,11 +41,6 @@ fn main() {
             heartbeat::spawn(app.handle().clone());
             // 关窗 = 隐藏到托盘,不退出进程(spec §5.4)
             let win = app.get_webview_window("main").unwrap();
-            // Overlay 标题栏只隐藏标题栏背景,原生标题文字会残留在红绿灯旁
-            // 与 webview 顶栏重合——全平台统一置空窗口标题:mac 消除残留,
-            // Win/Linux 原生标题栏显示空标题(系统按钮不受影响,任务栏/
-            // Mission Control 取 app 名)
-            let _ = win.set_title("");
             let w = win.clone();
             win.on_window_event(move |e| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = e {
