@@ -72,10 +72,19 @@ body {
   background: var(--bg);
   color: var(--muted);
 }
-.topbar.mac { padding-left: 78px; }
+.topbar.mac { padding-left: 96px; }
 /* 标题栏分隔线与在线态(方案 C) */
 .tb-sep { width: 1px; height: 16px; background: var(--border-h); margin-left: 16px; flex: none; }
 .tb-online { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+/* 顶栏文字动作钮(macOS 工具栏形态):透明底无描边,hover 才显面底——
+   与红绿灯的轻量比例协调,不与正文 .btn 的描边块形态混用 */
+.tb-act {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 28px;
+  padding: 0 10px; border-radius: 6px; background: none; border: none;
+  font: inherit; font-size: 13px; color: var(--muted); cursor: pointer;
+  transition: background-color .12s ease, color .12s ease;
+}
+.tb-act:hover:not(:disabled) { background: var(--panel); color: var(--text); }
 .dot { width: 6px; height: 6px; border-radius: 2px; display: inline-block; flex: none; }
 .dot.on { background: var(--ok); }
 .dot.off { background: var(--off); }

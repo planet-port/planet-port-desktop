@@ -2,5 +2,5 @@
   "identifier": "main",
   "description": "主窗口能力：事件与自定义 command",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default"]
+  "permissions": ["core:default", "dialog:default", "core:window:allow-start-dragging"]
 }

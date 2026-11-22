@@ -64,13 +64,13 @@ export default function App() {
             <img src={logo} alt="logo" className="app-logo" data-tauri-drag-region />
             <span className="app-title" data-tauri-drag-region>Planet Port</span>
             <span className="tb-sep" data-tauri-drag-region aria-hidden="true" />
-            <span className="tb-online">
+            <span className="tb-online" data-tauri-drag-region>
               <span className={`dot ${online ? 'on' : 'off'}`} />
               {online ? t('daemon.online') : t('daemon.offline')}
             </span>
             <span className="grow" data-tauri-drag-region />
-            <button className="btn" data-testid="topbar-add-planet" onClick={() => setDrawer({ kind: 'addPlanet' })}>{t('home.addPlanet')}</button>
-            <button className="btn icon" data-testid="topbar-settings" aria-label={t('settings.title')} onClick={() => setDrawer({ kind: 'settings' })}><GearIcon /></button>
+            <button className="tb-act" data-testid="topbar-add-planet" onClick={() => setDrawer({ kind: 'addPlanet' })}>{t('home.addPlanet')}</button>
+            <button className="plain" data-testid="topbar-settings" aria-label={t('settings.title')} onClick={() => setDrawer({ kind: 'settings' })}><GearIcon /></button>
           </header>
           <Home onAddNetwork={planet => setDrawer({ kind: 'addNet', planet })} />
           <Statusbar />
