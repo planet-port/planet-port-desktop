@@ -415,6 +415,7 @@ pub async fn planets_import(
         running: false,
         enabled: true,
         net_local: Default::default(),
+        net_disabled: Default::default(),
         moons: Vec::new(),
         ifaces: Vec::new(),
     };

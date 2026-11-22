@@ -63,6 +63,9 @@ pub struct RegistryEntry {
     /// nwid hex → 本地网络配置
     #[serde(default)]
     pub net_local: HashMap<String, NetLocal>,
+    /// nwid hex → 禁用网络记忆(enable/join 恢复;leave 连此区一并清除)
+    #[serde(default)]
+    pub net_disabled: HashMap<String, NetDisabled>,
     #[serde(default)]
     pub moons: Vec<MoonRecord>,
     /// 该 planet 当前占用的 feth 设备名(dev 端);启动清扫孤儿用,
@@ -80,6 +83,18 @@ pub struct NetLocal {
     /// "none" | "network" | "custom"
     pub dns_mode: String,
     pub custom_dns: Vec<String>,
+}
+
+/// 禁用网络的记忆条目(disable 时自 net_local 迁入,enable/join 迁回):
+/// 恢复所需的本地配置 + 禁用时的名字快照(仅 DISABLED 占位行展示用,
+/// 恢复后动态字段以控制器下发为准)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetDisabled {
+    pub local: NetLocal,
+    /// 禁用时核心快照里的网络名;核心不在(stopped 态禁用)则 None
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// 一条已 orbit/缓存的 moon 记录
