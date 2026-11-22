@@ -59,6 +59,7 @@ body {
 .input:focus { outline: 2px solid color-mix(in srgb, var(--primary) 40%, transparent); border-color: var(--primary); }
 textarea.input { resize: vertical; }
 select.input { cursor: pointer; }
+.input:disabled { opacity: 0.5; cursor: default; }
 .btn {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -242,6 +243,7 @@ select.input { cursor: pointer; }
   padding: 5px 0; cursor: pointer; font: inherit; color: var(--muted);
 }
 .seg button.active { color: var(--primary); border-color: var(--primary); }
+.seg button:disabled { opacity: 0.5; cursor: default; }
 .id-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .btn.sm { padding: 2px 8px; font-size: 12px; }
 .share-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }

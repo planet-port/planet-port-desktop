@@ -20,7 +20,8 @@ export default function Home() {
   const [editing, setEditing] = useState<NetworkEntry | null>(null);
   /// 行星设置弹层(分组头 ⚙);删除成功后 onDone 走全局失效
   const [editPlanet, setEditPlanet] = useState<PlanetStatus | null>(null);
-  /// 开关 in-flight 网络(`${planet}/${nwid}`);pending 期对应卡片 spinner
+  /// 开关 in-flight 网络(`${planet}/${nwid}`);pending 期对应卡片 spinner。
+  /// 单槽:仅当槽位仍是自己的 key 时才清(并发点另一张卡不误清新请求的 spinner)
   const [toggling, setToggling] = useState<string | null>(null);
 
   const status = useQuery({ queryKey: ['status'], queryFn: api.status, refetchInterval: 3000 });
@@ -40,24 +41,24 @@ export default function Home() {
 
   const rejoin = useMutation({
     mutationFn: (row: NetworkEntry) => api.joinNetwork(row.nwid, row.planet),
-    onSettled: () => {
-      setToggling(null);
+    onSettled: (_d, _e, row) => {
+      setToggling(cur => (cur === `${row.planet}/${row.nwid}` ? null : cur));
       invalidate();
     },
     onError: onErr,
   });
   const disable = useMutation({
     mutationFn: (row: NetworkEntry) => api.disableNetwork(row.nwid, row.planet),
-    onSettled: () => {
-      setToggling(null);
+    onSettled: (_d, _e, row) => {
+      setToggling(cur => (cur === `${row.planet}/${row.nwid}` ? null : cur));
       invalidate();
     },
     onError: onErr,
   });
   const enable = useMutation({
     mutationFn: (row: NetworkEntry) => api.enableNetwork(row.nwid, row.planet),
-    onSettled: () => {
-      setToggling(null);
+    onSettled: (_d, _e, row) => {
+      setToggling(cur => (cur === `${row.planet}/${row.nwid}` ? null : cur));
       invalidate();
     },
     onError: onErr,
