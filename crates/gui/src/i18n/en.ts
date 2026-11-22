@@ -6,7 +6,21 @@ export default {
     loadError: 'Failed to load',
     authError: 'Authentication failed: token does not match the daemon. Check PLANET_PORT_TOKEN or reinstall the service',
   },
-  settings: { title: 'Settings' },
+  settings: {
+    title: 'Settings', language: 'Language', appearance: 'Appearance', about: 'About', advanced: 'Advanced',
+    theme: { light: 'Light', dark: 'Dark', system: 'System' },
+    planetManager: 'Planet Manager…', peers: 'Peers…',
+  },
+  identity: {
+    section: 'Node identity',
+    import: 'Import identity…',
+    imported: 'Identity imported',
+    hint: 'Import an official ZeroTier identity file (identity.secret); every planet reuses that identity',
+    pickTitle: 'Choose the identity.secret file',
+    needNewDaemon: 'daemon is too old; upgrade planet-port first',
+    confirmNew: 'Import identity {{nodeId}}. Continue?',
+    confirmOverwrite: 'Existing identity {{old}} will be overwritten by {{nodeId}}. Continue?',
+  },
   home: {
     emptyNoPlanet: 'No planets yet. Open Settings → Advanced → Planet Manager to import one.',
     noNetworks: 'No networks under this planet',

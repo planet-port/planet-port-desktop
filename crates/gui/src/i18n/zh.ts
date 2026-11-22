@@ -6,7 +6,21 @@ export default {
     loadError: '加载失败',
     authError: '鉴权失败：token 与 daemon 不匹配，请检查 PLANET_PORT_TOKEN 或重装服务',
   },
-  settings: { title: '设置' },
+  settings: {
+    title: '设置', language: '语言', appearance: '外观', about: '关于', advanced: '高级',
+    theme: { light: '浅色', dark: '深色', system: '跟随系统' },
+    planetManager: '行星管理…', peers: '节点表…',
+  },
+  identity: {
+    section: '节点身份',
+    import: '导入身份…',
+    imported: '身份已导入',
+    hint: '导入官方 ZeroTier 身份文件(identity.secret),所有行星将复用该身份',
+    pickTitle: '选择 identity.secret 文件',
+    needNewDaemon: 'daemon 版本过旧,请先升级 planet-port',
+    confirmNew: '将导入身份 {{nodeId}},确认继续？',
+    confirmOverwrite: '已有身份 {{old}},将覆盖为 {{nodeId}},确认继续？',
+  },
   home: {
     emptyNoPlanet: '还没有行星。打开右上角设置 → 高级 → 行星管理导入。',
     noNetworks: '该行星下暂无网络',

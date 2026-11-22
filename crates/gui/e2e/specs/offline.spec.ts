@@ -22,13 +22,21 @@ describe('offline guide', () => {
     // OfflineGuide 退回纯手动引导,不挂载 SetupWizard,install-btn 不应存在
     await expect(browser.$('[data-testid="install-btn"]')).not.toBeDisplayed();
   });
+});
 
-  it.skip('语言切换可用(zh ↔ en) —— 单页布局后语言按钮移入设置抽屉,Task 10 恢复', async () => {
-    const zh = await browser.$('.lang button:nth-child(1)');
-    const en = await browser.$('.lang button:nth-child(2)');
-    await en.click();
-    await expect(browser.$('.lang button:nth-child(2).active')).toBeDisplayed();
-    await zh.click();
-    await expect(browser.$('.lang button:nth-child(1).active')).toBeDisplayed();
+// 设置抽屉冒烟:抽屉只在 daemon 在线(App online 态)时挂载,与上方离线引导组
+// 互斥——本组 daemon 不可达时整组 skip(skip 不算失败,实机路径才真正执行)
+describe('settings drawer', () => {
+  before(async function (this: Mocha.Context) {
+    if (!(await daemonUp())) this.skip();
+  });
+
+  it('设置抽屉开合与语言切换可用', async () => {
+    await browser.$('button[aria-label="设置"], .btn.icon').click();
+    await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ timeout: 5000 });
+    await browser.$('[data-testid="lang-en"]').click();
+    await expect(browser.$('[data-testid="lang-en"].active')).toBeDisplayed();
+    await browser.$('[data-testid="lang-zh"]').click();
+    await expect(browser.$('[data-testid="lang-zh"].active')).toBeDisplayed();
   });
 });
