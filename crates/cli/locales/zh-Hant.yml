@@ -37,7 +37,7 @@
   cli.identity.planetKindOfficial: 官方 planet
   cli.identity.planetKindCustom: 自訂 planet
   cli.identity.planetRegistered: "官方用戶端當前 planet 已導入為 %{name};原已加入的網路直接 join 即可恢復,無需重新授權"
-  cli.identity.planetMissing: "官方用戶端當前 %{kind}(worldId %{worldId})尚未導入;恢復原網路請先執行: planet-port add %{path}"
+  cli.identity.planetMissing: "官方用戶端當前 %{kind}(worldId %{worldId})尚未導入;恢復原網路請先執行: planet-port planet add %{path}"
 
   cli.service.needRoot: "該操作需要 root 權限,請加 sudo 重新運行"
   cli.service.exeNotFound: "無法定位當前可執行文件: %{e}"

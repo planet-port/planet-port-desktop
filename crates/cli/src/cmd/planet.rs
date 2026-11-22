@@ -10,6 +10,26 @@ use std::io::Write;
 
 #[derive(Subcommand)]
 pub enum PlanetCmd {
+    /// Import a planet from local file or http(s) URL and register it
+    Add {
+        source: String,
+        /// Optional alias
+        #[arg(long)]
+        name: Option<String>,
+        /// Override data dir (absolute path); omit to use daemon default
+        #[arg(long)]
+        data_dir: Option<String>,
+        /// Override UDP port; omit to use daemon auto-assignment
+        #[arg(long)]
+        port: Option<u16>,
+    },
+    /// Remove a planet registration (leaves all networks, stops it, deletes entry)
+    Remove {
+        id: String,
+        /// Skip confirmation (scripts)
+        #[arg(long)]
+        yes: bool,
+    },
     /// List registered planets
     List,
     /// Show planet details
@@ -45,6 +65,10 @@ pub enum PlanetCmd {
 
 pub fn run(client: &Client, cmd: &PlanetCmd, json: bool) -> Result<(), CliError> {
     match cmd {
+        PlanetCmd::Add { source, name, data_dir, port } => {
+            import(client, source, name.clone(), data_dir.clone(), *port, json)
+        }
+        PlanetCmd::Remove { id, yes } => rm(client, id, *yes, json),
         PlanetCmd::List => list(client, json),
         PlanetCmd::Show { id } => show(client, id, json),
         PlanetCmd::Rename { id, new_name } => rename(client, id, new_name, json),
@@ -56,9 +80,7 @@ pub fn run(client: &Client, cmd: &PlanetCmd, json: bool) -> Result<(), CliError>
     }
 }
 
-// remove 已提级为顶层命令(add/remove,对齐用户习惯、减少层级),实现仍
-// 留在本模块;start/stop 语义已并入 enable/disable(派生运行规则下启停
-// 不再是独立操作),命令移除
+// add/remove 自顶层命令迁入本子命令(命令归属与操作对象一致);实现不变
 /// 启用(持久):有网络 → daemon 侧按派生规则自动拉起
 pub fn enable(client: &Client, id: &str, json: bool) -> Result<(), CliError> {
     let resp = client.post_empty(&endpoints::planet_action(id, "enable"))?;

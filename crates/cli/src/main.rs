@@ -61,26 +61,6 @@ enum Command {
     Deorbit { moon_id: String },
     /// Dump state of a single planet
     Dump,
-    /// Import a planet from local file and bring it online
-    Add {
-        source: String,
-        /// Optional alias
-        #[arg(long)]
-        name: Option<String>,
-        /// Override data dir (absolute path); omit to use daemon default
-        #[arg(long)]
-        data_dir: Option<String>,
-        /// Override UDP port; omit to use daemon auto-assignment
-        #[arg(long)]
-        port: Option<u16>,
-    },
-    /// Remove a planet registration
-    Remove {
-        id: String,
-        /// Skip confirmation (scripts)
-        #[arg(long)]
-        yes: bool,
-    },
     /// Planet management
     Planet {
         #[command(subcommand)]
@@ -295,15 +275,6 @@ fn dispatch(
         Command::Orbit { moon_id, seed } => cmd::mutate::orbit(client, moon_id, seed, planet_flag, json),
         Command::Deorbit { moon_id } => cmd::mutate::deorbit(client, moon_id, planet_flag, json),
         Command::Dump => cmd::mutate::dump(client, planet_flag, json),
-        Command::Add { source, name, data_dir, port } => cmd::planet::import(
-            client,
-            source,
-            name.clone(),
-            data_dir.clone(),
-            *port,
-            json,
-        ),
-        Command::Remove { id, yes } => cmd::planet::rm(client, id, *yes, json),
         Command::Planet { cmd } => cmd::planet::run(client, cmd, json),
         Command::Identity { cmd } => cmd::identity::run(client, cmd, json),
         Command::Moon { cmd } => cmd::mutate::run_moon(client, cmd, planet_flag, json),
