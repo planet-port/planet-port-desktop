@@ -15,6 +15,8 @@ export const isIPv4 = (s: string): boolean => {
 };
 
 /// 近似 inet_pton:十六进制冒号、每段 ≤4 位、「::」至多压缩一次;
+/// 压缩态下空段仅允许出现在「::」所在处(首尾空段仅当以「::」开头/结尾,
+/// 其余如 ':::'、'a::b:'、':a::b' 一律拒绝),且十六进制组总数 ≤8;
 /// 常见 ULA/链路本地形态覆盖,畸形输入拒绝
 export const isIPv6 = (s: string): boolean => {
   const t = s.trim();
@@ -22,10 +24,19 @@ export const isIPv6 = (s: string): boolean => {
   if (!/^[0-9a-fA-F:]+$/.test(t)) return false;
   const compressed = t.split('::');
   if (compressed.length > 2) return false;
-  const raw = t.split(':');
-  const segs = raw.filter(seg => seg !== '');
-  // 无「::」压缩时不得有裸冒号产生的空段(如 ':fd00:1'、'fd00:1:')
-  if (compressed.length === 1 && segs.length !== raw.length) return false;
+  let segs: string[];
+  if (compressed.length === 2) {
+    // 「::」两侧不得再出现裸冒号产生的空段
+    const head = compressed[0] === '' ? [] : compressed[0].split(':');
+    const tail = compressed[1] === '' ? [] : compressed[1].split(':');
+    if (head.some(seg => seg === '') || tail.some(seg => seg === '')) return false;
+    segs = [...head, ...tail];
+  } else {
+    // 无「::」压缩时不得有裸冒号产生的空段(如 ':fd00:1'、'fd00:1:')
+    segs = t.split(':');
+    if (segs.some(seg => seg === '')) return false;
+  }
+  if (segs.length > 8) return false;
   return segs.every(seg => /^[0-9a-fA-F]{1,4}$/.test(seg));
 };
 

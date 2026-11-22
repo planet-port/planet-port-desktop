@@ -10,7 +10,12 @@ describe('DNS 四槽模型', () => {
   it('IPv6 校验:冒号十六进制,允许 :: 压缩一次', () => {
     expect(isIPv6('fd00::1')).toBe(true);
     expect(isIPv6('fe80:0000:0000:0000:0000:0000:0000:0001')).toBe(true);
+    expect(isIPv6('::1')).toBe(true);
     expect(isIPv6('fd00::1::2')).toBe(false);
+    expect(isIPv6(':::')).toBe(false);
+    expect(isIPv6('a::b:')).toBe(false);
+    expect(isIPv6(':a::b')).toBe(false);
+    expect(isIPv6('1:2:3:4:5:6:7:8:9')).toBe(false);
     expect(isIPv6('10.0.0.1')).toBe(false);
   });
   it('slotsValid:custom 至少一个且槽位格式合法', () => {
