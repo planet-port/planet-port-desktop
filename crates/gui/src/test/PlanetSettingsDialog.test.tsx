@@ -27,8 +27,9 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   invokeMock.mockReset();
+  // planet_detail 命令透传 daemon 信封 { planet: <detail> },client.ts 解包 .planet
   invokeMock.mockImplementation((cmd: string) =>
-    cmd === 'planet_detail' ? Promise.resolve(detail) : Promise.resolve({}));
+    cmd === 'planet_detail' ? Promise.resolve({ planet: detail }) : Promise.resolve({}));
 });
 
 const renderDialog = (p: PlanetStatus = planet) => {

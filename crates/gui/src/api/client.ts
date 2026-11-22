@@ -34,7 +34,9 @@ export const api = {
   ) => cmd('set_network', { nwid, body, planet: planet ?? null }),
   peers: (planet?: string) => cmd<{ peers: PeerEntry[] }>('get_peers', { planet: planet ?? null }),
   planetExport: (id: string) => cmd<number[]>('planet_export', { id }),
-  planetDetail: (id: string) => cmd<PlanetDetail>('planet_detail', { id }),
+  /// daemon GET /planets/{id} 返回信封 { planet: <detail> },此处解包
+  planetDetail: (id: string) =>
+    cmd<{ planet: PlanetDetail }>('planet_detail', { id }).then(r => r.planet),
   planetUpdate: (id: string, name: string, icon: string, color: string) =>
     cmd('planet_update', { id, name, icon, color }),
   identityGet: () => cmd<IdentityInfo>('identity_get'),
