@@ -19,7 +19,7 @@ use planet_port_api::types::{NetworkEntry, RouteLine};
 use serde_json::{json, Value};
 use zt_core::NetConfig;
 
-use crate::registry::{NetLocal, RegistryEntry};
+use crate::registry::{NetDisabled, NetLocal, RegistryEntry};
 use crate::runtime;
 use crate::state::{err, runtime_of, AppState, PlanetRuntime};
 use crate::world;
@@ -450,6 +450,66 @@ pub async fn net_join(
     Ok(Json(json!({"result": "ok"})))
 }
 
+/// 底层脱离与资源回收(leave/disable 共用收尾):核心已加入该网络时走
+/// node_leave + 设备面拆除 + 快照/冲突清理 + DNS 还原;随后按派生规则
+/// 判定 Idle 停机(net_local 镜像清空时;禁用区不算「有事可做」)。
+/// 前置:调用方已完成记录迁移/删除并同步运行时镜像
+async fn detach_and_idle(st: &AppState, rt: &Arc<PlanetRuntime>, nwid_u: u64) -> Result<(), ApiErr> {
+    let nwid = format!("{nwid_u:016x}");
+    if rt.networks().iter().any(|c| c.nwid == nwid_u) {
+        let rt2 = Arc::clone(rt);
+        tokio::task::spawn_blocking(move || rt2.node_leave(nwid_u))
+            .await
+            .map_err(|e| internal(format!("leave 任务失败: {e}")))?
+            .map_err(|e| {
+                err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "leaveFailed",
+                    &format!("leave {nwid} failed: {e}"),
+                    None,
+                )
+            })?;
+        // 设备面拆除 + 快照/冲突清理(记录由调用方处理)
+        rt.plane
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .teardown(nwid_u);
+        st.net_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&(rt.planet_id.clone(), nwid_u));
+        rt.conflicts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&nwid_u);
+        // DNS:该网络的系统 resolver 若归本 planet 所有则还原(失败仅记
+        // 事件)。持 dns_gate:与 netconf apply / stop 的 restore 互斥,标记
+        // 文件的 check-then-act 不能交叠。守卫必须收在本块内:下方 idle
+        // 停机会经 stop_planet 再次拿 dns_gate,tokio Mutex 不可重入
+        {
+            let _dns_gate = st.dns_gate.lock().await;
+            let events = Arc::clone(&st.events);
+            let config_dir = st.config_dir.clone();
+            let pid = rt.planet_id.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                crate::dns::restore(&config_dir, &events, &pid, Some(nwid_u))
+            })
+            .await;
+        }
+    }
+    // 派生运行规则:net_local(镜像)清空 → 资源性停机(并发 join 落盘则
+    // 门闩内重评不放行)
+    if rt
+        .net_local
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_empty()
+    {
+        runtime::stop_planet(st, &rt.planet_id, runtime::StopMark::Idle).await;
+    }
+    Ok(())
+}
+
 // ---- POST /networks/{nwid}/leave ----
 
 pub async fn net_leave(
@@ -537,6 +597,99 @@ pub async fn net_leave(
     {
         runtime::stop_planet(&st, &rt.planet_id, runtime::StopMark::Idle).await;
     }
+    Ok(Json(json!({"result": "ok"})))
+}
+
+// ---- POST /networks/{nwid}/disable ----
+
+/// 禁用:记录 net_local → net_disabled 迁移(保留本地配置与名字快照),
+/// 底层脱离网络;net_local 清空则 idle 停机(派生规则同 leave 收尾)。
+/// planet stopped 时无核心,仅做记录迁移。幂等:已在禁用区 → 成功
+pub async fn net_disable(
+    State(st): State<AppState>,
+    Path(nwid): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiErr> {
+    // 定位不要求 running(stopped planet 上的网络也能禁用:纯记录迁移)
+    let (pid, entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
+    if !entry.enabled {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "planetDisabled",
+            &format!(
+                "planet \"{}\" is disabled; enable it first",
+                crate::api_planet::name_of(&entry)
+            ),
+            None,
+        ));
+    }
+    let rt = runtime_of(&st, &pid);
+    // nwid 解析:核心在 → nwid/已加入网络名(resolve_nwid);核心不在 → 仅
+    // nwid(stopped 无核心快照,按名定位退化为仅 nwid——规格明确)
+    let nwid_u = match &rt {
+        Some(rt) => resolve_nwid(rt, &nwid)?,
+        None => parse_nwid(&nwid).map_err(|_| {
+            err(
+                StatusCode::NOT_FOUND,
+                "networkNotFound",
+                &format!("network \"{nwid}\" not found (planet stopped; address by id)"),
+                None,
+            )
+        })?,
+    };
+    let key = format!("{nwid_u:016x}");
+    // 幂等:已在禁用区 → 成功
+    if entry.net_disabled.contains_key(&key) {
+        st.events.push(&pid, "networkDisabled", &format!("already disabled {nwid} (idempotent)"));
+        return Ok(Json(json!({"result": "ok", "idempotent": true})));
+    }
+    // 名字快照取核心(可得时)
+    let name = rt
+        .as_ref()
+        .and_then(|rt| {
+            rt.networks()
+                .into_iter()
+                .find(|c| c.nwid == nwid_u)
+                .map(|c| if c.name.is_empty() { None } else { Some(c.name) })
+        })
+        .flatten();
+    // 记录迁移(net_local → net_disabled;半态防御:核心已加入但记录缺失
+    // 时按现行配置快照入库)
+    {
+        let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
+            let joined = rt
+                .as_ref()
+                .is_some_and(|r| r.networks().iter().any(|c| c.nwid == nwid_u));
+            let nl = match e.net_local.remove(&key) {
+                Some(nl) => nl,
+                None if !joined => {
+                    return Err(err(
+                        StatusCode::NOT_FOUND,
+                        "networkNotFound",
+                        &format!("network {nwid} not joined on this planet"),
+                        None,
+                    ))
+                }
+                None => net_local_of(rt.as_ref(), e, nwid_u),
+            };
+            e.net_disabled.insert(key, NetDisabled { local: nl, name });
+            if let Err(e) = reg.save(&st.config_dir) {
+                eprintln!("[net] registry 写盘失败: {e}");
+            }
+        }
+    }
+    st.events.push(&pid, "networkDisabled", &format!("disabled {nwid}"));
+    // 无核心:记录迁移即完成
+    let Some(rt) = rt else {
+        return Ok(Json(json!({"result": "ok"})));
+    };
+    // 底层脱离(与 leave 同款收尾;记录已在禁用区,不删)
+    rt.net_local
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(&nwid_u);
+    detach_and_idle(&st, &rt, nwid_u).await?;
     Ok(Json(json!({"result": "ok"})))
 }
 
@@ -697,6 +850,7 @@ pub fn router() -> Router<AppState> {
         .route("/networks", get(networks_list))
         .route("/networks/{nwid}/join", post(net_join))
         .route("/networks/{nwid}/leave", post(net_leave))
+        .route("/networks/{nwid}/disable", post(net_disable))
         .route("/networks/{nwid}", post(net_set))
         .route("/events", get(events))
 }

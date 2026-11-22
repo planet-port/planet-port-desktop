@@ -51,6 +51,13 @@ pub fn network_join(nwid: &str, planet: Option<&str>) -> String {
 pub fn network_leave(nwid: &str, planet: Option<&str>) -> String {
     format!("/networks/{}/leave{}", enc(nwid), q(planet))
 }
+pub fn network_disable(nwid: &str, planet: Option<&str>) -> String {
+    format!("/networks/{}/disable{}", enc(nwid), q(planet))
+}
+
+pub fn network_enable(nwid: &str, planet: Option<&str>) -> String {
+    format!("/networks/{}/enable{}", enc(nwid), q(planet))
+}
 pub fn network_set(nwid: &str, planet: Option<&str>) -> String {
     format!("/networks/{}{}", enc(nwid), q(planet))
 }
