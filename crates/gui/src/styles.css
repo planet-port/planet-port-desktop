@@ -89,13 +89,13 @@ body {
   border-radius: 6px;
   padding: 6px 10px;
   font: inherit;
-  background: var(--panel);
+  background: var(--panel-2);
   color: var(--text);
   transition: border-color .12s ease, box-shadow .12s ease;
 }
 .input::placeholder { color: var(--muted); }
 .input:hover:not(:disabled) { border-color: var(--border-h); }
-.input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.input:focus { outline: none; border-color: var(--primary); background: var(--panel); box-shadow: 0 0 0 1px var(--primary); }
 textarea.input { resize: vertical; }
 select.input { cursor: pointer; }
 .input:disabled { color: var(--off); background: var(--panel-2); cursor: default; }
@@ -376,27 +376,43 @@ select.input { cursor: pointer; }
   position: fixed; top: 0; right: calc(var(--stack, 0) * 44px); bottom: 0; width: 360px;
   z-index: calc(31 + var(--stack, 0));
   background: var(--panel-2); border-left: 1px solid var(--border);
-  padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+  padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
   box-shadow: -8px 0 24px rgba(0,0,0,0.12);
 }
 .drawer header { display: flex; align-items: center; justify-content: space-between; padding-right: 30px; }
-/* 抽屉右上角关闭按钮(壳统一渲染):muted 图形钮,hover 面底提亮 */
+/* 抽屉右上角关闭按钮(壳统一渲染):常显面底+描边(空态即可识别为按钮),hover 提亮 */
 .drawer-close {
   position: absolute; top: 10px; right: 10px;
   width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
-  background: none; border: none; border-radius: 6px; padding: 0;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 0;
   font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer;
-  transition: background-color .12s ease, color .12s ease;
+  transition: background-color .12s ease, color .12s ease, border-color .12s ease;
 }
-.drawer-close:hover { background: var(--panel); color: var(--text); }
+.drawer-close:hover { background: var(--panel-2); border-color: var(--border-h); color: var(--text); }
 .drawer h3 { margin: 0; font-size: 14px; font-weight: 500; }
-.drawer-section { border-top: 1px solid var(--border); padding: 12px 0; display: flex; flex-direction: column; gap: 8px; }
-.drawer-section h4 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 500; }
-/* 分段控件:整组一个圆角容器(边框+底色),选中项浮起为面板块——
-   未选中可 hover,选中态由"块"而非颜色承担,识别度不依赖色觉 */
+/* 内容分组 = 卡片(macOS 系统设置/iOS Form 范式):卡底比抽屉底亮一档,
+   行间 hairline 分隔——静止状态即可识别"这组东西可交互";可点行 hover
+   背景以负 margin 撑满卡片内宽 */
+.drawer-section, .detail-section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px 8px;
+  display: flex; flex-direction: column;
+}
+[data-theme='dark'] .drawer-section, [data-theme='dark'] .detail-section {
+  background: #22252d; border-color: #2c3038;
+}
+.drawer-section h4, .detail-section h4 {
+  margin: 0; font-size: 12px; color: var(--muted); font-weight: 500;
+  padding: 8px 8px 7px;
+}
+.drawer-section > * + *, .detail-section > * + * { border-top: 1px solid var(--border-soft); }
+/* 分段控件:整组一个圆角凹陷轨道(底色比所在卡再深一档,浅色下不与卡面同色),
+   选中项浮起为面板块——选中态由"块"而非颜色承担 */
 .seg {
-  display: flex; gap: 2px; padding: 2px;
-  background: var(--panel-2);
+  display: flex; gap: 2px; padding: 2px; margin: 6px 0;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 7px;
 }
@@ -455,9 +471,8 @@ select.input { cursor: pointer; }
 .plain:hover:not(:disabled) { background: var(--panel); color: var(--text); }
 
 /* ---- 网络详情/行星设置(Task 14/15) ---- */
-.detail-section { border-top: 1px solid var(--border); padding: 10px 0; display: flex; flex-direction: column; gap: 6px; }
 .detail-section h4 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 500; }
-.kv { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; }
+.kv { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; padding: 6px 0; }
 .kv > span:first-child { color: var(--muted); flex: none; }
 .kv .mono { text-align: right; word-break: break-all; }
 /* kv 值区:值 + 附属动作(二维码按钮/多分享按钮)并排 */
@@ -465,7 +480,7 @@ select.input { cursor: pointer; }
 /* 整行可点的 kv(诊断入口/图标行):button 复用 .kv 排版;hover 整行
    背景变化(负 margin + padding 补偿撑满行宽),背景才是"可点"的信号 */
 button.kv {
-  width: 100%; background: none; border: none; padding: 3px 8px; margin: 0 -8px;
+  width: 100%; background: none; border: none; padding: 6px 8px; margin: 0 -8px;
   cursor: pointer; font: inherit; text-align: left; border-radius: 6px;
   transition: background-color .12s ease;
 }
