@@ -16,6 +16,10 @@ export default function PlanetManager({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const toast = useToast();
+  /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走滑出动画,动画结束
+  /// (DrawerShell onClosed)才回调父层 onClose 清理(父层条件渲染才卸载)
+  const [open, setOpen] = useState(true);
+  const close = () => setOpen(false);
   const [source, setSource] = useState('');
   // 待删除 planet(wry 不支持 window.confirm,删除须应用内对话框二次确认)
   const [pendingRemove, setPendingRemove] = useState<PlanetStatus | null>(null);
@@ -83,10 +87,10 @@ export default function PlanetManager({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      <DrawerShell open onClose={onClose} wide>
+      <DrawerShell open={open} onClose={close} onClosed={onClose} wide>
         <header>
           <h3>{t('planets.managerTitle')}</h3>
-          <button className="btn icon" aria-label={t('common.close')} onClick={onClose}>×</button>
+          <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>
         </header>
         <div className="toolbar">
           <input className="input grow" placeholder={t('planets.sourcePlaceholder')} value={source} onChange={e => setSource(e.target.value)} />
@@ -141,7 +145,7 @@ export default function PlanetManager({ onClose }: { onClose: () => void }) {
           planets.length === 0 && <div className="empty">{t('planets.empty')}</div>
         )}
         <div className="dialog-actions">
-          <button className="btn" onClick={onClose}>{t('common.close')}</button>
+          <button className="btn" onClick={close}>{t('common.close')}</button>
         </div>
       </DrawerShell>
       {/* 确认框/二维码与行星管理抽屉平级(DrawerShell 经 portal 挂 body):避免嵌在

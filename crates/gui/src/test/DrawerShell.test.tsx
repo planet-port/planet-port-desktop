@@ -53,6 +53,59 @@ describe('DrawerShell', () => {
     expect(document.querySelector('.drawer-mask')).toBeNull();
   });
 
+  it('onClosed 在 250ms 卸载时回调一次(open=true 全程不触发)', () => {
+    const onClosed = vi.fn();
+    const { rerender } = render(
+      <DrawerShell open onClose={() => {}} onClosed={onClosed} testId="shell">
+        <p>抽屉内容</p>
+      </DrawerShell>,
+    );
+    act(() => {
+      vi.advanceTimersByTime(16);
+    });
+    expect(onClosed).not.toHaveBeenCalled();
+    rerender(
+      <DrawerShell open={false} onClose={() => {}} onClosed={onClosed} testId="shell">
+        <p>抽屉内容</p>
+      </DrawerShell>,
+    );
+    act(() => {
+      vi.advanceTimersByTime(249);
+    });
+    expect(onClosed).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(onClosed).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('shell')).not.toBeInTheDocument();
+  });
+
+  it('父层每渲染换新 onClosed 引用不重置卸载定时,且只回调最新闭包', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { rerender } = render(
+      <DrawerShell open onClose={() => {}} onClosed={first} testId="shell">
+        <p>抽屉内容</p>
+      </DrawerShell>,
+    );
+    rerender(
+      <DrawerShell open={false} onClose={() => {}} onClosed={second} testId="shell">
+        <p>抽屉内容</p>
+      </DrawerShell>,
+    );
+    // 关闭动画期父层可能再渲染(内联箭头换新引用),不得重开计时
+    rerender(
+      <DrawerShell open={false} onClose={() => {}} onClosed={second} testId="shell">
+        <p>抽屉内容</p>
+      </DrawerShell>,
+    );
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
   it('初始 open=false 不渲染任何 DOM', () => {
     const { container } = render(
       <DrawerShell open={false} onClose={() => {}}>

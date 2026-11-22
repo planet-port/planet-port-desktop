@@ -60,9 +60,11 @@ export default function App() {
           <Home />
         </main>
       )}
+      {/* 三个抽屉均为瞬时型:内部自持 open 走滑出动画,关动画结束才回调
+          onClose 清 drawer 状态,故这里条件渲染保持不变 */}
       {online && drawer === 'addNet' && <AddNetworkDrawer onClose={() => setDrawer('none')} />}
       {online && drawer === 'addPlanet' && <AddPlanetDrawer onClose={() => setDrawer('none')} />}
-      {online && drawer === 'settings' && <SettingsDrawer open onClose={() => setDrawer('none')} />}
+      {online && drawer === 'settings' && <SettingsDrawer onClose={() => setDrawer('none')} />}
     </div>
   );
 }

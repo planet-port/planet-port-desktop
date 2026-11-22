@@ -35,6 +35,10 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
   const qc = useQueryClient();
   const toast = useToast();
   const custom = planet.type === 'custom';
+  /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走滑出动画,动画结束
+  /// (DrawerShell onClosed)才回调父层 onClose 清理(父层条件渲染才卸载)
+  const [open, setOpen] = useState(true);
+  const close = () => setOpen(false);
   /// 编辑初值:空 icon/color 用回退值落定(打开选择器即见当前有效形态)
   const [initialIcon] = useState(() => planet.icon || animalFor(null, planet.name));
   const [initialColor] = useState(() => planet.color || colorFor(null, planet.id));
@@ -68,7 +72,8 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
       void qc.invalidateQueries({ queryKey: ['status'] });
       void qc.invalidateQueries({ queryKey: ['networks'] });
       onDone();
-      onClose();
+      setConfirmDel(false);
+      close();
     },
     onError: onErr,
   });
@@ -97,10 +102,10 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
   const d = detail.data;
   return (
     <>
-      <DrawerShell open onClose={onClose} wide testId="planet-settings">
+      <DrawerShell open={open} onClose={close} onClosed={onClose} wide testId="planet-settings">
         <header>
           <h3>{t('planet.settingsTitle', { name: planet.name })}</h3>
-          <button className="btn icon" aria-label={t('common.close')} onClick={onClose}>×</button>
+          <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>
         </header>
         <section className="detail-section addplanet-preview">
           <PlanetIconView icon={icon} color={color} name={name || planet.name} id={planet.id} size={56} />
@@ -122,7 +127,7 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
         <div className="dialog-actions">
           {custom && <button className="btn danger" onClick={() => setConfirmDel(true)}>{t('common.delete')}</button>}
           <span className="grow" />
-          <button className="btn" onClick={onClose}>{t('common.close')}</button>
+          <button className="btn" onClick={close}>{t('common.close')}</button>
           {custom && (
             <button className="btn primary" disabled={!dirty || name.trim() === '' || update.isPending} onClick={() => update.mutate()}>
               {t('common.save')}

@@ -15,6 +15,10 @@ export default function AddNetworkDrawer({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const toast = useToast();
+  /// 瞬时型弹层:由 App 条件渲染挂载,内部持有 open,onClose 只翻 state 走
+  /// 滑出动画,动画结束(DrawerShell onClosed)才回调父层 onClose 卸载
+  const [open, setOpen] = useState(true);
+  const close = () => setOpen(false);
   const [nwid, setNwid] = useState('');
   const [planet, setPlanet] = useState('');
   const [routeVia, setRouteVia] = useState(false);
@@ -44,7 +48,7 @@ export default function AddNetworkDrawer({ onClose }: { onClose: () => void }) {
       void qc.invalidateQueries({ queryKey: ['networks'] });
       void qc.invalidateQueries({ queryKey: ['status'] });
       toast.ok(t('networks.joined'));
-      onClose();
+      close();
     },
     onError: e => {
       const ge = asError(e);
@@ -53,10 +57,10 @@ export default function AddNetworkDrawer({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <DrawerShell open onClose={onClose} testId="add-network-drawer">
+    <DrawerShell open={open} onClose={close} onClosed={onClose} testId="add-network-drawer">
       <header>
         <h3>{t('join.title')}</h3>
-        <button className="btn icon" aria-label={t('common.close')} onClick={onClose}>×</button>
+        <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>
       </header>
       <section className="drawer-section">
         <h4>{t('networks.id')}</h4>

@@ -21,6 +21,10 @@ function formatMac(mac: string): string {
 export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEntry; onClose: () => void; onDone: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
+  /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走滑出动画,动画结束
+  /// (DrawerShell onClosed)才回调父层 onClose 清理(父层条件渲染才卸载)
+  const [open, setOpen] = useState(true);
+  const close = () => setOpen(false);
   const [routeVia, setRouteVia] = useState(row.routeViaZeroTier);
   const [dnsMode, setDnsMode] = useState(row.dnsMode);
   const [slots, setSlots] = useState<DnsSlots>(() => serversToSlots(row.customDns));
@@ -53,7 +57,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
     onSuccess: () => {
       toast.ok(t('common.saved'));
       onDone();
-      onClose();
+      close();
     },
     onError: e => toast.error(asError(e)?.message ?? String(e)),
   });
@@ -62,17 +66,18 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
     onSuccess: () => {
       toast.ok(t('networks.left'));
       onDone();
-      onClose();
+      setConfirmDel(false);
+      close();
     },
     onError: e => toast.error(asError(e)?.message ?? String(e)),
   });
 
   return (
     <>
-      <DrawerShell open onClose={onClose} wide testId="network-detail">
+      <DrawerShell open={open} onClose={close} onClosed={onClose} wide testId="network-detail">
         <header>
           <h3>{t('networks.detailTitle', { name: row.name ?? row.nwid })}</h3>
-          <button className="btn icon" aria-label={t('common.close')} onClick={onClose}>×</button>
+          <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>
         </header>
         <section className="detail-section">
           <div className="kv"><span>{t('networks.id')}</span><span className="mono">{row.nwid}</span></div>
@@ -141,7 +146,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
         <div className="dialog-actions">
           <button className="btn danger" onClick={() => setConfirmDel(true)}>{t('networks.deleteNetwork')}</button>
           <span className="grow" />
-          <button className="btn" onClick={onClose}>{t('common.cancel')}</button>
+          <button className="btn" onClick={close}>{t('common.cancel')}</button>
           <button className="btn primary" disabled={!dnsOk || saveSettings.isPending} onClick={() => saveSettings.mutate()}>
             {t('common.save')}
           </button>

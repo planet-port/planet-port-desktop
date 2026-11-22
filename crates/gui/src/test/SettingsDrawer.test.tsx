@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsDrawer from '../components/SettingsDrawer';
 import { ToastProvider } from '../components/Toaster';
@@ -36,13 +36,14 @@ beforeEach(() => {
   mockMatchMedia(false);
 });
 
-// SettingsDrawer 自身无查询,但内嵌 IdentitySection 走 useQuery/useQueryClient,须挂 Provider
-function renderDrawer(props: { open?: boolean; onClose?: () => void } = {}) {
+// SettingsDrawer 自身无查询,但内嵌 IdentitySection 走 useQuery/useQueryClient,须挂 Provider。
+// 组件为瞬时型(App 条件渲染挂载,内部自持 open),不再收 open prop
+function renderDrawer(onClose: () => void = () => {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <ToastProvider>
-        <SettingsDrawer open={props.open ?? true} onClose={props.onClose ?? (() => {})} />
+        <SettingsDrawer onClose={onClose} />
       </ToastProvider>
     </QueryClientProvider>,
   );
@@ -59,10 +60,23 @@ describe('SettingsDrawer', () => {
     expect(screen.getByTestId('settings-drawer')).toBeInTheDocument();
   });
 
-  it('open=false 不渲染', () => {
-    renderDrawer({ open: false });
-    // DrawerShell 经 portal 挂 body,断言面向整个文档
-    expect(document.querySelector('.drawer')).not.toBeInTheDocument();
+  it('关闭走滑出动画:撤 in 后内容保留,250ms 后整树卸载且 .drawer 不在文档', () => {
+    // jsdom 不跑 transition,关闭卸载由 250ms 定时承载,fake timers 精确推进
+    vi.useFakeTimers();
+    try {
+      renderDrawer();
+      fireEvent.click(document.querySelector('.drawer-mask')!);
+      expect(screen.getByTestId('settings-drawer')).toBeInTheDocument();
+      expect(screen.getByTestId('settings-drawer')).not.toHaveClass('in');
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      // DrawerShell 经 portal 挂 body,断言面向整个文档
+      expect(document.querySelector('.drawer')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('settings-drawer')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('点深色立即落 data-theme=dark 且按钮高亮', () => {
@@ -75,11 +89,20 @@ describe('SettingsDrawer', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
-  it('点遮罩关闭抽屉', () => {
-    const onClose = vi.fn();
-    renderDrawer({ onClose });
-    fireEvent.click(document.querySelector('.drawer-mask')!);
-    expect(onClose).toHaveBeenCalledTimes(1);
+  it('点遮罩关闭抽屉,onClose 在滑出动画结束(250ms)时回调一次', () => {
+    vi.useFakeTimers();
+    try {
+      const onClose = vi.fn();
+      renderDrawer(onClose);
+      fireEvent.click(document.querySelector('.drawer-mask')!);
+      expect(onClose).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('语言分段切换中文/English', () => {

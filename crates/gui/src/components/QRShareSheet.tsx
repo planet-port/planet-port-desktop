@@ -22,6 +22,10 @@ export default function QRShareSheet({
   onDismiss: () => void;
 }) {
   const { t } = useTranslation();
+  /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走滑出动画,动画结束
+  /// (DrawerShell onClosed)才回调 onDismiss 让父层卸载
+  const [open, setOpen] = useState(true);
+  const close = () => setOpen(false);
   const frames = useMemo(() => {
     try {
       return encodeFrames(data);
@@ -63,10 +67,10 @@ export default function QRShareSheet({
   }, [manual, speed, frames, urls.length]);
 
   return (
-    <DrawerShell open onClose={onDismiss} width={380}>
+    <DrawerShell open={open} onClose={close} onClosed={onDismiss} width={380}>
       <header>
         <h3>{title}</h3>
-        <button className="btn icon" aria-label={t('common.close')} onClick={onDismiss}>×</button>
+        <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>
       </header>
       <div className="qr-sheet">
         {subtitle && <p className="small">{subtitle}</p>}

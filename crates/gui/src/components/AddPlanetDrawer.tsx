@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { api, asError } from '../api/client';
 import { randomAnimal, randomColorHex } from '../icons/planetIcon';
 import DrawerShell from './DrawerShell';
@@ -16,6 +16,10 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const toast = useToast();
+  /// 瞬时型弹层:由 App 条件渲染挂载,内部持有 open,onClose 只翻 state 走
+  /// 滑出动画,动画结束(DrawerShell onClosed)才回调父层 onClose 卸载
+  const [open, setOpen] = useState(true);
+  const close = () => setOpen(false);
   const [animal, setAnimal] = useState(randomAnimal());
   const [color, setColor] = useState(randomColorHex());
   const [name, setName] = useState('');
@@ -30,7 +34,7 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
       void qc.invalidateQueries({ queryKey: ['planets'] });
       void qc.invalidateQueries({ queryKey: ['networks'] });
       toast.ok(t('addplanet.imported'));
-      onClose();
+      close();
     },
     onError: e => {
       const ge = asError(e);
@@ -40,7 +44,7 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
   });
 
   const pickFile = async () => {
-    const picked = await open({ multiple: false, directory: false, title: t('addplanet.chooseFile') });
+    const picked = await openDialog({ multiple: false, directory: false, title: t('addplanet.chooseFile') });
     if (!picked || Array.isArray(picked)) return;
     setSource(picked);
     setUrl('');
@@ -49,10 +53,10 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      <DrawerShell open onClose={onClose} testId="add-planet-drawer">
+      <DrawerShell open={open} onClose={close} onClosed={onClose} testId="add-planet-drawer">
         <header>
           <h3>{t('addplanet.title')}</h3>
-          <button className="btn icon" aria-label={t('common.close')} onClick={onClose}>×</button>
+          <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>
         </header>
         <section className="drawer-section addplanet-preview">
           <button className="plain" aria-label={t('icon.title')} onClick={() => setShowPicker(true)}>
