@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { act } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
@@ -84,12 +84,23 @@ describe('App 单页布局', () => {
     expect(await screen.findByText(/导入/)).toBeInTheDocument();
   });
 
-  it('navigate 事件 focusJoin 触发首页加入框聚焦（不再切页）', async () => {
+  it('navigate 事件 focusJoin 打开添加网络抽屉（与顶栏同一入口）', async () => {
     renderApp();
     await screen.findByText('daemon 在线');
     emit('navigate', { focusJoin: true });
-    const input = await screen.findByPlaceholderText('网络 ID，如 9536600adcf2b350');
-    expect(input).toHaveFocus();
+    expect(await screen.findByTestId('add-network-drawer')).toBeInTheDocument();
+  });
+
+  it('顶栏三按钮:添加网络/添加行星/设置各开对应抽屉,同一时刻仅一个', async () => {
+    renderApp();
+    fireEvent.click(await screen.findByText('添加网络'));
+    expect(screen.getByTestId('add-network-drawer')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('添加行星'));
+    expect(screen.queryByTestId('add-network-drawer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('add-planet-drawer')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('设置'));
+    expect(screen.queryByTestId('add-planet-drawer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('settings-drawer')).toBeInTheDocument();
   });
 
   it('daemon-offline 事件切换离线引导', async () => {

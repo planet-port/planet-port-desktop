@@ -5,7 +5,7 @@ export default {
     saved: '已保存', empty: '暂无数据', close: '关闭',
     loadError: '加载失败',
     authError: '鉴权失败：token 与 daemon 不匹配，请检查 PLANET_PORT_TOKEN 或重装服务',
-    done: '完成',
+    done: '完成', import: '导入',
   },
   icon: { title: '选择图标', graphic: '图形', color: '底色', randomColor: '随机底色' },
   settings: {
@@ -27,6 +27,24 @@ export default {
     emptyNoPlanet: '还没有行星。打开右上角设置 → 高级 → 行星管理导入。',
     noNetworks: '该行星下暂无网络',
     netCount: '网络: {{ok}}/{{total}}',
+    addNetwork: '添加网络', addPlanet: '添加行星',
+  },
+  join: {
+    title: '加入网络', idPlaceholder: '16 位十六进制',
+    idInvalid: '网络 ID 必须为 16 位十六进制字符',
+    planet: '行星', defaultPlanet: '默认行星',
+    routeVia: '默认路由经 ZeroTier', routeViaFooter: '开启后此网络的默认路由经 ZeroTier 隧道转发',
+    action: '加入', duplicate: '网络 {{id}} 已在列表中，不能重复添加',
+  },
+  dns: {
+    'mode.none': '不使用', 'mode.network': '使用网络 DNS', 'mode.custom': '自定义',
+    v4a: 'IPv4 DNS 1', v4b: 'IPv4 DNS 2（可选）', v6a: 'IPv6 DNS 1', v6b: 'IPv6 DNS 2（可选）',
+    invalid: 'DNS 地址格式不正确',
+  },
+  addplanet: {
+    title: '添加行星服务器', name: '名称', namePlaceholder: '行星名称',
+    source: '行星文件', chooseFile: '选择行星文件', urlPlaceholder: 'https://example.com/planet.planet',
+    randomIcon: '换个随机图标', action: '添加行星服务器', imported: '已导入',
   },
   planet: {
     status: { running: '运行中', stopped: '已停止' },

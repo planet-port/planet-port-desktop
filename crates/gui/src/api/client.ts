@@ -19,7 +19,8 @@ export const api = {
   startInstall: () => cmd<void>('start_install'),
   status: () => cmd<{ planets: PlanetStatus[] }>('get_status'),
   planets: () => cmd<{ planets: PlanetStatus[] }>('get_planets'),
-  addPlanet: (source: string) => cmd('add_planet', { source }),
+  addPlanet: (source: string, name?: string, icon?: string, color?: string) =>
+    cmd('add_planet', { source, name: name ?? null, icon: icon ?? null, color: color ?? null }),
   removePlanet: (id: string) => cmd('remove_planet', { id }),
   enablePlanet: (id: string) => cmd('enable_planet', { id }),
   disablePlanet: (id: string) => cmd('disable_planet', { id }),

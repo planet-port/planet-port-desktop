@@ -20,8 +20,25 @@ pub fn get_planets() -> Result<Value, GuiError> {
     discover()?.get_json(&endpoints::planets())
 }
 #[tauri::command]
-pub fn add_planet(source: String) -> Result<Value, GuiError> {
-    discover()?.post_json(&endpoints::planets(), &json!({ "source": source }))
+pub fn add_planet(
+    source: String,
+    name: Option<String>,
+    icon: Option<String>,
+    color: Option<String>,
+) -> Result<Value, GuiError> {
+    // POST /planets 既有 body 面:source 必填,name/icon/color 可选
+    // (daemon 已支持,GUI 仅透传;URL 源=source 含 ://)
+    let mut body = json!({ "source": source });
+    if let Some(v) = name {
+        body["name"] = Value::from(v);
+    }
+    if let Some(v) = icon {
+        body["icon"] = Value::from(v);
+    }
+    if let Some(v) = color {
+        body["color"] = Value::from(v);
+    }
+    discover()?.post_json(&endpoints::planets(), &body)
 }
 #[tauri::command]
 pub fn remove_planet(id: String) -> Result<Value, GuiError> {

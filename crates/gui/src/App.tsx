@@ -3,18 +3,22 @@ import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { api } from './api/client';
 import logo from './assets/icon-1024.png';
-import Home from './pages/Home';
-import OfflineGuide from './pages/OfflineGuide';
+import AddNetworkDrawer from './components/AddNetworkDrawer';
+import AddPlanetDrawer from './components/AddPlanetDrawer';
 import SettingsDrawer from './components/SettingsDrawer';
 import { useToast } from './components/Toaster';
+import Home from './pages/Home';
+import OfflineGuide from './pages/OfflineGuide';
+
+/// 顶栏抽屉状态机:三入口(添加网络/添加行星/设置)同一时刻仅开一个
+type DrawerKind = 'none' | 'addNet' | 'addPlanet' | 'settings';
 
 export default function App() {
   const { t } = useTranslation();
   const toast = useToast();
   const [online, setOnline] = useState(false);
   const [installed, setInstalled] = useState(true);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [focusJoin, setFocusJoin] = useState(0);
+  const [drawer, setDrawer] = useState<DrawerKind>('none');
 
   useEffect(() => {
     void api.daemonState().then(s => {
@@ -24,9 +28,9 @@ export default function App() {
     const unsubs = [
       listen('daemon-online', () => setOnline(true)),
       listen('daemon-offline', () => setOnline(false)),
-      // 托盘「加入网络…」:单页布局无切页,聚焦信号交 Home 聚焦加入框
+      // 托盘「加入网络…」:打开添加网络抽屉(与顶栏按钮同一入口)
       listen<{ focusJoin?: boolean }>('navigate', e => {
-        if (e.payload.focusJoin) setFocusJoin(n => n + 1);
+        if (e.payload.focusJoin) setDrawer('addNet');
       }),
       // 托盘动作失败提示(Rust 侧在后台线程执行,失败经此回传)
       listen<string>('tray-error', e => toast.error(e.payload)),
@@ -49,12 +53,16 @@ export default function App() {
             <span className={`dot ${online ? 'on' : 'off'}`} />
             <span className="small">{online ? t('daemon.online') : t('daemon.offline')}</span>
             <span className="grow" />
-            <button className="btn icon" aria-label={t('settings.title')} onClick={() => setDrawerOpen(true)}>⚙</button>
+            <button className="btn" data-testid="topbar-add-network" onClick={() => setDrawer('addNet')}>{t('home.addNetwork')}</button>
+            <button className="btn" data-testid="topbar-add-planet" onClick={() => setDrawer('addPlanet')}>{t('home.addPlanet')}</button>
+            <button className="btn icon" data-testid="topbar-settings" aria-label={t('settings.title')} onClick={() => setDrawer('settings')}>⚙</button>
           </header>
-          <Home focusJoinSignal={focusJoin} />
+          <Home />
         </main>
       )}
-      {online && <SettingsDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />}
+      {online && drawer === 'addNet' && <AddNetworkDrawer onClose={() => setDrawer('none')} />}
+      {online && drawer === 'addPlanet' && <AddPlanetDrawer onClose={() => setDrawer('none')} />}
+      {online && drawer === 'settings' && <SettingsDrawer open onClose={() => setDrawer('none')} />}
     </div>
   );
 }

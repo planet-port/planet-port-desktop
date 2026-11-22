@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api, asError } from '../api/client';
@@ -9,27 +9,20 @@ import QueryError from '../components/QueryError';
 import { useToast } from '../components/Toaster';
 
 /// 单页首页:行星分组头(状态/传输/计数) + 网络卡片流(卡片⇄列表,localStorage 记忆)。
-/// 加入/离开由卡片开关直切(同移动端,无确认弹层);网络设置弹层经点卡片主体进入
-export default function Home({ focusJoinSignal }: { focusJoinSignal: number }) {
+/// 加入入口移至顶栏「添加网络」抽屉;离开由卡片开关直切(同移动端,无确认弹层)
+export default function Home() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const toast = useToast();
-  const [nwid, setNwid] = useState('');
   const [view, setView] = useState<'cards' | 'list'>(() => (localStorage.getItem('netview') === 'list' ? 'list' : 'cards'));
   const [editing, setEditing] = useState<NetworkEntry | null>(null);
   /// 开关 in-flight 网络(`${planet}/${nwid}`);pending 期对应卡片 spinner
   const [toggling, setToggling] = useState<string | null>(null);
-  const [joinPlanet, setJoinPlanet] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const status = useQuery({ queryKey: ['status'], queryFn: api.status, refetchInterval: 3000 });
   const planets: PlanetStatus[] = status.data?.planets ?? [];
   const q = useQuery({ queryKey: ['networks', ''], queryFn: () => api.networks(), refetchInterval: 5000 });
   const rows = q.data?.networks ?? [];
-
-  useEffect(() => {
-    if (focusJoinSignal > 0) inputRef.current?.focus();
-  }, [focusJoinSignal]);
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['networks'] });
@@ -41,15 +34,6 @@ export default function Home({ focusJoinSignal }: { focusJoinSignal: number }) {
     toast.error(`${ge?.message ?? String(e)}${cand}`);
   };
 
-  const join = useMutation({
-    mutationFn: () => api.joinNetwork(nwid.trim(), joinPlanet || undefined),
-    onSuccess: () => {
-      setNwid('');
-      invalidate();
-      toast.ok(t('networks.joined'));
-    },
-    onError: onErr,
-  });
   const leave = useMutation({
     mutationFn: (row: NetworkEntry) => api.leaveNetwork(row.nwid, row.planet),
     onSettled: () => {
@@ -80,23 +64,7 @@ export default function Home({ focusJoinSignal }: { focusJoinSignal: number }) {
   return (
     <div className="page home">
       <div className="toolbar">
-        <input
-          ref={inputRef}
-          className="input grow"
-          placeholder={t('networks.nwidPlaceholder')}
-          value={nwid}
-          onChange={e => setNwid(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && nwid.trim() && join.mutate()}
-        />
-        <select className="input" value={joinPlanet} onChange={e => setJoinPlanet(e.target.value)}>
-          <option value="">{t('networks.allPlanets')}</option>
-          {planets.map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        <button className="btn primary" disabled={!nwid.trim() || join.isPending} onClick={() => join.mutate()}>
-          {t('networks.join')}
-        </button>
+        <span className="grow" />
         <div className="viewtoggle">
           <button className={`btn ${view === 'cards' ? 'active' : ''}`} onClick={() => switchView('cards')} aria-label="cards">▤</button>
           <button className={`btn ${view === 'list' ? 'active' : ''}`} onClick={() => switchView('list')} aria-label="list">☰</button>

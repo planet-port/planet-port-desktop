@@ -5,7 +5,7 @@ export default {
     saved: 'Saved', empty: 'No data', close: 'Close',
     loadError: 'Failed to load',
     authError: 'Authentication failed: token does not match the daemon. Check PLANET_PORT_TOKEN or reinstall the service',
-    done: 'Done',
+    done: 'Done', import: 'Import',
   },
   icon: { title: 'Choose Icon', graphic: 'Graphic', color: 'Color', randomColor: 'Random color' },
   settings: {
@@ -27,6 +27,24 @@ export default {
     emptyNoPlanet: 'No planets yet. Open Settings → Advanced → Planet Manager to import one.',
     noNetworks: 'No networks under this planet',
     netCount: 'Networks: {{ok}}/{{total}}',
+    addNetwork: 'Add Network', addPlanet: 'Add Planet',
+  },
+  join: {
+    title: 'Join Network', idPlaceholder: '16 hex characters',
+    idInvalid: 'Network ID must be 16 hexadecimal characters',
+    planet: 'Planet', defaultPlanet: 'Default planet',
+    routeVia: 'Route default via ZeroTier', routeViaFooter: 'Default route of this network goes through the ZeroTier tunnel',
+    action: 'Join', duplicate: 'Network {{id}} is already in the list',
+  },
+  dns: {
+    'mode.none': 'None', 'mode.network': 'Network DNS', 'mode.custom': 'Custom',
+    v4a: 'IPv4 DNS 1', v4b: 'IPv4 DNS 2 (optional)', v6a: 'IPv6 DNS 1', v6b: 'IPv6 DNS 2 (optional)',
+    invalid: 'Invalid DNS address',
+  },
+  addplanet: {
+    title: 'Add Planet', name: 'Name', namePlaceholder: 'Planet name',
+    source: 'Planet file', chooseFile: 'Choose planet file', urlPlaceholder: 'https://example.com/planet.planet',
+    randomIcon: 'Random icon', action: 'Add Planet', imported: 'Imported',
   },
   planet: {
     status: { running: 'Running', stopped: 'Stopped' },
