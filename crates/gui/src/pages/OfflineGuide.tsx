@@ -3,18 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { EmbeddedManifest } from '../api/types';
 import CmdBlock from '../components/CmdBlock';
+import { detectOs } from '../platform';
 import { needInstall } from './setup';
 import SetupWizard from './SetupWizard';
 
 /// 安装脚本走 api.github.com contents 通道(raw.githubusercontent.com 部分网络 TCP 直连被断,api 域可达)
 const INSTALL_URL = 'https://api.github.com/repos/planet-port/planet-port-desktop/contents/scripts';
-
-function detectOs(): 'macos' | 'windows' | 'linux' {
-  const ua = navigator.userAgent;
-  if (ua.includes('Windows')) return 'windows';
-  if (ua.includes('Mac')) return 'macos';
-  return 'linux';
-}
 
 /// 离线引导双态:bundle 内嵌安装资源且需要安装/升级 → 自动安装区置顶(手动命令折叠为后备);
 /// 无内嵌资源(dev 或未组包)→ 维持纯手动引导

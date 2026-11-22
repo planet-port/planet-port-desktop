@@ -73,7 +73,8 @@ beforeEach(() => {
 describe('App 单页布局', () => {
   it('在线时渲染顶栏 logo 与产品名，不渲染侧边导航', async () => {
     renderApp();
-    expect(await screen.findByText('daemon 在线')).toBeInTheDocument();
+    // 'daemon 在线' 出现两处:顶栏在线态 + 底部工具带本机卡
+    expect((await screen.findAllByText('daemon 在线')).length).toBeGreaterThan(0);
     expect(screen.getByAltText('logo')).toBeInTheDocument();
     expect(screen.getByText('Planet Port')).toBeInTheDocument();
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
@@ -84,19 +85,16 @@ describe('App 单页布局', () => {
     expect(await screen.findByText(/导入/)).toBeInTheDocument();
   });
 
-  it('navigate 事件 focusJoin 打开添加网络抽屉（与顶栏同一入口）', async () => {
+  it('navigate 事件 focusJoin 打开添加网络抽屉（与托盘同一入口）', async () => {
     renderApp();
-    await screen.findByText('daemon 在线');
+    await screen.findAllByText('daemon 在线');
     emit('navigate', { focusJoin: true });
     expect(await screen.findByTestId('add-network-drawer')).toBeInTheDocument();
   });
 
-  it('顶栏三按钮:添加网络/添加行星/设置各开对应抽屉,同一时刻仅一个', async () => {
+  it('顶栏按钮:添加行星/设置各开对应抽屉,同一时刻仅一个(添加网络入口在首页空卡)', async () => {
     renderApp();
-    fireEvent.click(await screen.findByText('添加网络'));
-    expect(screen.getByTestId('add-network-drawer')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('添加行星'));
-    expect(screen.queryByTestId('add-network-drawer')).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByText('添加行星'));
     expect(screen.getByTestId('add-planet-drawer')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('设置'));
     expect(screen.queryByTestId('add-planet-drawer')).not.toBeInTheDocument();
@@ -105,21 +103,21 @@ describe('App 单页布局', () => {
 
   it('daemon-offline 事件切换离线引导', async () => {
     renderApp();
-    await screen.findByText('daemon 在线');
+    await screen.findAllByText('daemon 在线');
     emit('daemon-offline', undefined);
     expect(await screen.findByText('daemon 已安装但未运行')).toBeInTheDocument();
   });
 
   it('tray-error 弹错误 toast', async () => {
     renderApp();
-    await screen.findByText('daemon 在线');
+    await screen.findAllByText('daemon 在线');
     emit('tray-error', '托盘动作失败：network_not_found');
     expect(await screen.findByText('托盘动作失败：network_not_found')).toHaveClass('error');
   });
 
   it('卸载后解除全部事件监听', async () => {
     const { unmount } = renderApp();
-    await screen.findByText('daemon 在线');
+    await screen.findAllByText('daemon 在线');
     unmount();
     await act(async () => {});
     for (const event of ['daemon-online', 'daemon-offline', 'navigate', 'tray-error']) {

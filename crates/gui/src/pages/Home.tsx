@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { api, asError } from '../api/client';
 import type { NetworkEntry, PlanetStatus } from '../api/types';
 import GearIcon from '../components/GearIcon';
+import LocalBand from '../components/LocalBand';
 import NetworkCard from '../components/NetworkCard';
+import PlusIcon from '../components/PlusIcon';
 import NetworkDialog from '../components/NetworkDialog';
 import PlanetIconView from '../components/PlanetIconView';
 import PlanetSettingsDialog from '../components/PlanetSettingsDialog';
@@ -12,8 +14,9 @@ import QueryError from '../components/QueryError';
 import { useToast } from '../components/Toaster';
 
 /// 单页首页:行星分组头(状态/传输/计数) + 网络卡片网格(方案C卡片,泊位灯)。
-/// 加入入口移至顶栏「添加网络」抽屉;卡片开关 = 禁用/启用(脱离保留配置/恢复),彻底删除走详情抽屉
-export default function Home() {
+/// 加入入口 = 卡片网格尾的空卡(点击开「添加网络」抽屉并预选本行星,顶栏按钮已移除);
+/// 卡片开关 = 禁用/启用(脱离保留配置/恢复),彻底删除走详情抽屉
+export default function Home({ onAddNetwork }: { onAddNetwork?: (planet?: string) => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const toast = useToast();
@@ -102,19 +105,27 @@ export default function Home() {
                   <GearIcon />
                 </button>
               </header>
-              {mine.length === 0 ? (
-                <div className="empty small">{t('home.noNetworks')}</div>
-              ) : (
-                <div className="netcards">
-                  {mine.map(r => (
-                    <NetworkCard key={`${r.planet}/${r.nwid}`} row={r} pending={toggling === `${r.planet}/${r.nwid}`} onOpen={setEditing} onToggle={onToggle} />
-                  ))}
-                </div>
-              )}
+              {mine.length === 0 && <div className="empty small">{t('home.noNetworks')}</div>}
+              <div className="netcards">
+                {mine.map(r => (
+                  <NetworkCard key={`${r.planet}/${r.nwid}`} row={r} pending={toggling === `${r.planet}/${r.nwid}`} onOpen={setEditing} onToggle={onToggle} />
+                ))}
+                {/* 空卡 = 添加网络入口(禁用分组不显示:行星已停,加入无意义) */}
+                {p.enabled && (
+                  <button className="netcard add" onClick={() => onAddNetwork?.(p.id)}>
+                    <PlusIcon />
+                    <span>{t('home.addCard')}</span>
+                  </button>
+                )}
+              </div>
             </section>
           );
         })
       )}
+
+      {/* 底部工具带(方案 B):本机概览 + 命令速查 —— 默认隐藏(暂不加显示开关),
+          启用时把条件改回 true 即可,组件与文案保持可用 */}
+      {false && <LocalBand />}
 
       {editing && <NetworkDialog row={editing} onClose={() => setEditing(null)} onDone={invalidate} />}
       {editPlanet && (
