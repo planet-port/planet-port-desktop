@@ -135,7 +135,7 @@ select.input { cursor: pointer; }
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10;
+  z-index: 40;
 }
 .dialog {
   background: var(--panel);
@@ -151,7 +151,7 @@ select.input { cursor: pointer; }
 .field { display: block; margin: 10px 0; }
 .field .input { width: 100%; margin-top: 4px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 20; }
+.toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
 .toast {
   background: #263238;
   color: #fff;
