@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { save } from '@tauri-apps/plugin-dialog';
 import { api, asError } from '../api/client';
 import type { PlanetStatus } from '../api/types';
 import ConfirmDialog from './ConfirmDialog';
+import QRShareSheet from './QRShareSheet';
 import QueryError from './QueryError';
 import { useToast } from './Toaster';
+import { planetPayloadContainer } from '../ztp/container';
 
 /// 行星管理弹层(原 Planets 页收编):设置抽屉「高级」打开
 export default function PlanetManager({ onClose }: { onClose: () => void }) {
@@ -15,6 +18,8 @@ export default function PlanetManager({ onClose }: { onClose: () => void }) {
   const [source, setSource] = useState('');
   // 待删除 planet(wry 不支持 window.confirm,删除须应用内对话框二次确认)
   const [pendingRemove, setPendingRemove] = useState<PlanetStatus | null>(null);
+  const [qrPlanet, setQrPlanet] = useState<PlanetStatus | null>(null);
+  const [qrData, setQrData] = useState<Uint8Array | null>(null);
 
   // 与概览共享 status 缓存
   const q = useQuery({ queryKey: ['status'], queryFn: api.status, refetchInterval: 3000 });
@@ -50,6 +55,30 @@ export default function PlanetManager({ onClose }: { onClose: () => void }) {
   /// 删除运行中 planet 需二次确认并说明影响(spec §6)
   const removeMessage = (p: PlanetStatus) =>
     p.status === 'running' ? t('planets.removeRunningConfirm', { name: p.name }) : t('planets.removeConfirm', { name: p.name });
+
+  /// 导出 .planet 文件:daemon bytes → dialog save → write_file_bytes
+  const shareFile = async (p: PlanetStatus) => {
+    try {
+      const bytes = await api.planetExport(p.id);
+      const path = await save({ defaultPath: `${p.name || p.id}.planet` });
+      if (!path) return;
+      await api.writeBytes(path, bytes);
+      toast.ok(t('common.saved'));
+    } catch (e) {
+      onErr(e);
+    }
+  };
+
+  /// ZTP 二维码:planet 二进制 + name/icon/color 组容器
+  const openQr = async (p: PlanetStatus) => {
+    try {
+      const bytes = await api.planetExport(p.id);
+      setQrData(planetPayloadContainer(Uint8Array.from(bytes), p.name, p.icon || null, p.color || null));
+      setQrPlanet(p);
+    } catch (e) {
+      onErr(e);
+    }
+  };
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -91,6 +120,12 @@ export default function PlanetManager({ onClose }: { onClose: () => void }) {
                   <button className="btn danger" disabled={remove.isPending} onClick={() => setPendingRemove(p)}>
                     {t('common.delete')}
                   </button>
+                  {p.type === 'custom' && (
+                    <>
+                      <button className="btn" onClick={() => shareFile(p)}>{t('planets.shareFile')}</button>
+                      <button className="btn" onClick={() => void openQr(p)}>{t('planets.shareQr')}</button>
+                    </>
+                  )}
                 </footer>
               </section>
             ))}
@@ -116,6 +151,17 @@ export default function PlanetManager({ onClose }: { onClose: () => void }) {
           }}
           onCancel={() => setPendingRemove(null)}
         />
+        {qrPlanet && qrData && (
+          <QRShareSheet
+            title={t('planets.shareQrTitle', { name: qrPlanet.name })}
+            subtitle={t('planets.shareQrHint')}
+            data={qrData}
+            onDismiss={() => {
+              setQrPlanet(null);
+              setQrData(null);
+            }}
+          />
+        )}
       </div>
     </div>
   );

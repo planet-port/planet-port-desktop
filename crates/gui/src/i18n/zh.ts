@@ -52,6 +52,10 @@ export default {
     removeRunningConfirm: 'planet「{{name}}」正在运行，删除将停止其全部网络。确定删除？',
     empty: '暂无 planet',
     managerTitle: '行星管理',
+    shareFile: '导出文件',
+    shareQr: '二维码',
+    shareQrTitle: '分享行星 · {{name}}',
+    shareQrHint: '用 PlanetPort 移动端扫码导入',
   },
   peers: {
     title: '节点表',

@@ -52,6 +52,10 @@ export default {
     removeRunningConfirm: 'Planet "{{name}}" is running; removing will stop its networks. Continue?',
     empty: 'No planets',
     managerTitle: 'Planet Manager',
+    shareFile: 'Export File',
+    shareQr: 'QR Code',
+    shareQrTitle: 'Share Planet · {{name}}',
+    shareQrHint: 'Scan with PlanetPort mobile to import',
   },
   peers: {
     title: 'Peers',
