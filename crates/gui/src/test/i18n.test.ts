@@ -28,6 +28,7 @@ const dynamicPrefixes: Record<string, string[]> = {
     'OK', 'REQUESTING_CONFIGURATION', 'ACCESS_DENIED', 'NOT_FOUND',
     'PORT_ERROR', 'CLIENT_TOO_OLD', 'AUTHENTICATION_REQUIRED', 'STOPPED',
   ],
+  'identity.mode': ['shared', 'independent'], // IdentitySection: t(`identity.mode.${m}`)
 };
 
 /// 收集 src 下全部 ts/tsx（跳过测试自身与资源文件，避免自引用）
@@ -67,13 +68,25 @@ describe('i18n 资源契约', () => {
     expect(missing).toEqual([]);
   });
 
-  it('动态前缀四组枚举闭集在 zh/en 均齐全', () => {
+  it('动态前缀枚举闭集在 zh/en 均齐全', () => {
     for (const [prefix, leaves] of Object.entries(dynamicPrefixes)) {
       for (const leaf of leaves) {
         const key = `${prefix}.${leaf}`;
         expect(zhKeys, `zh 缺少 ${key}`).toContain(key);
         expect(enKeys, `en 缺少 ${key}`).toContain(key);
       }
+    }
+  });
+
+  /// 双向断言:词典实际键集必须与闭集完全相等——既不缺叶子,也不许多出
+  /// 闭集外的同前缀键(多出的动态键无法被 t() 命中,属死键)
+  it('动态前缀闭集与 zh/en 实际键集双向一致', () => {
+    for (const [prefix, leaves] of Object.entries(dynamicPrefixes)) {
+      const expected = leaves.map(l => `${prefix}.${l}`).sort();
+      const zhActual = zhKeys.filter(k => k.startsWith(`${prefix}.`)).sort();
+      const enActual = enKeys.filter(k => k.startsWith(`${prefix}.`)).sort();
+      expect({ prefix, zh: zhActual }).toEqual({ prefix, zh: expected });
+      expect({ prefix, en: enActual }).toEqual({ prefix, en: expected });
     }
   });
 });

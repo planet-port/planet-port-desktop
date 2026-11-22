@@ -123,10 +123,16 @@ pub fn identity_get() -> Result<Value, GuiError> {
 pub fn identity_import_preflight(path: String) -> Result<Value, GuiError> {
     discover()?.post_json(&endpoints::identity_import_preflight(), &json!({ "preflight": true, "path": path }))
 }
-/// 身份导入:GUI 固定 shared 模式(无模式切换 UI);force 由前端覆盖确认后置真
+/// 身份导入:body.mode 缺省,daemon 保持现有模式不擅改——模式管理走 identity_mode_set;
+/// force 由前端覆盖确认后置真
 #[tauri::command]
 pub fn identity_import(path: String, force: bool) -> Result<Value, GuiError> {
-    discover()?.post_json(&endpoints::identity_import(), &json!({ "path": path, "force": force, "mode": "shared" }))
+    discover()?.post_json(&endpoints::identity_import(), &json!({ "path": path, "force": force }))
+}
+/// 身份模式切换(PUT /identity):行星运行中 daemon 409 拒绝,前端预检+确认
+#[tauri::command]
+pub fn identity_mode_set(mode: String) -> Result<Value, GuiError> {
+    discover()?.put_json(endpoints::identity(), &json!({ "mode": mode }))
 }
 /// 前端数据(dataURL 解码后/atob 后的 bytes)写盘:二维码 PNG、planet 导出共用
 #[tauri::command]

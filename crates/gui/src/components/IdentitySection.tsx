@@ -6,19 +6,34 @@ import { api, asError } from '../api/client';
 import ConfirmDialog from './ConfirmDialog';
 import { useToast } from './Toaster';
 
-/// 节点身份区:全局/各行星身份展示 + 导入身份(文件选择→预检→确认→导入)。
-/// daemon 恒 shared,无模式切换;导入固定 mode=shared(spec 决策)。
+type IdentityMode = 'shared' | 'independent';
+
+/// 节点身份区:身份模式管理(shared/independent seg+确认+运行中预检)、
+/// 全局/各行星身份展示 + 导入身份(文件选择→预检→确认→导入)。
+/// 导入不带 mode:daemon 缺省保持现有模式,模式切换走 PUT /identity;
+/// 行星运行中 daemon 409 拒绝,前端以禁用预检为主、409 toast 兜底。
 export default function IdentitySection() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const toast = useToast();
   const [confirming, setConfirming] = useState<{ path: string; nodeId: string; oldNodeId: string | null } | null>(null);
+  const [pendingMode, setPendingMode] = useState<IdentityMode | null>(null);
 
   const q = useQuery({ queryKey: ['identity'], queryFn: api.identityGet });
   const importMut = useMutation({
     mutationFn: (a: { path: string; force: boolean }) => api.identityImport(a.path, a.force),
     onSuccess: () => {
       toast.ok(t('identity.imported'));
+      void qc.invalidateQueries({ queryKey: ['identity'] });
+      void qc.invalidateQueries({ queryKey: ['status'] });
+    },
+    onError: e => toast.error(asError(e)?.message ?? String(e)),
+  });
+  const runningCount = (q.data?.planets ?? []).filter(p => p.running).length;
+  const modeMut = useMutation({
+    mutationFn: (m: IdentityMode) => api.identityModeSet(m),
+    onSuccess: (_d, m) => {
+      toast.ok(t('identity.modeSwitched', { mode: t(`identity.mode.${m}`) }));
       void qc.invalidateQueries({ queryKey: ['identity'] });
       void qc.invalidateQueries({ queryKey: ['status'] });
     },
@@ -58,6 +73,26 @@ export default function IdentitySection() {
       <h4>{t('identity.section')}</h4>
       {q.data && (
         <>
+          <div data-testid="id-mode">
+            <p className="small">{t('identity.modeLabel')}</p>
+            <div className="seg">
+              {(['shared', 'independent'] as const).map(m => (
+                <button
+                  key={m}
+                  data-testid={`id-mode-${m}`}
+                  className={q.data?.mode === m ? 'active' : ''}
+                  disabled={runningCount > 0 || modeMut.isPending}
+                  onClick={() => setPendingMode(m)}
+                >
+                  {t(`identity.mode.${m}`)}
+                </button>
+              ))}
+            </div>
+            <p className="small hint">
+              {q.data.mode === 'independent' ? t('identity.modeIndependent') : t('identity.modeShared')}
+            </p>
+            {runningCount > 0 && <p className="small hint">{t('identity.modeBlocked', { count: runningCount })}</p>}
+          </div>
           <div className="id-row">
             <span className="mono">{q.data.global.nodeId ?? '-'}</span>
             <button className="btn sm" onClick={() => { void navigator.clipboard.writeText(q.data!.global.nodeId ?? ''); toast.ok(t('guide.copied')); }}>
@@ -90,6 +125,16 @@ export default function IdentitySection() {
           setConfirming(null);
         }}
         onCancel={() => setConfirming(null)}
+      />
+      <ConfirmDialog
+        open={pendingMode !== null}
+        title={t('identity.modeSwitch')}
+        message={pendingMode ? t('identity.modeSwitchConfirm', { mode: t(`identity.mode.${pendingMode}`) }) : ''}
+        onConfirm={() => {
+          if (pendingMode) modeMut.mutate(pendingMode);
+          setPendingMode(null);
+        }}
+        onCancel={() => setPendingMode(null)}
       />
     </section>
   );

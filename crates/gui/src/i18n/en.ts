@@ -15,6 +15,16 @@ export default {
   },
   identity: {
     section: 'Node identity',
+    /// modeLabel must not be named mode — a same-named string leaf blocks
+    /// i18next deep resolution of identity.mode.* (same trap as networks.statusMap)
+    modeLabel: 'Identity mode',
+    mode: { shared: 'Shared', independent: 'Independent' },
+    modeShared: 'Shared: one identity for all planets',
+    modeIndependent: 'Independent: per-planet identity',
+    modeSwitch: 'Switch identity mode',
+    modeSwitchConfirm: 'Switching to {{mode}} changes node addresses; networks may require re-authorization. Continue?',
+    modeSwitched: 'Switched to {{mode}}',
+    modeBlocked: '{{count}} planet(s) running; stop all before switching',
     import: 'Import identity…',
     imported: 'Identity imported',
     hint: 'Import an official ZeroTier identity file (identity.secret); every planet reuses that identity',

@@ -40,6 +40,8 @@ export const api = {
   planetUpdate: (id: string, name: string, icon: string, color: string) =>
     cmd('planet_update', { id, name, icon, color }),
   identityGet: () => cmd<IdentityInfo>('identity_get'),
+  /// 身份模式切换(PUT /identity):行星运行中 daemon 409 拒绝,前端预检禁用为主
+  identityModeSet: (mode: 'shared' | 'independent') => cmd('identity_mode_set', { mode }),
   identityPreflight: (path: string) => cmd<Record<string, unknown>>('identity_import_preflight', { path }),
   identityImport: (path: string, force: boolean) => cmd<Record<string, unknown>>('identity_import', { path, force }),
   writeBytes: (path: string, bytes: number[] | Uint8Array) =>

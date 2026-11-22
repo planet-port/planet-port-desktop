@@ -15,6 +15,16 @@ export default {
   },
   identity: {
     section: '节点身份',
+    /// modeLabel 不能叫 mode——同名词典字符串叶子会挡住 i18next 对
+    /// identity.mode.* 的深层解析(同 networks.statusMap 陷阱)
+    modeLabel: '身份模式',
+    mode: { shared: '共享身份', independent: '独立身份' },
+    modeShared: '共享身份：所有行星使用同一节点',
+    modeIndependent: '独立身份：每行星各自节点',
+    modeSwitch: '切换身份模式',
+    modeSwitchConfirm: '切换到「{{mode}}」后行星的节点地址将改变，可能需要在各网络重新获得授权。确定切换？',
+    modeSwitched: '已切换为{{mode}}',
+    modeBlocked: '有 {{count}} 个行星运行中，停止全部行星后才能切换',
     import: '导入身份…',
     imported: '身份已导入',
     hint: '导入官方 ZeroTier 身份文件(identity.secret),所有行星将复用该身份',

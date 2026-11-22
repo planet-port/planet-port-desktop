@@ -72,6 +72,7 @@ fn main() {
             commands::identity_get,
             commands::identity_import_preflight,
             commands::identity_import,
+            commands::identity_mode_set,
             commands::write_file_bytes
         ])
         .run(tauri::generate_context!())

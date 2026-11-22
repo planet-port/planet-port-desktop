@@ -19,15 +19,20 @@ beforeAll(async () => {
   await initTestI18n('zh');
 });
 
+const identityIdle = { ...identity, planets: [{ ...identity.planets[0], running: false }] };
+const identityIndependent = { ...identityIdle, mode: 'independent' };
+
 function renderSection() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+  const view = render(
     <QueryClientProvider client={qc}>
       <ToastProvider>
         <IdentitySection />
       </ToastProvider>
     </QueryClientProvider>,
   );
+  return { ...view, invalidateSpy };
 }
 
 describe('IdentitySection', () => {
@@ -39,7 +44,7 @@ describe('IdentitySection', () => {
     expect(await screen.findByText('gozi25')).toBeInTheDocument();
   });
 
-  it('预检→覆盖确认→import 带 force:true(固定 mode shared 在 Rust 侧)', async () => {
+  it('预检→覆盖确认→import 带 force:true(不带 mode,daemon 缺省保持现有模式)', async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === 'identity_get') return Promise.resolve(identity);
       if (cmd === 'identity_import_preflight')
@@ -87,5 +92,60 @@ describe('IdentitySection', () => {
     screen.getByRole('button', { name: /导入身份/ }).click();
     expect(await screen.findByText(/版本过旧/)).toBeInTheDocument();
     expect(invokeMock.mock.calls.map(c => c[0])).not.toContain('identity_import');
+  });
+
+  it('模式 seg 渲染当前态:shared 高亮且展示共享描述', async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === 'identity_get' ? Promise.resolve(identity) : Promise.resolve(null));
+    renderSection();
+    await screen.findByText('gozi25');
+    expect(screen.getByTestId('id-mode-shared')).toHaveClass('active');
+    expect(screen.getByTestId('id-mode-independent')).not.toHaveClass('active');
+    expect(screen.getByText('共享身份：所有行星使用同一节点')).toBeInTheDocument();
+    expect(screen.queryByText('独立身份：每行星各自节点')).not.toBeInTheDocument();
+  });
+
+  it('independent 模式高亮独立项且描述行同步', async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === 'identity_get' ? Promise.resolve(identityIndependent) : Promise.resolve(null));
+    renderSection();
+    await screen.findByText('gozi25');
+    expect(screen.getByTestId('id-mode-independent')).toHaveClass('active');
+    expect(screen.getByTestId('id-mode-shared')).not.toHaveClass('active');
+    expect(screen.getByText('独立身份：每行星各自节点')).toBeInTheDocument();
+  });
+
+  it('有运行中行星时模式按钮禁用并提示,点击不弹确认', async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === 'identity_get' ? Promise.resolve(identity) : Promise.resolve(null));
+    renderSection();
+    await screen.findByText('gozi25');
+    expect(screen.getByTestId('id-mode-shared')).toBeDisabled();
+    expect(screen.getByTestId('id-mode-independent')).toBeDisabled();
+    expect(screen.getByText(/有 1 个行星运行中/)).toBeInTheDocument();
+    screen.getByTestId('id-mode-independent').click();
+    expect(screen.queryByText(/切换到「独立身份」/)).not.toBeInTheDocument();
+    expect(invokeMock.mock.calls.map(c => c[0])).not.toContain('identity_mode_set');
+  });
+
+  it('全停后点击弹确认,确认后调 identity_mode_set 并 toast+invalidate', async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'identity_get') return Promise.resolve(identityIdle);
+      if (cmd === 'identity_mode_set') return Promise.resolve({ result: 'ok', mode: 'independent' });
+      return Promise.resolve(null);
+    });
+    const { invalidateSpy } = renderSection();
+    await screen.findByText('gozi25');
+    expect(screen.getByTestId('id-mode-independent')).not.toBeDisabled();
+    screen.getByTestId('id-mode-independent').click();
+    // 确认弹层展示目标模式与重授权警示
+    expect(await screen.findByText('切换身份模式')).toBeInTheDocument();
+    expect(screen.getByText(/切换到「独立身份」/)).toBeInTheDocument();
+    screen.getByRole('button', { name: '确定' }).click();
+    expect(await screen.findByText('已切换为独立身份')).toBeInTheDocument();
+    const setCall = invokeMock.mock.calls.find(c => c[0] === 'identity_mode_set');
+    expect(setCall?.[1]).toEqual({ mode: 'independent' });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['identity'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['status'] });
   });
 });

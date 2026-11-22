@@ -173,6 +173,10 @@ impl ApiClient {
         let (c, b) = self.send("PATCH", path, Some(body))?;
         self.parse(c, b)
     }
+    pub fn put_json(&self, path: &str, body: &Value) -> Result<Value, GuiError> {
+        let (c, b) = self.send("PUT", path, Some(body))?;
+        self.parse(c, b)
+    }
     pub fn delete(&self, path: &str) -> Result<Value, GuiError> {
         let (c, b) = self.send("DELETE", path, None)?;
         self.parse(c, b)
@@ -301,6 +305,19 @@ mod tests {
             token: String::from("t"),
         };
         let err = c.patch_json("/planets/x", &serde_json::json!({ "name": "n" })).unwrap_err();
+        assert!(matches!(err, GuiError::Offline { .. }), "unreachable 应为 Offline: {err:?}");
+    }
+
+    /// put_json 负路径:daemon 不可达返回 Offline,不 panic
+    /// (正路径由 GUI↔daemon 集成覆盖,此处锁错误契约;身份模式切换等 PUT 端点)
+    #[test]
+    fn put_json_offline_daemon_yields_offline_error() {
+        let c = ApiClient {
+            agent: make_agent(Some(PROBE_TIMEOUT)),
+            base: String::from("http://127.0.0.1:1"),
+            token: String::from("t"),
+        };
+        let err = c.put_json("/identity", &serde_json::json!({ "mode": "shared" })).unwrap_err();
         assert!(matches!(err, GuiError::Offline { .. }), "unreachable 应为 Offline: {err:?}");
     }
 

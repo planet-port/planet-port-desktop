@@ -101,6 +101,6 @@ export interface EmbeddedManifest {
 /// GET /identity 响应(与 daemon api_identity.rs 响应同构)
 export interface IdentityInfo {
   global: { exists: boolean; nodeId: string | null };
-  mode: string; // shared | independent(daemon 现仅 shared)
+  mode: string; // shared | independent(PUT /identity 可切换;行星运行中 409 拒绝)
   planets: Array<{ id: string; name: string; nodeId: string | null; running: boolean }>;
 }
