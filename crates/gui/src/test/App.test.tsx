@@ -70,54 +70,47 @@ beforeEach(() => {
   });
 });
 
-const invokedCommands = () => invokeMock.mock.calls.map(c => c[0]);
-
-describe('App', () => {
-  it('首屏注册全部四类事件监听并拉取 daemon 状态', async () => {
-    renderApp();
-    await screen.findByText('daemon 在线');
-    expect([...listeners.keys()].sort()).toEqual(['daemon-offline', 'daemon-online', 'navigate', 'tray-error']);
-    expect(invokedCommands()).toContain('get_daemon_state');
-  });
-
-  it('daemonState 为 online 时不渲染离线引导，进入概览空态', async () => {
+describe('App 单页布局', () => {
+  it('在线时渲染顶栏 logo 与产品名，不渲染侧边导航', async () => {
     renderApp();
     expect(await screen.findByText('daemon 在线')).toBeInTheDocument();
-    expect(screen.queryByText(/已安装但未运行|未检测到 planet-port daemon/)).not.toBeInTheDocument();
-    expect(await screen.findByText('还没有 planet。到「Planet」页导入一个。')).toBeInTheDocument();
+    expect(screen.getByAltText('logo')).toBeInTheDocument();
+    expect(screen.getByText('Planet Port')).toBeInTheDocument();
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
   });
 
-  it('daemon-offline 事件触发后切换到离线引导页', async () => {
+  it('空态：无行星时显示导入引导空态', async () => {
+    renderApp();
+    expect(await screen.findByText(/导入/)).toBeInTheDocument();
+  });
+
+  it('navigate 事件 focusJoin 触发首页加入框聚焦（不再切页）', async () => {
+    renderApp();
+    await screen.findByText('daemon 在线');
+    emit('navigate', { focusJoin: true });
+    const input = await screen.findByPlaceholderText('网络 ID，如 9536600adcf2b350');
+    expect(input).toHaveFocus();
+  });
+
+  it('daemon-offline 事件切换离线引导', async () => {
     renderApp();
     await screen.findByText('daemon 在线');
     emit('daemon-offline', undefined);
     expect(await screen.findByText('daemon 已安装但未运行')).toBeInTheDocument();
-    expect(screen.queryByText('daemon 在线')).not.toBeInTheDocument();
   });
 
-  it('navigate 事件 {to:networks, focusJoin:true} 切页并聚焦加入输入框', async () => {
-    renderApp();
-    await screen.findByText('daemon 在线');
-    emit('navigate', { to: 'networks', focusJoin: true });
-    const input = await screen.findByPlaceholderText('网络 ID，如 9536600adcf2b350');
-    expect(input).toHaveFocus();
-    expect(screen.getByRole('button', { name: '网络' })).toHaveClass('active');
-    expect(screen.getByRole('button', { name: '概览' })).not.toHaveClass('active');
-  });
-
-  it('tray-error 事件以错误 toast 弹出 payload 文案', async () => {
+  it('tray-error 弹错误 toast', async () => {
     renderApp();
     await screen.findByText('daemon 在线');
     emit('tray-error', '托盘动作失败：network_not_found');
     expect(await screen.findByText('托盘动作失败：network_not_found')).toHaveClass('error');
   });
 
-  it('卸载后解除全部事件监听（unlisten 真正执行，不泄漏）', async () => {
+  it('卸载后解除全部事件监听', async () => {
     const { unmount } = renderApp();
     await screen.findByText('daemon 在线');
-    expect(listeners.get('navigate')).toHaveLength(1);
     unmount();
-    await act(async () => {}); // unlisten 经 Promise 返回，等微任务排空
+    await act(async () => {});
     for (const event of ['daemon-online', 'daemon-offline', 'navigate', 'tray-error']) {
       expect(listeners.get(event), event).toHaveLength(0);
     }

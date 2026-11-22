@@ -1,15 +1,16 @@
 export default {
-  nav: { overview: '概览', networks: '网络', planets: 'Planet', peers: '节点' },
   daemon: { online: 'daemon 在线', offline: 'daemon 离线' },
   common: {
     yes: '是', no: '否', save: '保存', cancel: '取消', delete: '删除', confirm: '确定',
-    saved: '已保存', empty: '暂无数据',
+    saved: '已保存', empty: '暂无数据', close: '关闭',
     loadError: '加载失败',
     authError: '鉴权失败：token 与 daemon 不匹配，请检查 PLANET_PORT_TOKEN 或重装服务',
   },
-  overview: {
-    empty: '还没有 planet。到「Planet」页导入一个。',
-    updatedAt: '更新于 {{time}}',
+  settings: { title: '设置' },
+  home: {
+    emptyNoPlanet: '还没有行星。打开右上角设置 → 高级 → 行星管理导入。',
+    noNetworks: '该行星下暂无网络',
+    netCount: '网络: {{ok}}/{{total}}',
   },
   planet: {
     status: { running: '运行中', stopped: '已停止' },
@@ -49,8 +50,10 @@ export default {
     removeConfirm: '确定删除 planet「{{name}}」？',
     removeRunningConfirm: 'planet「{{name}}」正在运行，删除将停止其全部网络。确定删除？',
     empty: '暂无 planet',
+    managerTitle: '行星管理',
   },
   peers: {
+    title: '节点表',
     planet: 'Planet', address: '地址', role: '角色', version: '版本', latency: '延迟', path: '通道',
     relay: '中继',
     empty: '暂无节点',

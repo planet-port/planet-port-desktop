@@ -118,7 +118,7 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
             });
         }
         "join" => {
-            let _ = app.emit("navigate", serde_json::json!({ "to": "networks", "focusJoin": true }));
+            let _ = app.emit("navigate", serde_json::json!({ "to": "home", "focusJoin": true }));
             show_main(app);
         }
         "open" => show_main(app),

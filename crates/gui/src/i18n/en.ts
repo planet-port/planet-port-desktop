@@ -1,15 +1,16 @@
 export default {
-  nav: { overview: 'Overview', networks: 'Networks', planets: 'Planets', peers: 'Peers' },
   daemon: { online: 'daemon online', offline: 'daemon offline' },
   common: {
     yes: 'Yes', no: 'No', save: 'Save', cancel: 'Cancel', delete: 'Delete', confirm: 'Confirm',
-    saved: 'Saved', empty: 'No data',
+    saved: 'Saved', empty: 'No data', close: 'Close',
     loadError: 'Failed to load',
     authError: 'Authentication failed: token does not match the daemon. Check PLANET_PORT_TOKEN or reinstall the service',
   },
-  overview: {
-    empty: 'No planets yet. Import one on the Planets page.',
-    updatedAt: 'Updated {{time}}',
+  settings: { title: 'Settings' },
+  home: {
+    emptyNoPlanet: 'No planets yet. Open Settings → Advanced → Planet Manager to import one.',
+    noNetworks: 'No networks under this planet',
+    netCount: 'Networks: {{ok}}/{{total}}',
   },
   planet: {
     status: { running: 'Running', stopped: 'Stopped' },
@@ -49,8 +50,10 @@ export default {
     removeConfirm: 'Remove planet "{{name}}"?',
     removeRunningConfirm: 'Planet "{{name}}" is running; removing will stop its networks. Continue?',
     empty: 'No planets',
+    managerTitle: 'Planet Manager',
   },
   peers: {
+    title: 'Peers',
     planet: 'Planet', address: 'Address', role: 'Role', version: 'Version', latency: 'Latency', path: 'Path',
     relay: 'Relayed',
     empty: 'No peers',

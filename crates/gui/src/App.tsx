@@ -2,22 +2,18 @@ import { useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { api } from './api/client';
-import { useToast } from './components/Toaster';
-import Networks from './pages/Networks';
+import logo from './assets/icon-1024.png';
+import Home from './pages/Home';
 import OfflineGuide from './pages/OfflineGuide';
-import Overview from './pages/Overview';
-import Peers from './pages/Peers';
-import Planets from './pages/Planets';
-import { switchLang } from './i18n';
-
-export type Page = 'overview' | 'networks' | 'planets' | 'peers';
+import SettingsDrawer from './components/SettingsDrawer';
+import { useToast } from './components/Toaster';
 
 export default function App() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const toast = useToast();
-  const [page, setPage] = useState<Page>('overview');
   const [online, setOnline] = useState(false);
   const [installed, setInstalled] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [focusJoin, setFocusJoin] = useState(0);
 
   useEffect(() => {
@@ -28,9 +24,9 @@ export default function App() {
     const unsubs = [
       listen('daemon-online', () => setOnline(true)),
       listen('daemon-offline', () => setOnline(false)),
-      listen<{ to: Page; focusJoin?: boolean }>('navigate', e => {
+      // 托盘「加入网络…」:单页布局无切页,聚焦信号交 Home 聚焦加入框
+      listen<{ focusJoin?: boolean }>('navigate', e => {
         if (e.payload.focusJoin) setFocusJoin(n => n + 1);
-        setPage(e.payload.to);
       }),
       // 托盘动作失败提示(Rust 侧在后台线程执行,失败经此回传)
       listen<string>('tray-error', e => toast.error(e.payload)),
@@ -41,45 +37,24 @@ export default function App() {
     };
   }, [toast]);
 
-  const body = !online ? (
-    <OfflineGuide installed={installed} />
-  ) : page === 'overview' ? (
-    <Overview />
-  ) : page === 'networks' ? (
-    <Networks focusJoinSignal={focusJoin} />
-  ) : page === 'planets' ? (
-    <Planets />
-  ) : (
-    <Peers />
-  );
-
   return (
-    <div className="app">
-      <aside className="side">
-        <div className="brand">planet-port</div>
-        <nav>
-          {(['overview', 'networks', 'planets', 'peers'] as Page[]).map(p => (
-            <button key={p} className={page === p ? 'active' : ''} onClick={() => setPage(p)}>
-              {t(`nav.${p}`)}
-            </button>
-          ))}
-        </nav>
-        <div className="lang">
-          <button className={i18n.language === 'zh' ? 'active' : ''} onClick={() => switchLang('zh')}>
-            中
-          </button>
-          <button className={i18n.language === 'en' ? 'active' : ''} onClick={() => switchLang('en')}>
-            EN
-          </button>
-        </div>
-      </aside>
-      <main className="main">
-        <header className="topbar">
-          <span className={`dot ${online ? 'on' : 'off'}`} />
-          {online ? t('daemon.online') : t('daemon.offline')}
-        </header>
-        {body}
-      </main>
+    <div className="app app-single">
+      {!online ? (
+        <OfflineGuide installed={installed} />
+      ) : (
+        <main className="main">
+          <header className="topbar">
+            <img src={logo} alt="logo" className="app-logo" />
+            <span className="app-title">Planet Port</span>
+            <span className={`dot ${online ? 'on' : 'off'}`} />
+            <span className="small">{online ? t('daemon.online') : t('daemon.offline')}</span>
+            <span className="grow" />
+            <button className="btn icon" aria-label={t('settings.title')} onClick={() => setDrawerOpen(true)}>⚙</button>
+          </header>
+          <Home focusJoinSignal={focusJoin} />
+        </main>
+      )}
+      {online && <SettingsDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />}
     </div>
   );
 }

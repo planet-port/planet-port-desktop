@@ -19,10 +19,9 @@ const enKeys = flatKeys(en);
 
 /// 运行时模板拼接的键无法静态扫描，改为断言动态前缀的枚举闭集齐全
 const dynamicPrefixes: Record<string, string[]> = {
-  nav: ['overview', 'networks', 'planets', 'peers'], // App.tsx: t(`nav.${p}`)
-  'planet.status': ['running', 'stopped'], // Overview/Planets: t(`planet.status.${p.status}`)
-  'planet.kind': ['official', 'custom'], // Overview/Planets: t(`planet.kind.${p.type}`)
-  'transport.tcp': ['disabled', 'idle', 'connecting', 'established'], // Overview: t(`transport.tcp.${t.tcp}`)
+  'planet.status': ['running', 'stopped'], // Home/PlanetManager: t(`planet.status.${p.status}`)
+  'planet.kind': ['official', 'custom'], // PlanetManager: t(`planet.kind.${p.type}`)
+  'transport.tcp': ['disabled', 'idle', 'connecting', 'established'], // Home: t(`transport.tcp.${t.tcp}`)
 };
 
 /// 收集 src 下全部 ts/tsx（跳过测试自身与资源文件，避免自引用）
