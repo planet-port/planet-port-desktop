@@ -19,7 +19,13 @@
         "minHeight": 520
       }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/background/**"]
+      }
+    }
   },
   "bundle": {
     "active": true,

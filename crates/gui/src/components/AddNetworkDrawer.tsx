@@ -4,14 +4,17 @@ import { useTranslation } from 'react-i18next';
 import { api, asError } from '../api/client';
 import { emptySlots, slotsToServers, slotsValid, type DnsSlots } from '../dns';
 import DrawerShell from './DrawerShell';
+import QRScannerDialog, { extractNetworkId } from './QRScannerDialog';
+import QRIcon from './QRIcon';
 import { useToast } from './Toaster';
 
 const isHex16 = (s: string) => /^[0-9a-fA-F]{16}$/.test(s);
 
-/// 添加网络抽屉(字段同 iOS JoinNetworkSheet):16hex 实时校验+提交小写+
-/// 重复客户端预检;行星选择为桌面多行星并发特有(iOS 单隧道无此字段)。
-/// daemon join 不收路由/DNS 参数,非默认值经 setNetwork 随后补投
-export default function AddNetworkDrawer({ onClose }: { onClose: () => void }) {
+/// 添加网络抽屉(布局同 iOS JoinNetworkSheet):网络 ID 组(输入框尾部扫码
+/// 按钮,识别二维码中的 16hex 回填)+ 行星选择(桌面多行星并发特有,iOS 单
+/// 隧道无此字段) + routeVia 开关 + DNS 三段四槽。daemon join 不收路由/DNS
+/// 参数,非默认值经 setNetwork 随后补投
+export default function AddNetworkDrawer({ defaultPlanet, onClose }: { defaultPlanet?: string; onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const toast = useToast();
@@ -20,10 +23,12 @@ export default function AddNetworkDrawer({ onClose }: { onClose: () => void }) {
   const [open, setOpen] = useState(true);
   const close = () => setOpen(false);
   const [nwid, setNwid] = useState('');
-  const [planet, setPlanet] = useState('');
+  /// 首页空卡入口按分组预选行星(托盘/无来源时仍为默认行星)
+  const [planet, setPlanet] = useState(defaultPlanet ?? '');
   const [routeVia, setRouteVia] = useState(false);
   const [dnsMode, setDnsMode] = useState('none');
   const [slots, setSlots] = useState<DnsSlots>(emptySlots());
+  const [showScanner, setShowScanner] = useState(false);
 
   const status = useQuery({ queryKey: ['status'], queryFn: api.status });
   const planets = status.data?.planets ?? [];
@@ -57,51 +62,83 @@ export default function AddNetworkDrawer({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <DrawerShell open={open} onClose={close} onClosed={onClose} testId="add-network-drawer">
-      <header>
-        <h3>{t('join.title')}</h3>
-        <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>
-      </header>
-      <section className="drawer-section">
-        <h4>{t('networks.id')}</h4>
-        <input className="input mono" autoFocus placeholder={t('join.idPlaceholder')} value={nwid}
-          onChange={e => setNwid(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && idValid && dnsOk && !join.isPending && join.mutate()} />
-        {nwid.trim() !== '' && !idValid && <p className="field-error">{t('join.idInvalid')}</p>}
-      </section>
-      <section className="drawer-section">
-        <h4>{t('join.planet')}</h4>
-        <select className="input" value={planet} onChange={e => setPlanet(e.target.value)}>
-          <option value="">{t('join.defaultPlanet')}</option>
-          {planets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-      </section>
-      <section className="drawer-section">
-        <label className="field">
-          <input type="checkbox" checked={routeVia} onChange={e => setRouteVia(e.target.checked)} /> {t('join.routeVia')}
-        </label>
-        <p className="small hint">{t('join.routeViaFooter')}</p>
-      </section>
-      <section className="drawer-section">
-        <h4>DNS</h4>
-        <div className="seg">
-          {(['none', 'network', 'custom'] as const).map(m => (
-            <button key={m} className={dnsMode === m ? 'active' : ''} onClick={() => setDnsMode(m)}>{t(`dns.mode.${m}`)}</button>
-          ))}
-        </div>
-        {dnsMode === 'custom' && (
-          <div className="dns-slots">
-            {(['v4a', 'v4b', 'v6a', 'v6b'] as const).map(k => (
-              <input key={k} className="input mono" placeholder={t(`dns.${k}`)} value={slots[k]}
-                onChange={e => setSlots({ ...slots, [k]: e.target.value })} />
-            ))}
-            {!dnsOk && <p className="field-error">{t('dns.invalid')}</p>}
+    <>
+      <DrawerShell open={open} onClose={close} onClosed={onClose} testId="add-network-drawer">
+        <header>
+          <h3>{t('join.title')}</h3>
+        </header>
+        <section className="detail-section">
+          <div className="kv">
+            <span>{t('networks.id')}</span>
+            <span className="kv-val">
+              <input
+                className="input mono id-input"
+                autoFocus
+                placeholder={t('join.idPlaceholder')}
+                value={nwid}
+                onChange={e => setNwid(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && idValid && dnsOk && !join.isPending && join.mutate()}
+              />
+              <button className="plain" aria-label={t('join.scan')} title={t('join.scan')} onClick={() => setShowScanner(true)}>
+                <QRIcon />
+              </button>
+            </span>
           </div>
-        )}
-      </section>
-      <button className="btn primary" disabled={!idValid || !dnsOk || join.isPending} onClick={() => join.mutate()}>
-        {t('join.action')}
-      </button>
-    </DrawerShell>
+          {nwid.trim() !== '' && !idValid && <p className="field-error">{t('join.idInvalid')}</p>}
+        </section>
+        <section className="detail-section">
+          <div className="kv">
+            <span>{t('join.planet')}</span>
+            <select className="input planet-select" value={planet} onChange={e => setPlanet(e.target.value)}>
+              <option value="">{t('join.defaultPlanet')}</option>
+              {planets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        </section>
+        <section className="detail-section">
+          <div className="kv">
+            <span>{t('join.routeVia')}</span>
+            <button
+              className={`switch ${routeVia ? 'on' : ''}`}
+              role="switch"
+              aria-checked={routeVia}
+              onClick={() => setRouteVia(!routeVia)}
+            />
+          </div>
+          <p className="section-foot">{t('join.routeViaFooter')}</p>
+        </section>
+        <section className="detail-section">
+          <h4>DNS</h4>
+          <div className="seg">
+            {(['none', 'network', 'custom'] as const).map(m => (
+              <button key={m} className={dnsMode === m ? 'active' : ''} onClick={() => setDnsMode(m)}>{t(`dns.mode.${m}`)}</button>
+            ))}
+          </div>
+          {dnsMode === 'custom' && (
+            <div className="dns-slots">
+              {(['v4a', 'v4b', 'v6a', 'v6b'] as const).map(k => (
+                <input key={k} className="input mono" placeholder={t(`dns.${k}`)} value={slots[k]}
+                  onChange={e => setSlots({ ...slots, [k]: e.target.value })} />
+              ))}
+              {!dnsOk && <p className="field-error">{t('dns.invalid')}</p>}
+            </div>
+          )}
+        </section>
+        <button className="btn primary btn-block" disabled={!idValid || !dnsOk || join.isPending} onClick={() => join.mutate()}>
+          {t('join.action')}
+        </button>
+      </DrawerShell>
+      {/* 扫码弹层与抽屉平级:识别成功回填 ID 并停留在加入表单,只关扫码层 */}
+      {showScanner && (
+        <QRScannerDialog
+          extract={extractNetworkId}
+          onScanned={id => {
+            setNwid(id);
+            setShowScanner(false);
+          }}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
+    </>
   );
 }

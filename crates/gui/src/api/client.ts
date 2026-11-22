@@ -48,4 +48,7 @@ export const api = {
   identityImport: (path: string, force: boolean) => cmd<Record<string, unknown>>('identity_import', { path, force }),
   writeBytes: (path: string, bytes: number[] | Uint8Array) =>
     cmd<void>('write_file_bytes', { path, bytes: Array.from(bytes) }),
+  /// 背景图:复制进 appData 并返回目标绝对路径 / 清除
+  backgroundSet: (path: string) => cmd<string>('background_set', { path }),
+  backgroundClear: () => cmd<void>('background_clear'),
 };

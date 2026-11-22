@@ -2,7 +2,7 @@ export default {
   daemon: { online: 'daemon online', offline: 'daemon offline' },
   common: {
     yes: 'Yes', no: 'No', save: 'Save', cancel: 'Cancel', delete: 'Delete', confirm: 'Confirm',
-    saved: 'Saved', empty: 'No data', close: 'Close',
+    saved: 'Saved', empty: 'No data', close: 'Close', notSet: 'Not set',
     loadError: 'Failed to load',
     authError: 'Authentication failed: token does not match the daemon. Check PLANET_PORT_TOKEN or reinstall the service',
     done: 'Done', import: 'Import',
@@ -11,6 +11,8 @@ export default {
   settings: {
     title: 'Settings', language: 'Language', appearance: 'Appearance', about: 'About', advanced: 'Advanced',
     theme: { light: 'Light', dark: 'Dark', system: 'System' },
+    accent: 'Accent color', accentCustom: 'Custom', accentDefault: 'Reset to default',
+    background: 'Background', bgPick: 'Choose image', bgClear: 'Clear background',
     planetManager: 'Planet Manager…', peers: 'Peers…',
   },
   identity: {
@@ -38,6 +40,12 @@ export default {
     noNetworks: 'No networks under this planet',
     netCount: 'Networks: {{ok}}/{{total}}',
     addNetwork: 'Add Network', addPlanet: 'Add Planet',
+    addCard: 'Add network',
+    thisMachine: 'Local', commands: 'Commands', cmdNote: 'Run in a terminal',
+    identity: 'Identity', version: 'Version', port: 'Port',
+    sbPlanets: '{{count}} planets', sbPlanets_one: '{{count}} planet', sbPlanets_other: '{{count}} planets',
+    sbNetworks: '{{count}} networks', sbNetworks_one: '{{count}} network', sbNetworks_other: '{{count}} networks',
+    sbOnline: '{{count}} online', sbOnline_one: '{{count}} online', sbOnline_other: '{{count}} online',
   },
   join: {
     title: 'Join Network', idPlaceholder: '16 hex characters',
@@ -45,6 +53,12 @@ export default {
     planet: 'Planet', defaultPlanet: 'Default planet',
     routeVia: 'Route default via ZeroTier', routeViaFooter: 'Default route of this network goes through the ZeroTier tunnel',
     action: 'Join', duplicate: 'Network {{id}} is already in the list',
+    scan: 'Scan QR code',
+  },
+  qr: {
+    scanTitle: 'Scan QR Code',
+    deniedTitle: 'Camera unavailable',
+    deniedMessage: 'Allow Planet Port in System Settings → Privacy & Security → Camera, then try again',
   },
   dns: {
     'mode.none': 'None', 'mode.network': 'Network DNS', 'mode.custom': 'Custom',
@@ -55,6 +69,7 @@ export default {
     title: 'Add Planet', name: 'Name', namePlaceholder: 'Planet name',
     source: 'Planet file', chooseFile: 'Choose planet file', urlPlaceholder: 'https://example.com/planet.planet',
     randomIcon: 'Random icon', action: 'Add Planet', imported: 'Imported',
+    scanImport: 'Scan to import',
   },
   planet: {
     status: { running: 'Running', stopped: 'Stopped' },
@@ -67,6 +82,8 @@ export default {
     transport: 'Transport',
     disabled: 'Disabled',
     settingsTitle: 'Planet Settings · {{name}}', fileSize: 'File size', revision: 'Revision',
+    iconLabel: 'Icon', share: 'Share', diagnostics: 'Diagnostics',
+    officialFooter: 'Name and icon of official planets cannot be modified',
   },
   transport: { tcp: { disabled: 'TCP off', idle: 'TCP idle', connecting: 'TCP connecting', established: 'TCP established' } },
   networks: {
@@ -87,7 +104,9 @@ export default {
     copyId: 'Copy ID', qr: 'QR Code', qrTitle: 'Network QR',
     detailTitle: 'Network · {{name}}', mac: 'MAC', mtu: 'MTU', type: 'Type',
     addrs: 'Assigned Addresses', routes: 'Managed Routes',
+    addrLabel: 'Address {{index}}', routeLabel: 'Route {{index}}',
     routeToggleHint: 'Click to toggle target/via', directRoute: 'Direct route',
+    dnsFooter: 'DNS changes apply immediately', dnsPending: 'Pending from network', copyIps: 'Click to copy IPs',
     deleteNetwork: 'Delete Network',
     deleteConfirm: 'Delete network {{id}}? This leaves the network without affecting others.',
     left: 'Left network',

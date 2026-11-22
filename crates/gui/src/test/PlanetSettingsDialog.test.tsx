@@ -52,13 +52,12 @@ describe('PlanetSettingsDialog', () => {
     expect(screen.getByText(/2026/)).toBeInTheDocument();
   });
 
-  it('custom:无改动时保存禁用;改名后保存提交 planet_update', async () => {
+  it('custom:改名失焦即存(无保存按钮),planet_update 提交全量 PATCH', async () => {
     renderDialog();
-    const save = await screen.findByText('保存');
-    expect(save).toBeDisabled();
-    fireEvent.change(screen.getByDisplayValue('gozi25'), { target: { value: '新名字' } });
-    expect(save).toBeEnabled();
-    fireEvent.click(save);
+    const input = await screen.findByDisplayValue('gozi25');
+    expect(screen.queryByText('保存')).not.toBeInTheDocument();
+    fireEvent.change(input, { target: { value: '新名字' } });
+    fireEvent.blur(input);
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('planet_update', expect.objectContaining({
       id: '1', name: '新名字',
       icon: expect.stringMatching(/^[a-z-]+$/), color: expect.stringMatching(/^#[0-9a-f]{6}$/),

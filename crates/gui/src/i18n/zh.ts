@@ -2,7 +2,7 @@ export default {
   daemon: { online: 'daemon 在线', offline: 'daemon 离线' },
   common: {
     yes: '是', no: '否', save: '保存', cancel: '取消', delete: '删除', confirm: '确定',
-    saved: '已保存', empty: '暂无数据', close: '关闭',
+    saved: '已保存', empty: '暂无数据', close: '关闭', notSet: '未设置',
     loadError: '加载失败',
     authError: '鉴权失败：token 与 daemon 不匹配，请检查 PLANET_PORT_TOKEN 或重装服务',
     done: '完成', import: '导入',
@@ -11,6 +11,8 @@ export default {
   settings: {
     title: '设置', language: '语言', appearance: '外观', about: '关于', advanced: '高级',
     theme: { light: '浅色', dark: '深色', system: '跟随系统' },
+    accent: '主题色', accentCustom: '自定义', accentDefault: '恢复默认',
+    background: '背景', bgPick: '选择图片', bgClear: '清除背景',
     planetManager: '行星管理…', peers: '节点表…',
   },
   identity: {
@@ -38,6 +40,14 @@ export default {
     noNetworks: '该行星下暂无网络',
     netCount: '网络: {{ok}}/{{total}}',
     addNetwork: '添加网络', addPlanet: '添加行星',
+    addCard: '添加网络',
+    thisMachine: '本机', commands: '命令', cmdNote: '在终端中执行',
+    identity: '身份', version: '版本', port: '端口',
+    sbPlanets: '{{count}} 个行星', sbNetworks: '{{count}} 个网络', sbOnline: '{{count}} 个在线',
+    /// 英文复数 _one/_other 的 zh 镜像键:保持 zh/en 扁平键集合契约测试成立
+    sbPlanets_one: '{{count}} 个行星', sbPlanets_other: '{{count}} 个行星',
+    sbNetworks_one: '{{count}} 个网络', sbNetworks_other: '{{count}} 个网络',
+    sbOnline_one: '{{count}} 个在线', sbOnline_other: '{{count}} 个在线',
   },
   join: {
     title: '加入网络', idPlaceholder: '16 位十六进制',
@@ -45,6 +55,12 @@ export default {
     planet: '行星', defaultPlanet: '默认行星',
     routeVia: '默认路由经 ZeroTier', routeViaFooter: '开启后此网络的默认路由经 ZeroTier 隧道转发',
     action: '加入', duplicate: '网络 {{id}} 已在列表中，不能重复添加',
+    scan: '扫码输入',
+  },
+  qr: {
+    scanTitle: '扫码',
+    deniedTitle: '无法访问摄像头',
+    deniedMessage: '请在 系统设置 → 隐私与安全性 → 摄像头 中允许 Planet Port，然后重试',
   },
   dns: {
     'mode.none': '不使用', 'mode.network': '使用网络 DNS', 'mode.custom': '自定义',
@@ -55,6 +71,7 @@ export default {
     title: '添加行星服务器', name: '名称', namePlaceholder: '行星名称',
     source: '行星文件', chooseFile: '选择行星文件', urlPlaceholder: 'https://example.com/planet.planet',
     randomIcon: '换个随机图标', action: '添加行星服务器', imported: '已导入',
+    scanImport: '扫码导入',
   },
   planet: {
     status: { running: '运行中', stopped: '已停止' },
@@ -67,6 +84,8 @@ export default {
     transport: '通道',
     disabled: '已禁用',
     settingsTitle: '行星设置 · {{name}}', fileSize: '文件大小', revision: '修订时间',
+    iconLabel: '图标', share: '分享', diagnostics: '诊断',
+    officialFooter: '官方行星的名称与图标不可修改',
   },
   transport: { tcp: { disabled: 'TCP 关', idle: 'TCP 待命', connecting: 'TCP 连接中', established: 'TCP 已建立' } },
   networks: {
@@ -87,7 +106,9 @@ export default {
     copyId: '复制 ID', qr: '二维码', qrTitle: '网络二维码',
     detailTitle: '网络详情 · {{name}}', mac: 'MAC', mtu: 'MTU', type: '类型',
     addrs: '分配的地址', routes: '托管路由',
+    addrLabel: '地址 {{index}}', routeLabel: '路由 {{index}}',
     routeToggleHint: '点击在 target/via 间切换', directRoute: '直连路由',
+    dnsFooter: 'DNS 修改立即生效', dnsPending: '等待网络下发', copyIps: '点击复制 IP',
     deleteNetwork: '删除网络',
     deleteConfirm: '删除网络 {{id}}？将离开该网络（leave），不影响其他网络。',
     left: '已离开网络',

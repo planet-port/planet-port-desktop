@@ -7,11 +7,13 @@ import { randomAnimal, randomColorHex } from '../icons/planetIcon';
 import DrawerShell from './DrawerShell';
 import IconPicker from './IconPicker';
 import PlanetIconView from './PlanetIconView';
+import QRScannerDialog, { extractHttpUrl } from './QRScannerDialog';
 import { useToast } from './Toaster';
 
-/// 添加行星抽屉(字段同 iOS AddPlanetForm):图标预览(随机)+名称必填+
-/// 文件源双通道(文件选择/URL;扫码接收桌面无摄像头不做)。提交即
-/// POST /planets {source,name,icon,color};worldId 去重由 daemon 409 承载
+/// 添加行星抽屉(布局同 iOS AddPlanetPage/Form):身份预览区(虚线占位卡:
+/// 图标点击进选择器 + 行内名称 + 随机重掷)+ 来源三通道(文件行/扫码导入行/
+/// URL 行)。扫码只处理 http(s) 链接二维码回填 URL(ZTP 动态分片聚合接收
+/// 暂不做)。提交即 POST /planets;worldId 去重由 daemon 409 承载
 export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -20,12 +22,13 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
   /// 滑出动画,动画结束(DrawerShell onClosed)才回调父层 onClose 卸载
   const [open, setOpen] = useState(true);
   const close = () => setOpen(false);
-  const [animal, setAnimal] = useState(randomAnimal());
-  const [color, setColor] = useState(randomColorHex());
+  const [animal, setAnimal] = useState(randomAnimal);
+  const [color, setColor] = useState(randomColorHex);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [source, setSource] = useState(''); // 文件路径或 URL,二选一后填
   const [showPicker, setShowPicker] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
   const add = useMutation({
     mutationFn: () => api.addPlanet(source.trim(), name.trim(), animal, color),
@@ -43,6 +46,10 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
     },
   });
 
+  const rollIdentity = () => {
+    setAnimal(randomAnimal());
+    setColor(randomColorHex());
+  };
   const pickFile = async () => {
     const picked = await openDialog({ multiple: false, directory: false, title: t('addplanet.chooseFile') });
     if (!picked || Array.isArray(picked)) return;
@@ -56,42 +63,75 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
       <DrawerShell open={open} onClose={close} onClosed={onClose} testId="add-planet-drawer">
         <header>
           <h3>{t('addplanet.title')}</h3>
-          <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>
         </header>
-        <section className="drawer-section addplanet-preview">
+        {/* 身份预览区(虚线占位卡):图标/名称/随机三件套,"尚未创建"的占位形态 */}
+        <section className="addplanet-identity">
           <button className="plain" aria-label={t('icon.title')} onClick={() => setShowPicker(true)}>
-            <PlanetIconView icon={animal} color={color} name={name || animal} id={animal} />
+            <PlanetIconView icon={animal} color={color} name={name || animal} id={animal} size={56} />
           </button>
-          <button className="btn" onClick={() => { setAnimal(randomAnimal()); setColor(randomColorHex()); }}>
-            {t('addplanet.randomIcon')}
-          </button>
+          <input
+            className="input identity-name"
+            placeholder={t('addplanet.namePlaceholder')}
+            value={name}
+            aria-label={t('addplanet.name')}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && canAdd && add.mutate()}
+          />
+          <button className="btn icon" aria-label={t('addplanet.randomIcon')} title={t('addplanet.randomIcon')} onClick={rollIdentity}>↻</button>
         </section>
-        <section className="drawer-section">
-          <h4>{t('addplanet.name')}</h4>
-          <input className="input" placeholder={t('addplanet.namePlaceholder')} value={name}
-            onChange={e => setName(e.target.value)} />
-        </section>
-        <section className="drawer-section">
+        <section className="detail-section">
           <h4>{t('addplanet.source')}</h4>
-          <button className="btn" onClick={() => void pickFile()}>{t('addplanet.chooseFile')}</button>
-          {source && !url && <p className="small mono">{source}</p>}
-          <div className="url-row">
-            <input className="input" placeholder={t('addplanet.urlPlaceholder')} value={url}
-              onChange={e => setUrl(e.target.value)} />
-            <button className="btn" disabled={!url.trim()} onClick={() => setSource(url.trim())}>{t('common.import')}</button>
+          <button className="kv" onClick={() => void pickFile()}>
+            <span>{t('addplanet.chooseFile')}</span>
+            {source && !/^https?:\/\//.test(source) ? (
+              <span className="small ready-mark">✓</span>
+            ) : (
+              <span className="chev" aria-hidden="true">›</span>
+            )}
+          </button>
+          <button className="kv" onClick={() => setShowScanner(true)}>
+            <span>{t('addplanet.scanImport')}</span>
+            <span className="chev" aria-hidden="true">›</span>
+          </button>
+          <div className="kv url-kv">
+            <span>URL</span>
+            <span className="kv-val">
+              <input
+                className="input mono url-input"
+                placeholder={t('addplanet.urlPlaceholder')}
+                value={url}
+                onChange={e => setUrl(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && url.trim()) setSource(url.trim());
+                }}
+              />
+              <button className="btn sm" disabled={!url.trim()} onClick={() => setSource(url.trim())}>{t('common.import')}</button>
+            </span>
           </div>
+          {source && <p className="small mono source-path">{source}</p>}
         </section>
-        <button className="btn primary" disabled={!canAdd} onClick={() => add.mutate()}>
+        <button className="btn primary btn-block" disabled={!canAdd} onClick={() => add.mutate()}>
           {t('addplanet.action')}
         </button>
       </DrawerShell>
-      {/* 图标选择与添加行星抽屉平级(DrawerShell 经 portal 挂 body):后挂者居上 */}
+      {/* 图标选择/扫码弹层与添加抽屉平级(DrawerShell 经 portal 挂 body):后挂者居上 */}
       {showPicker && (
         <IconPicker
           animal={animal}
           color={color}
           onSelect={(a, c) => { setAnimal(a); setColor(c); }}
           onClose={() => setShowPicker(false)}
+        />
+      )}
+      {showScanner && (
+        <QRScannerDialog
+          extract={extractHttpUrl}
+          onScanned={scanned => {
+            setShowScanner(false);
+            setUrl(scanned);
+            setSource(scanned);
+          }}
+          onClose={() => setShowScanner(false)}
         />
       )}
     </>

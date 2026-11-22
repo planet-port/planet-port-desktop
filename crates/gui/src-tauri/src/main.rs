@@ -75,7 +75,9 @@ fn main() {
             commands::identity_import_preflight,
             commands::identity_import,
             commands::identity_mode_set,
-            commands::write_file_bytes
+            commands::write_file_bytes,
+            commands::background_set,
+            commands::background_clear
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

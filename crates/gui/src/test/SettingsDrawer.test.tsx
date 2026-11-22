@@ -56,7 +56,8 @@ describe('SettingsDrawer', () => {
     expect(screen.getByText('语言')).toBeInTheDocument();
     expect(screen.getByText('外观')).toBeInTheDocument();
     expect(screen.getByText('关于')).toBeInTheDocument();
-    expect(screen.getByText(/planet-port 0\.4\.1/)).toBeInTheDocument();
+    expect(screen.getByText('planet-port')).toBeInTheDocument();
+    expect(screen.getByText('0.4.1')).toBeInTheDocument();
     expect(screen.getByTestId('settings-drawer')).toBeInTheDocument();
   });
 

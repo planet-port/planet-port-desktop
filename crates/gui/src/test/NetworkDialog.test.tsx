@@ -71,45 +71,52 @@ describe('NetworkDialog 网络详情', () => {
     expect(clipboardWrite).not.toHaveBeenCalledWith('192.168.0.0/24');
   });
 
-  it('customDns 线格式往返:初始进四槽,保存以 v4 在前的 string[] 提交三字段契约', async () => {
+  it('DNS 切到 custom 即时生效:四槽初值以 v4 在前的 string[] 提交 dnsMode+customDns', async () => {
     renderDialog();
     await screen.findByText('办公网');
-    fireEvent.click(screen.getByText('保存'));
+    fireEvent.click(screen.getByText('自定义'));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('set_network', {
       nwid: '5cf54f1815588318',
-      body: { routeViaZeroTier: true, dnsMode: 'none', customDns: ['10.0.0.1', 'fd00::1'] },
+      body: { dnsMode: 'custom', customDns: ['10.0.0.1', 'fd00::1'] },
       planet: '3530253632',
     }));
   });
 
-  it('custom 段四槽回填自 customDns(v4 前两槽/v6 后两槽),清空全部槽禁用保存', async () => {
+  it('custom 段四槽回填自 customDns(v4 前两槽/v6 后两槽),失焦且合法且有差异才提交', async () => {
     renderDialog();
     await screen.findByText('办公网');
     fireEvent.click(screen.getByText('自定义'));
     expect(screen.getByPlaceholderText('IPv4 DNS 1')).toHaveValue('10.0.0.1');
     expect(screen.getByPlaceholderText('IPv4 DNS 2（可选）')).toHaveValue('');
     expect(screen.getByPlaceholderText('IPv6 DNS 1')).toHaveValue('fd00::1');
-    const save = screen.getByText('保存');
-    expect(save).toBeEnabled();
+    invokeMock.mockClear();
+    // 清空必填槽 → 报错,失焦不发请求
     fireEvent.change(screen.getByPlaceholderText('IPv4 DNS 1'), { target: { value: '' } });
     fireEvent.change(screen.getByPlaceholderText('IPv6 DNS 1'), { target: { value: '' } });
     expect(screen.getByText('DNS 地址格式不正确')).toBeInTheDocument();
-    expect(save).toBeDisabled();
+    fireEvent.blur(screen.getByPlaceholderText('IPv4 DNS 1'));
+    expect(invokeMock).not.toHaveBeenCalled();
+    // 修正后失焦 → 提交(v6 清空后仅剩 v4)
     fireEvent.change(screen.getByPlaceholderText('IPv4 DNS 1'), { target: { value: '10.0.0.2' } });
-    expect(save).toBeEnabled();
+    fireEvent.blur(screen.getByPlaceholderText('IPv4 DNS 1'));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('set_network', {
+      nwid: '5cf54f1815588318',
+      body: { dnsMode: 'custom', customDns: ['10.0.0.2'] },
+      planet: '3530253632',
+    }));
   });
 
-  it('routeVia 锁定:复选禁用且显示锁定文案', async () => {
+  it('routeVia 锁定:开关禁用且显示锁定文案', async () => {
     renderDialog({ routeViaLocked: true });
     expect(await screen.findByText(/多网络同时连接时不可用/)).toBeInTheDocument();
-    expect(screen.getByRole('checkbox')).toBeDisabled();
+    expect(screen.getByRole('switch')).toBeDisabled();
   });
 
-  it('routeVia 未锁定:复选可用且文案为通用说明', async () => {
+  it('routeVia 未锁定:开关可用且已开启,文案为通用说明', async () => {
     renderDialog();
     expect(await screen.findByText(/开启后此网络的默认路由经 ZeroTier 隧道转发/)).toBeInTheDocument();
-    expect(screen.getByRole('checkbox')).toBeEnabled();
-    expect(screen.getByRole('checkbox')).toBeChecked();
+    expect(screen.getByRole('switch')).toBeEnabled();
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
   });
 
   it('删除网络:确认后 leave_network', async () => {
@@ -120,13 +127,12 @@ describe('NetworkDialog 网络详情', () => {
     expect(await screen.findByText('已离开网络')).toBeInTheDocument();
   });
 
-  it('分享区:复制 ID 写剪贴板并弹成功 toast', async () => {
+  it('ID 行 CopyableValue:点击复制写剪贴板(图标反馈,不发 toast)', async () => {
     renderDialog();
-    const shareId = await screen.findByText('5cf54f1815588318', { selector: '.share-row span' });
-    expect(shareId).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '复制 ID' }));
+    await screen.findByText('办公网');
+    // ID 行与 MAC 行各有一个复制按钮(aria=复制),第一个是 ID 行
+    fireEvent.click(screen.getAllByRole('button', { name: '复制' })[0]);
     expect(clipboardWrite).toHaveBeenCalledWith('5cf54f1815588318');
-    expect(await screen.findByText('已复制')).toBeInTheDocument();
   });
 
   it('分享区:点二维码弹 QRShareSheet,保存 PNG 走 save 对话框与 write_file_bytes', async () => {

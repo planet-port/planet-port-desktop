@@ -4,7 +4,9 @@ import App from './App';
 import { ToastProvider } from './components/Toaster';
 import './i18n';
 import { initTheme } from './theme';
+import { initBackground } from './background';
 initTheme();
+initBackground();
 import './styles.css';
 
 const queryClient = new QueryClient({

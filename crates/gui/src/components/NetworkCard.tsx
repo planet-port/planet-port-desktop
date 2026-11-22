@@ -1,9 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import type { NetworkEntry } from '../api/types';
+import CopyableValue from './CopyableValue';
 
 /// 网络卡片(方案C卡片网格,弱透明卡面+泊位灯):信息区点击进设置弹层,卡头开关
 /// 切换禁用/启用(OK↔DISABLED,占位行=join)。泊位灯=网络级状态(在线青光/DISABLED 灰/冲突黄),
 /// 禁用卡整体降透明度。pending 期开关换 spinner 并整卡禁点(防抖动)。
+/// IP 行为可复制值(小号图标);状态文字不展示,灯已承载。
 export default function NetworkCard({
   row,
   pending,
@@ -41,10 +43,11 @@ export default function NetworkCard({
       </header>
       <div className="netcard-body">
         <span className="nwid">{row.nwid}</span>
-        <span className={`addr ${row.assignedAddrs.length === 0 ? 'is-blank' : ''}`}>
-          {row.assignedAddrs.join(', ') || '-'}
-        </span>
-        <span className={`badge ${on ? 'ok' : 'muted'}`}>{t(`networks.statusMap.${row.status}`, { defaultValue: row.status })}</span>
+        <CopyableValue
+          small
+          className={`addr ${row.assignedAddrs.length === 0 ? 'is-blank' : ''}`}
+          text={row.assignedAddrs.join(', ') || '-'}
+        />
         {row.conflict && <span className="badge warn" title={row.conflict}>{t('networks.conflict')}</span>}
       </div>
     </section>

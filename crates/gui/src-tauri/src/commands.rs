@@ -147,3 +147,44 @@ pub fn identity_mode_set(mode: String) -> Result<Value, GuiError> {
 pub fn write_file_bytes(path: String, bytes: Vec<u8>) -> Result<(), GuiError> {
     std::fs::write(&path, bytes).map_err(|e| GuiError::Usage { message: format!("write {path}: {e}") })
 }
+
+/// 应用背景图:复制用户所选图片进 appData/background/current.<ext> 并返回
+/// 目标绝对路径(前端 convertFileSrc 经 asset 协议引用)。拷贝而非记原路径
+/// ——原文件被移动/删除后背景会随之失效;目录内旧文件先清,避免残留堆积
+#[tauri::command]
+pub fn background_set(app: tauri::AppHandle, path: String) -> Result<String, GuiError> {
+    let dir = app.path().app_data_dir()
+        .map_err(|e| GuiError::Usage { message: format!("app_data_dir: {e}") })?
+        .join("background");
+    let src = std::path::Path::new(&path);
+    let ext = src.extension().and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_else(|| "png".to_string());
+    clear_background_dir(&dir);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| GuiError::Usage { message: format!("mkdir {}: {e}", dir.display()) })?;
+    let dest = dir.join(format!("current.{ext}"));
+    std::fs::copy(src, &dest)
+        .map_err(|e| GuiError::Usage { message: format!("copy to {}: {e}", dest.display()) })?;
+    dest.to_str().map(String::from)
+        .ok_or_else(|| GuiError::Usage { message: "background path not utf-8".into() })
+}
+
+/// 清除背景图:删除 appData/background 下全部文件(路径记录由前端清)
+#[tauri::command]
+pub fn background_clear(app: tauri::AppHandle) -> Result<(), GuiError> {
+    let dir = app.path().app_data_dir()
+        .map_err(|e| GuiError::Usage { message: format!("app_data_dir: {e}") })?
+        .join("background");
+    clear_background_dir(&dir);
+    Ok(())
+}
+
+/// 目录存在则清空其下常规文件(扩展名可能变化,统一按目录清)
+fn clear_background_dir(dir: &std::path::Path) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
