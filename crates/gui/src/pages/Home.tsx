@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api, asError } from '../api/client';
 import type { NetworkEntry, PlanetStatus } from '../api/types';
+import GearIcon from '../components/GearIcon';
 import NetworkCard from '../components/NetworkCard';
 import NetworkDialog from '../components/NetworkDialog';
 import PlanetIconView from '../components/PlanetIconView';
@@ -97,21 +98,21 @@ export default function Home() {
           return (
             <section key={p.id} className={`pgroup ${p.enabled ? '' : 'disabled'}`}>
               <header className="pgroup-head">
-                <PlanetIconView icon={p.icon} color={p.color} name={p.name} id={p.id} size={24} />
+                <PlanetIconView icon={p.icon} color={p.color} name={p.name} id={p.id} size={16} />
                 <span className={`dot ${p.status === 'running' ? 'on' : 'off'}`} />
                 <span className="pgroup-name">{p.name}</span>
-                <span className="small">
+                <span className="pgroup-meta">
                   {t(`planet.status.${p.status}`)}
                   {p.transport ? ` · ${t(`transport.tcp.${p.transport.tcp}`)}` : ''}
                 </span>
                 <span className="grow" />
-                <span className="small">{t('home.netCount', { ok: mine.filter(r => r.status === 'OK').length, total: mine.length })}</span>
+                <span className="pgroup-meta">{t('home.netCount', { ok: mine.filter(r => r.status === 'OK').length, total: mine.length })}</span>
                 <button
                   className="btn icon"
                   aria-label={t('planet.settingsTitle', { name: p.name })}
                   onClick={() => setEditPlanet(p)}
                 >
-                  ⚙
+                  <GearIcon />
                 </button>
               </header>
               {mine.length === 0 ? (

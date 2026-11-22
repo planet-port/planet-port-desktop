@@ -6,6 +6,7 @@ import logo from './assets/icon-1024.png';
 import AddNetworkDrawer from './components/AddNetworkDrawer';
 import AddPlanetDrawer from './components/AddPlanetDrawer';
 import SettingsDrawer from './components/SettingsDrawer';
+import GearIcon from './components/GearIcon';
 import { useToast } from './components/Toaster';
 import Home from './pages/Home';
 import OfflineGuide from './pages/OfflineGuide';
@@ -55,7 +56,7 @@ export default function App() {
             <span className="grow" />
             <button className="btn" data-testid="topbar-add-network" onClick={() => setDrawer('addNet')}>{t('home.addNetwork')}</button>
             <button className="btn" data-testid="topbar-add-planet" onClick={() => setDrawer('addPlanet')}>{t('home.addPlanet')}</button>
-            <button className="btn icon" data-testid="topbar-settings" aria-label={t('settings.title')} onClick={() => setDrawer('settings')}>⚙</button>
+            <button className="btn icon" data-testid="topbar-settings" aria-label={t('settings.title')} onClick={() => setDrawer('settings')}><GearIcon /></button>
           </header>
           <Home />
         </main>
