@@ -71,7 +71,7 @@
   cli.install.linkFailed: "failed to create symlink %{link}: %{e}"
   cli.install.linked: "symlink created: %{link} → %{bin}"
   cli.install.planetRestored: "planet %{id} restored"
-  cli.install.planetRestoreFailed: "warning: planet %{id} restore failed (%{e}); run: planet-port start %{id}"
+  cli.install.planetRestoreFailed: "warning: planet %{id} restore failed (%{e}); run: planet-port planet enable %{id}"
   cli.install.versionConfirm: "installed %{old}, about to %{action} %{new}, continue? [y/N] "
   cli.install.upgrade: upgrade to
   cli.install.downgrade: downgrade to

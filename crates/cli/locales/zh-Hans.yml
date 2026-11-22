@@ -76,7 +76,7 @@
   cli.install.linkFailed: "建立软链 %{link} 失败:%{e}"
   cli.install.linked: "已建立软链:%{link} → %{bin}"
   cli.install.planetRestored: "planet %{id} 已恢复运行"
-  cli.install.planetRestoreFailed: "警告: planet %{id} 恢复失败(%{e}),请手动: planet-port start %{id}"
+  cli.install.planetRestoreFailed: "警告: planet %{id} 恢复失败(%{e}),请手动: planet-port planet enable %{id}"
   cli.install.versionConfirm: "已安装 %{old},本次将%{action}安装 %{new},继续? [y/N] "
   cli.install.upgrade: 升级
   cli.install.downgrade: 降级
