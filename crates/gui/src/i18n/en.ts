@@ -39,6 +39,7 @@ export default {
     routeViaLocked: 'Locked by network-assigned config',
     dnsMode: 'DNS mode',
     customDns: 'Custom DNS (one per line)',
+    copyId: 'Copy ID', qr: 'QR Code', qrTitle: 'Network QR',
   },
   'networks.status': { OK: 'OK', REQUESTING_CONFIGURATION: 'Requesting config', ACCESS_DENIED: 'Access denied', NOT_FOUND: 'Not found', PORT_ERROR: 'Port error', CLIENT_DISABLED: 'Disabled', AUTHENTICATION_REQUIRED: 'Auth required' },
   planets: {

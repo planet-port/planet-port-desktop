@@ -39,6 +39,7 @@ export default {
     routeViaLocked: '已被网络下发的配置锁定',
     dnsMode: 'DNS 模式',
     customDns: '自定义 DNS（每行一个）',
+    copyId: '复制 ID', qr: '二维码', qrTitle: '网络二维码',
   },
   'networks.status': { OK: '正常', REQUESTING_CONFIGURATION: '请求配置', ACCESS_DENIED: '未授权', NOT_FOUND: '不存在', PORT_ERROR: '端口错误', CLIENT_DISABLED: '已禁用', AUTHENTICATION_REQUIRED: '待认证' },
   planets: {
