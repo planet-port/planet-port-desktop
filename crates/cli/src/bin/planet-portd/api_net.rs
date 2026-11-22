@@ -667,8 +667,18 @@ pub async fn net_disable(
         })?,
     };
     let key = format!("{nwid_u:016x}");
-    // 幂等:已在禁用区 → 成功
+    // 幂等:已在禁用区 → 成功。但记录在禁用区不代表核心已脱离:上次
+    // disable 的 node_leave 若失败,记录已迁移而核心仍 joined,重试命中
+    // 本分支时必须补做底层脱离,否则核心"幽灵加入"直至 stop/enable
     if entry.net_disabled.contains_key(&key) {
+        if let Some(rt) = rt.as_ref().filter(|rt| rt.networks().iter().any(|c| c.nwid == nwid_u)) {
+            // 同步运行时镜像(detach_and_idle 前置:调用方完成记录/镜像处理)
+            rt.net_local
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&nwid_u);
+            detach_and_idle(&st, rt, nwid_u).await?;
+        }
         st.events.push(&pid, "networkDisabled", &format!("already disabled {nwid} (idempotent)"));
         return Ok(Json(json!({"result": "ok", "idempotent": true})));
     }
@@ -687,6 +697,8 @@ pub async fn net_disable(
     {
         let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
+            // registry 锁内读 rt.networks()(node 锁)依赖「sink 绝不取
+            // registry」的单向保证;勿在 sink 侧引入反向取 registry 的调用
             let joined = rt
                 .as_ref()
                 .is_some_and(|r| r.networks().iter().any(|c| c.nwid == nwid_u));
