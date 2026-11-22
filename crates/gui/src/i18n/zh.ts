@@ -56,6 +56,7 @@ export default {
     node: '节点',
     transport: '通道',
     disabled: '已禁用',
+    settingsTitle: '行星设置 · {{name}}', fileSize: '文件大小', revision: '修订时间',
   },
   transport: { tcp: { disabled: 'TCP 关', idle: 'TCP 待命', connecting: 'TCP 连接中', established: 'TCP 已建立' } },
   networks: {

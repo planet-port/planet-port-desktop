@@ -57,6 +57,8 @@ fn main() {
             commands::get_status,
             commands::get_planets,
             commands::add_planet,
+            commands::planet_detail,
+            commands::planet_update,
             commands::remove_planet,
             commands::enable_planet,
             commands::disable_planet,

@@ -40,6 +40,31 @@ pub fn add_planet(
     }
     discover()?.post_json(&endpoints::planets(), &body)
 }
+/// 行星详情(GET /planets/{id}):WorldID/文件大小/修订时间等只读信息
+#[tauri::command]
+pub fn planet_detail(id: String) -> Result<Value, GuiError> {
+    discover()?.get_json(&endpoints::planet(&id))
+}
+/// 行星改名/图标/底色(PATCH /planets/{id};daemon 已支持,GUI 仅透传)
+#[tauri::command]
+pub fn planet_update(
+    id: String,
+    name: Option<String>,
+    icon: Option<String>,
+    color: Option<String>,
+) -> Result<Value, GuiError> {
+    let mut body = json!({});
+    if let Some(v) = name {
+        body["name"] = Value::from(v);
+    }
+    if let Some(v) = icon {
+        body["icon"] = Value::from(v);
+    }
+    if let Some(v) = color {
+        body["color"] = Value::from(v);
+    }
+    discover()?.patch_json(&endpoints::planet(&id), &body)
+}
 #[tauri::command]
 pub fn remove_planet(id: String) -> Result<Value, GuiError> {
     discover()?.delete(&endpoints::planet(&id))

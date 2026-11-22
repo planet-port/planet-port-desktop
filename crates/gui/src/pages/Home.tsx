@@ -5,6 +5,7 @@ import { api, asError } from '../api/client';
 import type { NetworkEntry, PlanetStatus } from '../api/types';
 import NetworkCard from '../components/NetworkCard';
 import NetworkDialog from '../components/NetworkDialog';
+import PlanetSettingsDialog from '../components/PlanetSettingsDialog';
 import QueryError from '../components/QueryError';
 import { useToast } from '../components/Toaster';
 
@@ -16,6 +17,8 @@ export default function Home() {
   const toast = useToast();
   const [view, setView] = useState<'cards' | 'list'>(() => (localStorage.getItem('netview') === 'list' ? 'list' : 'cards'));
   const [editing, setEditing] = useState<NetworkEntry | null>(null);
+  /// 行星设置弹层(分组头 ⚙);删除成功后 onDone 走全局失效
+  const [editPlanet, setEditPlanet] = useState<PlanetStatus | null>(null);
   /// 开关 in-flight 网络(`${planet}/${nwid}`);pending 期对应卡片 spinner
   const [toggling, setToggling] = useState<string | null>(null);
 
@@ -89,6 +92,13 @@ export default function Home() {
                 </span>
                 <span className="grow" />
                 <span className="small">{t('home.netCount', { ok: mine.filter(r => r.status === 'OK').length, total: mine.length })}</span>
+                <button
+                  className="btn icon"
+                  aria-label={t('planet.settingsTitle', { name: p.name })}
+                  onClick={() => setEditPlanet(p)}
+                >
+                  ⚙
+                </button>
               </header>
               {mine.length === 0 ? (
                 <div className="empty small">{t('home.noNetworks')}</div>
@@ -132,6 +142,9 @@ export default function Home() {
       )}
 
       {editing && <NetworkDialog row={editing} onClose={() => setEditing(null)} onDone={invalidate} />}
+      {editPlanet && (
+        <PlanetSettingsDialog planet={editPlanet} onClose={() => setEditPlanet(null)} onDone={invalidate} />
+      )}
     </div>
   );
 }

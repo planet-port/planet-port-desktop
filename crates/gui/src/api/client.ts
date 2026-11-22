@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { DaemonState, EmbeddedManifest, GuiError, IdentityInfo, NetworkEntry, PeerEntry, PlanetStatus } from './types';
+import type { DaemonState, EmbeddedManifest, GuiError, IdentityInfo, NetworkEntry, PeerEntry, PlanetDetail, PlanetStatus } from './types';
 
 /// invoke 失败时 reject 值即 Rust 侧序列化的 GuiError 结构
 export function asError(e: unknown): GuiError {
@@ -34,6 +34,9 @@ export const api = {
   ) => cmd('set_network', { nwid, body, planet: planet ?? null }),
   peers: (planet?: string) => cmd<{ peers: PeerEntry[] }>('get_peers', { planet: planet ?? null }),
   planetExport: (id: string) => cmd<number[]>('planet_export', { id }),
+  planetDetail: (id: string) => cmd<PlanetDetail>('planet_detail', { id }),
+  planetUpdate: (id: string, name: string, icon: string, color: string) =>
+    cmd('planet_update', { id, name, icon, color }),
   identityGet: () => cmd<IdentityInfo>('identity_get'),
   identityPreflight: (path: string) => cmd<Record<string, unknown>>('identity_import_preflight', { path }),
   identityImport: (path: string, force: boolean) => cmd<Record<string, unknown>>('identity_import', { path, force }),

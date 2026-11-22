@@ -23,6 +23,28 @@ export interface PlanetStatus {
   tcpFallbackRelay: string | null;
 }
 
+/// GET /planets/{id} 响应(与 daemon PlanetDetail camelCase 序列化同构)
+export interface PlanetDetail {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  type: 'official' | 'custom';
+  worldId: number;
+  roots: string[];
+  fileSize: number;
+  revisionTimeMs: number;
+  lastNodeId: string | null;
+  source: string;
+  networkCount: number;
+  port: number;
+  status: string;
+  enabled: boolean;
+  online: boolean;
+  transport: TransportStatus | null;
+  tcpFallbackRelay: string | null;
+}
+
 export interface RouteLine {
   target: string;
   via: string | null;

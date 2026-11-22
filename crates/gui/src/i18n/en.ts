@@ -56,6 +56,7 @@ export default {
     node: 'Node',
     transport: 'Transport',
     disabled: 'Disabled',
+    settingsTitle: 'Planet Settings · {{name}}', fileSize: 'File size', revision: 'Revision',
   },
   transport: { tcp: { disabled: 'TCP off', idle: 'TCP idle', connecting: 'TCP connecting', established: 'TCP established' } },
   networks: {
