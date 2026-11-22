@@ -49,6 +49,21 @@ pub fn leave(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -
     Ok(())
 }
 
+/// 网络启用(与 join 的区别:恢复禁用前的本地配置);planet 级启停是
+/// `planet enable/disable`,两者对象不同,勿混
+pub fn enable(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
+    let resp = client.post_empty(&endpoints::network_enable(nwid, planet.as_deref()))?;
+    ok(client, "enable", planet, json, &resp);
+    Ok(())
+}
+
+/// 网络禁用:脱离网络但保留记录(id/配置/名字快照),enable 或 join 可恢复
+pub fn disable(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
+    let resp = client.post_empty(&endpoints::network_disable(nwid, planet.as_deref()))?;
+    ok(client, "disable", planet, json, &resp);
+    Ok(())
+}
+
 /// 跨行星解析 leave 的落点 planet:唯一命中返回其 id;未挂返回 None
 /// (透传 daemon 报 404);多行星同挂 409 networkAmbiguous 列候选。
 fn resolve_leave_planet(client: &Client, nwid: &str) -> Result<Option<String>, CliError> {

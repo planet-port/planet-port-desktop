@@ -135,3 +135,4 @@
   cli.listpeers.noPeers: "(no peers)"
   cli.listmoons.noMoons: "(no moons)"
   cli.networkinfo.stoppedPlanet: "note: the planet is not running (disabled or idle-stopped); only registered config is shown. Dynamic fields (name/IP/device) become visible once it runs — bring it up with planet-port planet enable"
+  cli.networkinfo.disabledNet: "Note: this network is disabled (detached, local config kept); only registered config shows. Dynamic fields (name/IP/device) reappear after planet-port enable"

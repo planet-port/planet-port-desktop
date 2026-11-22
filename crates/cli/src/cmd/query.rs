@@ -329,8 +329,12 @@ pub fn networkinfo(
     let pid = crate::cmd::resolve_registered(client, planet)?;
     let n = crate::cmd::mutate::find_network(client, nwid, &pid)?;
     let stopped = n.status == "STOPPED";
+    let disabled = n.status == "DISABLED";
     if stopped {
         eprintln!("{}", rust_i18n::t!("cli.networkinfo.stoppedPlanet"));
+    }
+    if disabled {
+        eprintln!("{}", rust_i18n::t!("cli.networkinfo.disabledNet"));
     }
     if json {
         print_json(&serde_json::to_value(&n).map_err(|e| CliError::Io(e.to_string()))?);
@@ -355,7 +359,7 @@ pub fn networkinfo(
     println!("mac       {}", n.mac);
     println!("device    {}", n.interface.clone().unwrap_or_else(|| "—".into()));
     // 占位条目 mtu=0(核心不在拿不到),显示为 — 而非误导性的 0
-    println!("mtu       {}", if stopped { "—".into() } else { n.mtu.to_string() });
+    println!("mtu       {}", if stopped || disabled { "—".into() } else { n.mtu.to_string() });
     println!("assigned  {}", n.assigned_addrs.join(", "));
     println!("routes    {}", if routes.is_empty() { "—".into() } else { routes });
     println!("dns       mode={} servers=[{}] custom=[{}]",

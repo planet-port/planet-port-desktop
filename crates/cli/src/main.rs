@@ -45,6 +45,10 @@ enum Command {
     Join { nwid: String },
     /// Leave a network
     Leave { nwid: String },
+    /// Enable a disabled network (restore its previous local config)
+    Enable { nwid: String },
+    /// Disable a joined network (keep records for quick restore)
+    Disable { nwid: String },
     /// Set client-side config: routeViaZeroTier / dnsMode / customDns
     Set { nwid: String, values: Vec<String> },
     /// Get one config value of a joined network (script-friendly)
@@ -207,6 +211,8 @@ fn planet_need(cmd: &Command) -> PlanetNeed {
         Command::Events { .. } => PlanetNeed::Events,
         Command::Join { .. }
         | Command::Leave { .. }
+        | Command::Enable { .. }
+        | Command::Disable { .. }
         | Command::Set { .. }
         | Command::Get { .. }
         | Command::Networkinfo { .. }
@@ -282,6 +288,8 @@ fn dispatch(
         Command::Listmoons => cmd::query::listmoons(client, query_filter, json),
         Command::Join { nwid } => cmd::mutate::join(client, nwid, planet_flag, json),
         Command::Leave { nwid } => cmd::mutate::leave(client, nwid, planet_flag, json),
+        Command::Enable { nwid } => cmd::mutate::enable(client, nwid, planet_flag, json),
+        Command::Disable { nwid } => cmd::mutate::disable(client, nwid, planet_flag, json),
         Command::Set { nwid, values } => cmd::mutate::set(client, nwid, values, planet_flag, json),
         Command::Get { nwid, key } => cmd::mutate::get(client, nwid, key, planet_flag, json),
         Command::Orbit { moon_id, seed } => cmd::mutate::orbit(client, moon_id, seed, planet_flag, json),
