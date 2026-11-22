@@ -247,8 +247,8 @@ mod tests {
         let t = current_triple();
         assert!(t.contains('-'), "triple 需含架构-系统分隔符: {t}");
         assert!(
-            t.ends_with("darwin") || t.ends_with("msvc") || t.ends_with("linux"),
-            "triple 需以 darwin/msvc/linux 结尾: {t}"
+            t.ends_with("darwin") || t.ends_with("msvc") || t.contains("linux"),
+            "triple 需为 darwin/msvc/linux 平台: {t}"
         );
     }
 
