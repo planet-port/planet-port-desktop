@@ -10,10 +10,27 @@ use client::{CliError, Client};
 // 源语言 zh-Hans(与 iOS Localizable.xcstrings 一致),缺失键回退到它
 rust_i18n::i18n!("locales", fallback = "zh-Hans");
 
+/// --version 文案:CLI 版本 + zerotier-core 版本 + 构建时间。core 版本经
+/// FFI 取核心常量(无副作用),格式对齐 daemon 侧 runtime 的三段式;
+/// 构建时间由 build.rs 注入 epoch,运行时按本地时区展示。e2e 脚本按
+/// `grep -q <ver>` 子串匹配版本号,同行追加字段不影响。
+fn version_str() -> &'static str {
+    static S: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    S.get_or_init(|| {
+        let (major, minor, rev) = zt_core::node::NodeHandle::core_version();
+        let built = crate::output::fmt_build_time(option_env!("PLANET_PORT_BUILD_EPOCH"));
+        // clap 会自动以 `{name} {version}` 输出,这里不再带名字前缀
+        format!(
+            "{} (zerotier-core {major}.{minor}.{rev}, built {built})",
+            env!("CARGO_PKG_VERSION")
+        )
+    })
+}
+
 #[derive(Parser)]
 #[command(
     name = "planet-port",
-    version,
+    version = version_str(),
     about = "Planet Port CLI - ZeroTier multi-planet client"
 )]
 struct Cli {

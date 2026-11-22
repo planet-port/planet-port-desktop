@@ -19,6 +19,17 @@
 
 ## 状态查询
 
+### --version — 版本信息 ◇(本机实测)
+
+```text
+planet-port 0.4.1-dev (zerotier-core 1.16.2, built 2026-11-22 20:14:54 +08:00)
+```
+
+- 单行输出:name + 包版本 + zerotier-core 版本(FFI 取核心常量,三段式,
+  与 `info` 的 VERSION 列同源)+ 构建时间(build.rs 注入 epoch,本地时区展示);
+- e2e 脚本按 `grep -q <ver>` 子串匹配版本号,同行追加字段不影响既有断言;
+- daemon 侧 `GET /version` 同源:`{"version","zerotierCore","built"}`。
+
 ### info — 聚合状态表 ❇(RELAY 列为 v0.4 补充,◇ 口径)
 
 ```

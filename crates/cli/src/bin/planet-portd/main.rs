@@ -75,7 +75,22 @@ async fn auth_mw(State(st): State<AppState>, req: Request<Body>, next: Next) -> 
 // ---- handlers ----
 
 async fn version() -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "version": "0.1.0" }))
+    // 与 CLI --version 同源:包版本 + 核心 FFI 版本 + 构建时间(此前硬编码
+    // "0.1.0" 从未对齐过实际版本);GUI 对 /version 仅探活不解析字段
+    let (major, minor, rev) = zt_core::node::NodeHandle::core_version();
+    let built = option_env!("PLANET_PORT_BUILD_EPOCH")
+        .and_then(|s| s.parse::<i64>().ok())
+        .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
+        .map(|t| {
+            t.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M:%S %Z")
+                .to_string()
+        });
+    Json(serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "zerotierCore": format!("{major}.{minor}.{rev}"),
+        "built": built,
+    }))
 }
 
 async fn status(State(st): State<AppState>) -> Json<serde_json::Value> {
