@@ -206,6 +206,59 @@ fn resolve_nwid(rt: &crate::state::PlanetRuntime, input: &str) -> Result<u64, Ap
     }
 }
 
+/// leave 的扩展定位:优先级 = 合法 nwid 直用 → 已加入网络名(resolve_nwid
+/// 语义)→ 禁用区 name 快照(禁用网络不在核心快照里,名字只活在快照中)
+fn resolve_nwid_ext(
+    rt: &crate::state::PlanetRuntime,
+    entry: &RegistryEntry,
+    input: &str,
+) -> Result<u64, ApiErr> {
+    if let Ok(v) = parse_nwid(input) {
+        return Ok(v);
+    }
+    if let Ok(v) = resolve_nwid(rt, input) {
+        return Ok(v);
+    }
+    resolve_disabled_nwid(entry, input)
+}
+
+/// 按禁用区 name 快照解析(不区分大小写);合法 nwid 直用,同名多条 409
+/// 列候选,未命中 404
+fn resolve_disabled_nwid(entry: &RegistryEntry, input: &str) -> Result<u64, ApiErr> {
+    if let Ok(v) = parse_nwid(input) {
+        return Ok(v);
+    }
+    let hits: Vec<(&String, &NetDisabled)> = entry
+        .net_disabled
+        .iter()
+        .filter(|(_, nd)| {
+            nd.name
+                .as_deref()
+                .is_some_and(|n| n.eq_ignore_ascii_case(input.trim()))
+        })
+        .collect();
+    match hits.as_slice() {
+        [(k, _)] => u64::from_str_radix(k, 16)
+            .map_err(|_| internal(format!("invalid disabled nwid key \"{k}\""))),
+        [] => Err(err(
+            StatusCode::NOT_FOUND,
+            "networkNotFound",
+            &format!("network \"{input}\" not found (by id or name)"),
+            None,
+        )),
+        many => Err(err(
+            StatusCode::CONFLICT,
+            "networkAmbiguous",
+            &format!("network name \"{input}\" matches {} networks", many.len()),
+            Some(
+                many.iter()
+                    .map(|(k, nd)| format!("{k} ({})", nd.name.clone().unwrap_or_default()))
+                    .collect(),
+            ),
+        )),
+    }
+}
+
 /// NetLocal 默认项:managed 路由走 ZeroTier 接口,无 DNS 覆写
 fn default_net_local() -> NetLocal {
     NetLocal {
@@ -321,9 +374,11 @@ pub async fn networks_list(
             None => continue,
         };
         let Some(rt) = runtime_of(&st, &pid) else {
-            // 非运行(禁用/idle 停):按 registry net_local 出占位条目——
-            // "已添加的网络"仍是用户的资产,不可因行星停止而从列表消失
+            // 非运行(禁用/idle 停):按 registry net_local 出 STOPPED 占位
+            // 条目 + net_disabled 出 DISABLED 占位条目——"已添加/已禁用的
+            // 网络"仍是用户的资产,不可因行星停止而从列表消失
             items.extend(placeholder_entries(&pid, &entry));
+            items.extend(disabled_entries(&pid, &entry));
             continue;
         };
         let conflicts = rt
@@ -341,6 +396,7 @@ pub async fn networks_list(
                 rt.if_name(cfg.nwid),
             ));
         }
+        items.extend(disabled_entries(&pid, &entry));
     }
     Ok(Json(json!({ "networks": items })))
 }
@@ -355,6 +411,41 @@ fn placeholder_entries(pid: &str, entry: &RegistryEntry) -> Vec<NetworkEntry> {
         .map(|k| {
             let nl = &entry.net_local[k];
             placeholder_entry(pid, k, nl)
+        })
+        .collect()
+}
+
+/// 禁用区投影:DISABLED 占位行(name 用禁用时快照,动态字段无核心可取)。
+/// 防御:同 nwid 双区残留(理论不可达)以 net_local 为准,跳过重复行;
+/// HashMap 遍历无序,按 nwid 排序保证列表输出稳定
+fn disabled_entries(pid: &str, entry: &RegistryEntry) -> Vec<NetworkEntry> {
+    let mut keys: Vec<&String> = entry
+        .net_disabled
+        .keys()
+        .filter(|k| !entry.net_local.contains_key(*k))
+        .collect();
+    keys.sort();
+    keys.into_iter()
+        .map(|k| {
+            let nd = &entry.net_disabled[k];
+            NetworkEntry {
+                planet: pid.to_string(),
+                nwid: k.to_string(),
+                name: nd.name.clone(),
+                status: "DISABLED".into(),
+                conflict: None,
+                kind: "—".into(),
+                mac: "—".into(),
+                interface: None,
+                mtu: 0,
+                assigned_addrs: Vec::new(),
+                managed_routes: Vec::new(),
+                dns_servers: Vec::new(),
+                route_via_zero_tier: nd.local.route_via_zero_tier,
+                route_via_locked: false,
+                dns_mode: nd.local.dns_mode.clone(),
+                custom_dns: nd.local.custom_dns.clone(),
+            }
         })
         .collect()
 }
@@ -546,26 +637,36 @@ pub async fn net_leave(
     Path(nwid): Path<String>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiErr> {
-    // 定位(registry 锁在 resolve_running_planet 内短持)与运行时获取(planets
-    // 锁)分开:两锁不得嵌套
-    let pid = resolve_running_planet(&st, q.get("planet").map(|s| s.as_str()))?;
-    let rt = not_running(&st, &pid)?;
-    let nwid_u = resolve_nwid(&rt, &nwid)?;
-    // net_local 记录一并删除(持久层 + 运行时镜像):leave 的目标态是
-    // "彻底不在网络里",保留记录会被下次 start 的 re-join 复活;重新 join
-    // 时按控制器下发的默认配置重来(对齐 zerotier-cli 语义)。放在幂等
-    // 分支之前,顺带清理"运行时已退但记录残留"的半态
+    // 定位不要求 running:禁用记录可能在 idle 停机的 planet 上,无核心
+    // 也要能删(registry 锁在 resolve_planet_entry 内短持)
+    let (pid, entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
+    let rt = runtime_of(&st, &pid);
+    // nwid 解析:核心在 → nwid / 已加入名 / 禁用区快照名;核心不在 →
+    // nwid / 禁用区快照名(net_local 无名字信息)
+    let nwid_u = match &rt {
+        Some(rt) => resolve_nwid_ext(rt, &entry, &nwid)?,
+        None => resolve_disabled_nwid(&entry, &nwid)?,
+    };
+    // net_local 与 net_disabled 记录一并删除(持久层):leave 的目标态是
+    // "彻底不在网络里"——含禁用记忆;重新 join 按控制器默认配置重来。
+    // 放在幂等分支之前,顺带清理"运行时已退但记录残留"的半态
     {
         let key = format!("{nwid_u:016x}");
         let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
-            if e.net_local.remove(&key).is_some() {
+            let hit = e.net_local.remove(&key).is_some() | e.net_disabled.remove(&key).is_some();
+            if hit {
                 if let Err(err) = reg.save(&st.config_dir) {
                     eprintln!("[net] registry 写盘失败: {err}");
                 }
             }
         }
     }
+    // 无核心:记录清除即目标态达成(planet stopped,无从也无须核心脱离)
+    let Some(rt) = rt else {
+        st.events.push(&pid, "leave", &format!("cleared {nwid} records (planet stopped)"));
+        return Ok(Json(json!({"result": "ok"})));
+    };
     rt.net_local
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -575,57 +676,8 @@ pub async fn net_leave(
         st.events.push(&rt.planet_id, "leave", &format!("not joined {nwid} (idempotent)"));
         return Ok(Json(json!({"result": "ok", "idempotent": true})));
     }
-    let rt2 = Arc::clone(&rt);
-    tokio::task::spawn_blocking(move || rt2.node_leave(nwid_u))
-        .await
-        .map_err(|e| internal(format!("leave 任务失败: {e}")))?
-        .map_err(|e| {
-            err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "leaveFailed",
-                &format!("leave {nwid} failed: {e}"),
-                None,
-            )
-        })?;
-    // 设备面拆除 + 快照/冲突清理(net_local 已在上方删除)
-    rt.plane
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .teardown(nwid_u);
-    st.net_cache
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .remove(&(rt.planet_id.clone(), nwid_u));
-    rt.conflicts
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .remove(&nwid_u);
+    detach_and_idle(&st, &rt, nwid_u).await?;
     st.events.push(&rt.planet_id, "leave", &format!("left {nwid}"));
-    // DNS:该网络的系统 resolver 若归本 planet 所有则还原(失败仅记事件)。
-    // 持 dns_gate:与 netconf apply / stop 的 restore 互斥,标记文件的
-    // check-then-act 不能交叠。守卫必须收在本块内:下方 idle 停机会经
-    // stop_planet 再次拿 dns_gate,tokio Mutex 不可重入,守卫活到函数尾
-    // 会自死锁(客户端超时断开才被 drop 解开)
-    {
-        let _dns_gate = st.dns_gate.lock().await;
-        let events = Arc::clone(&st.events);
-        let config_dir = st.config_dir.clone();
-        let pid = rt.planet_id.clone();
-        let _ = tokio::task::spawn_blocking(move || {
-            crate::dns::restore(&config_dir, &events, &pid, Some(nwid_u))
-        })
-        .await;
-    }
-    // 派生运行规则:leave 清空全部网络后 planet 无事可做,自动停核心
-    // 释放资源(IdleStop 不产生挂起语义,后续 join/boot 按规则可再拉起)
-    if rt
-        .net_local
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .is_empty()
-    {
-        runtime::stop_planet(&st, &rt.planet_id, runtime::StopMark::Idle).await;
-    }
     Ok(Json(json!({"result": "ok"})))
 }
 
