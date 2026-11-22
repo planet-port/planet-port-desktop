@@ -57,13 +57,16 @@ RELAY 显示 TCP 兜底 relay **配置态**(`planet set-relay` 所设完整地�
 
 覆盖**全部登记行星**(不只在线的);多 managed IP 在 MANAGED-IPS 列内逐行堆叠;
 停止/禁用行星下的网络以 STOPPED 占位行展示(名称/MAC 等动态字段为 —);
-`--planet`(别名:id/name/worldId)只看指定行星:
+已禁用(disable)的网络以 **DISABLED 占位行**保留可见(name 用禁用时快照,
+动态字段 `—`)——禁用网络是用户资产,不从列表消失;组内排序
+ACTIVE → STOPPED → DISABLED;`--planet`(别名:id/name/worldId)只看指定行星:
 
 ```
 planet: 3530253632 (gozi25) [已连接]
 NETWORK           NAME                    MAC                STATUS                    TYPE     DEV    MANAGED-IPS
 5cf54f181554090f  Planet Port Desktop 开  0e:9b:92:95:f0:c0  OK                        PRIVATE  feth2  10.121.16.1/24
 1234567890abcdef  —                       ee:5f:6d:10:90:d9  REQUESTING_CONFIGURATION  PRIVATE  feth0
+aabbccddeeff0011  家庭网络                —                  DISABLED                  —        —
 
 
 planet: 149604618 (official) [未连接]
@@ -178,13 +181,60 @@ gozi25(3530253632) 200 leave OK
 { "idempotent": true, "result": "ok" }
 ```
 
+### enable / disable — 网络级启用/禁用 ◇
+
+文本模式单行回执,与变更类同款带行星落点:
+
+```
+smoke(3530253632) 200 disable OK
+smoke(3530253632) 200 enable OK
+```
+
+`-j`(幂等重入附 idempotent):
+
+```json
+{ "result": "ok" }
+{ "idempotent": true, "result": "ok" }
+```
+
+口径:`disable` = 脱离(设备面拆除 + DNS 还原)并把 id / 本地配置 / 名字快照
+迁入禁用记忆区,net_local 清空时该 planet 按派生规则 idle 停机;`enable` =
+记录回迁 + planet 未运行自动拉起 + re-join,**恢复禁用前的
+routeViaZeroTier / DNS 本地配置**。幂等:重复 disable / 已加入网络重复
+enable 均成功附 `"idempotent":true`;未登记网络 404 `networkNotFound`;
+planet 本身被禁用时 409 `planetDisabled`。`join` 命中禁用区等价 enable;
+禁用网络 `set` 报 404;禁用网络可 networkinfo / get / share 查询。
+
+### share — 网络分享(终端二维码 + 剪贴板)◇
+
+stdout 依次为:网络名(无名字退化 nwid)、空行、二维码(unicode 半块字符)、
+网络 ID;剪贴板结果提示走 **stderr**(stdout 保持数据纯净):
+
+```
+Planet Port Desktop 开
+
+▀▀▀▀▀▀▀▄▄▄▄▄▄█▀▀ ...
+(半块字符渲染的二维码,内容 = 网络 ID 16 位 hex 纯文本)
+
+5cf54f181554090f
+# 已复制网络 ID 到剪贴板                        ← stderr
+# 剪贴板不可用,请手动复制上面的网络 ID          ← stderr(无显示环境降级提示,不报错)
+```
+
+二维码规范对齐 iOS 版:内容为网络 ID 纯文本(与 App 内扫码填 ID 互逆,非
+URL)、纠错级别 M。任何网络状态(ACTIVE / STOPPED / DISABLED)可分享,名称
+用快照或 nwid。`-j`:stdout 仅 NetworkEntry(二维码/剪贴板属展示层,人话
+照走 stderr)。
+
 ### set — 本地网络配置 ▣(格式同上)
 
 ```
 gozi25(3530253632) 200 set OK
 ```
 
-`-j`:`{ "result": "ok" }`。生效时机为下一轮控制器 netconf 下发。
+`-j`:`{ "result": "ok" }`。生效时机为下一轮控制器 netconf 下发。对禁用
+(DISABLED)网络报 404 `networkNotFound`(一期不做「禁用期间预改配置」,
+先 enable 再改)。
 
 ### get — 读单个配置值(脚本友好)❇
 
@@ -230,6 +280,19 @@ status    STOPPED
 ...
 ```
 
+网络本身已禁用(status=DISABLED)时**不拒绝**:展示禁用前登记配置并以
+stderr 反馈恢复方式(mtu 等动态字段为 —,与 STOPPED 同款占位形态):
+
+```
+# 提示: 该网络已禁用(脱离但保留本地配置),以下仅为禁用前登记配置; ...   ← stderr
+network   aabbccddeeff0011
+planet    smoke(3530253632)
+name      家庭网络
+status    DISABLED
+mtu       —
+...
+```
+
 ---
 
 ## moon 操作 ▣
@@ -244,9 +307,9 @@ gozi25(3530253632) 201 moon import OK
 
 ---
 
-## planet 生命周期
+## planet 生命周期(行星命令)
 
-### add — 导入登记 ▣
+### planet add — 导入登记 ▣
 
 ```
 added planet "gozi25" (id 3530253632) → stopped
@@ -264,9 +327,12 @@ gozi25(3530253632) 200 disable OK
 
 `-j`:`{ "planet": PlanetDetail }`。enable/disable 是唯一的启停语义:
 disable 无条件停且 join/boot 不再运行;enable 对有网络的 planet 按派生
-规则自动拉起。原顶层 `start`/`stop` 命令已移除。
+规则自动拉起。原顶层 `start`/`stop` 命令已移除;原顶层 `add`/`remove` 同步
+迁入 `planet` 子命令(不留兼容别名,旧顶层入口报未知命令)。注意:此处是
+**行星级**持久开关,网络级的顶层 `enable` / `disable`(作用于单个网络,
+回执 `{ "result": "ok" }`)见上文「网络操作」。
 
-### remove — 删除登记 ▣
+### planet remove — 删除登记 ▣
 
 确认提示走 **stderr**(stdout 保持纯净),拒绝时退出码 130:
 
@@ -417,7 +483,7 @@ planet gozi25 已换用官方身份,下次运行时生效
   并禁用自启)`;本机未检测到官方客户端时追加一行 `本机未检测到官方
   ZeroTier 客户端(身份文件可能来自其它机器)`;
 - 第 2 行:官方客户端当前 planet 已登记时如上;未登记时改为一行指引
-  `官方客户端当前 自定义 planet(worldId <worldId>)尚未导入;恢复原网络请先执行: planet-port add <planet文件路径>`;
+  `官方客户端当前 自定义 planet(worldId <worldId>)尚未导入;恢复原网络请先执行: planet-port planet add <planet文件路径>`;
 - 第 3 行:仅模式实际发生变化时出现;
 - 第 4 行:仅 `--mode independent` 且同源 planet 换用官方身份时出现
   (下次运行生效);

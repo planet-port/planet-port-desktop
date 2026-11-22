@@ -36,6 +36,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 基于 Tauri 2（
 
 - **多 Planet 管理**：官方与多份私有 Planet 同机并存，每 planet 独立数据目录；身份按全局 identityMode（默认共享）共享或独立；本地文件 / URL 导入，别名、启停、导出、临时分享链接一站管理；join / leave、跨 planet 聚合查询（网络 / peers / moons）
 - **默认路由与 DNS 自由掌控**：`routeViaZeroTier` 开关、`dnsMode=none|network|custom`，全部陈述式配置，脚本友好
+- **网络级启用/禁用与分享**：`disable` 脱离网络但保留本地配置与名字快照（列表以 DISABLED 占位行可见），`enable` 一键恢复原 route/DNS 配置（join 命中禁用网络自动恢复）；`share` 终端二维码 + 网络 ID 剪贴板，扫码即填
 - **Moon 支持**：orbit / deorbit / 导入 `.moon` 文件
 - **UDP 三通道降级**：主口 9993 优先；UDP 被滤时自动换绑副口（随机 20000-65499，离线 120s 触发），仍无直连 60s 自动建 TCP 隧道兜底，恢复后 30s 内自动回 UDP
 - **TCP 兜底 relay**：`planet set-relay` 按 planet 配置 TCP 兜底中继（需部署官方 tcp-proxy），与三通道降级配合兜住 UDP 全被滤的严苛网络
@@ -64,7 +65,7 @@ sudo bash scripts/uninstall.sh [--purge]
 首次使用：
 
 ```bash
-planet-port add ./planet.mine --name mine     # 导入私有 planet(只登记,join 网络后按派生规则自动运行,也可用官方 planet)
+planet-port planet add ./planet.mine --name mine  # 导入私有 planet(只登记,join 网络后按派生规则自动运行,也可用官方 planet)
 eval $(planet-port use mine)                   # 设默认 planet(本 shell)
 planet-port join 5cf54f181554090f              # 加入网络(16 位 ID)
 planet-port listnetworks                       # 等控制器在 ZeroTier Central 授权后状态变 RUNNING
@@ -86,7 +87,7 @@ sudo planet-port service stop        # SIGTERM 优雅退出;登记不变,start �
 
 ### planet 定位与命令参考
 
-多 planet 并存时，变更类命令（join / leave / set / orbit / deorbit / dump / moon import）按定位链落到恰好一个 planet：显式 `--planet` > 环境变量 `PLANET_PORT_PLANET`（`eval $(planet-port use <x>)` 设置）> 唯一 running 自动选中 > 多 planet 歧义时报 `409 planetAmbiguous` 并在 stderr 列出候选，不猜、不做选择；查询类命令默认聚合展示，`--planet` 为过滤。
+多 planet 并存时，变更类命令（join / leave / enable / disable / share / set / get / orbit / deorbit / dump / moon import）按定位链落到恰好一个 planet：显式 `--planet` > 环境变量 `PLANET_PORT_PLANET`（`eval $(planet-port use <x>)` 设置）> 唯一 running 自动选中 > 多 planet 歧义时报 `409 planetAmbiguous` 并在 stderr 列出候选，不猜、不做选择；查询类命令默认聚合展示，`--planet` 为过滤。
 
 完整 CLI 规范（全局选项、地址与鉴权协商、多 planet 定位规则、全部命令、行为说明、退出码）见 [COMMANDS.md](COMMANDS.md) 。
 

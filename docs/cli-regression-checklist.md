@@ -6,7 +6,7 @@
 ## 对真实 daemon 验证时注意
 
 - planet 数据为实网:planet 文件解析自真实 world,实例连真实根服务器;
-- `add` 的 URL 源可用(下载后走与本地文件同一套校验),容器导入 `501 notImplemented`;
+- `planet add` 的 URL 源可用(下载后走与本地文件同一套校验),容器导入 `501 notImplemented`;
 - `dns` 模式(`set` 的 `dnsMode`/`customDns`)为 `network`/`custom` 且算出的
   servers 非空时,netconf 应用阶段会用 `networksetup` 把 DNS 写进主网络服务,
   servers 为空(不再托管)或 leave 网络 / 停止或删除 planet 时还原为自动获取;
@@ -31,7 +31,7 @@
 | `set ... bogus=1` | exit=2 | `error: unknown key "bogus"; valid: ...`,exit=2 | 通过 |
 | `orbit` / `deorbit` / `moon import` | 200/201 OK;listmoons 复查 | orbit/deorbit `200 ... OK`,moon import `201`;listmoons 增删一致 | 通过 |
 | `dump --planet official` | 单 planet 文本 | 输出 networks/peers/events 概要;不带 `--planet` 时报候选 | 通过 |
-| `planet list/show/rename/export/share` + 顶层 `add/remove/start/stop`（顶层 start/stop 已移除,现并入 planet enable/disable） | 各自预期 | 全部通过;交互确认拒绝时 exit=130(2026-10-30 修复,原为 0);export stdout/`-o` 均可(remove 为自动 leave + 删除语义) | 通过 |
+| `planet list/show/rename/export/share` + `planet add/remove`（顶层 add/remove 已迁入 planet 子命令;start/stop 已移除,现并入 planet enable/disable） | 各自预期 | 全部通过;交互确认拒绝时 exit=130(2026-10-30 修复,原为 0);export stdout/`-o` 均可(planet remove 为自动 leave + 删除语义) | 通过 |
 | `use company` + eval 后 `join` | 定位链② 生效 | `PLANET_PORT_PLANET=company join` 直接落到 company,无歧义报错 | 通过 |
 | `use 不存在` | exit=2,stdout 无输出 | `error: planet "nosuchplanet" not found`,stdout 0 字节,exit=2 | 通过 |
 | `events [--planet] [--follow]` | 表格/增量输出 | 过滤生效;`--follow` 每 2s 增量输出新事件 | 通过 |
@@ -42,7 +42,7 @@
 
 | 命令 | 预期 | 实测 | 结论 |
 |---|---|---|---|
-| `join/leave/orbit -j` | 真实响应体 | `{"result":"ok"}`(幂等时附 `"idempotent":true`);remove/deorbit 代 `{"result":"ok"}` | 通过 |
+| `join/leave/orbit -j` | 真实响应体 | `{"result":"ok"}`(幂等时附 `"idempotent":true`);planet remove/deorbit 代 `{"result":"ok"}` | 通过 |
 | `dump -j` | 结构化对象 | `planet/networks/peers/events` 四键,`jq keys` 可用 | 通过 |
 | 双 running 下 `join`(无 --planet) | 人话歧义报错 | 本地化 `--planet` 指引 + 候选列表,exit=2;en/zh-Hant 同款 | 通过 |
 | 变更回执 | 带 planet 落点 | `gozi25(3530253632) 200 join OK` 样式 | 通过 |
@@ -54,7 +54,7 @@
 | `network show <nwid>` | 详情视图 | planet/status/IP/routes/DNS/routeVia 一屏 | 通过 |
 | `list -j` | 分组结构 | `planets[]` 各带 `networks[]`;listnetworks -j 保持平铺 | 通过 |
 | `info` STATUS | 三态对齐 list | 已连接/连接中/未连接(与 list 同口径) | 通过 |
-| `remove` 确认拒绝 | exit=130 | `已取消` + 130 | 通过 |
+| `planet remove` 确认拒绝 | exit=130 | `已取消` + 130 | 通过 |
 | join/leave 幂等(daemon 侧) | 重复操作静默成功 | 新二进制安装后实测:重复 join 与 leave 未加入网络均 `200 ... OK` + `"idempotent":true`,exit=0 | 通过 |
 
 ## 2026-10-30 追加修复(现场问题驱动)
@@ -81,5 +81,18 @@
 | TCP 兜底实测路径(家宽 UDP 被滤环境) | 配置 relay 且 relay 可达时:`planet show` transport 行 `tcp=established(<relay地址>)`,`listpeers` 根条目 PATH 显示 `(relay)`,连接实际走 TCP 隧道;UDP 恢复后回落 UDP 主通道 |
 | `events --planet <p> --limit N` | 输出条数按 N 截取(缺省 40);`--follow` 每 2s 增量,Ctrl-C 退出 |
 | `service logs --lines N --follow` | tail 末 N 行(缺省 50)/持续跟踪;日志文件不存在 exit=1 |
-| `remove <p> -j`(无 `--yes`) | 拒绝执行:`error: --json requires --yes for remove (confirmation prompt would corrupt stdout)`,exit=2(交互确认拒绝才是 exit=130) |
+| `planet remove <p> -j`(无 `--yes`) | 拒绝执行:`error: --json requires --yes for remove (confirmation prompt would corrupt stdout)`,exit=2(交互确认拒绝才是 exit=130) |
 | `install -j`(版本差异且无 `--yes`) | 同款约束:`error: --json requires --yes for install when version differs …`,exit=2 |
+
+## 网络启用禁用(2026-11-22 命令面;统一调试阶段执行)
+
+- [ ] disable → listnetworks 出 DISABLED 行(name 用快照,动态字段 —)→ enable 恢复原配置(routeViaZeroTier/dnsMode 不变)
+- [ ] disable 后 net_local 清空 → planet idle 停机;enable 自动拉起并 re-join
+- [ ] 重复 disable 幂等成功;未登记网络 disable/enable 404;已加入态 enable 幂等成功
+- [ ] join 命中禁用网络 → 自动恢复(等价 enable,不报错)
+- [ ] STOPPED planet:disable 仅记录迁移(按名定位退化为仅 nwid);enable 按禁用区 name 快照定位
+- [ ] leave 清两区(net_local 与 net_disabled),不强制 planet running
+- [ ] planet disabled 下 enable/disable 报 409 planetDisabled
+- [ ] `planet add`/`planet remove` 新路径;旧顶层入口报未知命令
+- [ ] share:终端二维码(扫出 16hex 纯文本)+ 网络 ID 已复制;无显示环境降级提示不报错
+- [ ] 网络命令定位规范:单登记自动选中;≥2 登记无 --planet/use 报 409 列候选

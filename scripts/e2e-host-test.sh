@@ -14,7 +14,8 @@
 # 每台主机执行:预检(版本/服务/planet 基线) → 产物下载(scp) → install →
 # 版本/服务/恢复校验 → stop/start → 幂等重装 → (可选)数据面互 ping。
 # 不做 uninstall(主机留运行态);不覆盖式改配置,planet 导入仅当主机
-# 尚无 planet 时按 PLANET_FILE 补一发 add,NETWORK_ID 配置了再补一发 join。
+# 尚无 planet 时按 PLANET_FILE 补一发 planet add,NETWORK_ID 配置了再补一发
+# join 并顺带验证网络级 disable/enable/share 主链路。
 # 结果:逐台打印 STEP:xx:OK/FAIL,末尾汇总表,任一 FAIL 退出码 1。
 
 set -uo pipefail
@@ -92,13 +93,20 @@ if [[ "$FRESH" != "1" ]]; then
   [[ -n "$ADDR_B" && "$ADDR_B" = "$ADDR_A" ]] && step addr-same || step addr-same FAIL
   planet-port listnetworks 2>/dev/null | grep -qE "OK|REQUESTING" && step networks || step networks SKIP
 fi
-# 4. 全新机器补一发 planet 导入(add)+ 加入网络(NETWORK_ID 配置,留空跳过)
+# 4. 全新机器补一发 planet 导入(planet add)+ 加入网络(NETWORK_ID 配置,留空跳过)
 if [[ "$FRESH" = "1" && -n "${PLANET_SRC:-}" && -f "${PLANET_SRC:-}" ]]; then
   cp "$PLANET_SRC" /tmp/e2e-pp/gozi25.planet
-  planet-port add /tmp/e2e-pp/gozi25.planet --name e2e-test >/dev/null 2>&1 \
+  planet-port planet add /tmp/e2e-pp/gozi25.planet --name e2e-test >/dev/null 2>&1 \
     && step planet-add || step planet-add FAIL
   if [[ -n "${NWID:-}" ]]; then
     planet-port join "$NWID" >/dev/null 2>&1 && step join || step join FAIL
+    # 网络级禁用/启用主链路:disable 后 listnetworks 出 DISABLED 占位行,enable 恢复
+    planet-port disable "$NWID" >/dev/null 2>&1 \
+      && planet-port listnetworks 2>/dev/null | grep -q DISABLED \
+      && step net-disable || step net-disable FAIL
+    planet-port enable "$NWID" >/dev/null 2>&1 && step net-enable || step net-enable FAIL
+    # share 主链路:二维码/网络 ID 走 stdout;无显示环境剪贴板降级提示不报错
+    planet-port share "$NWID" >/dev/null 2>&1 && step net-share || step net-share FAIL
   fi
 fi
 # 5. stop/start
