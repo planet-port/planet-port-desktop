@@ -173,6 +173,25 @@ impl ApiClient {
         let (c, b) = self.send("DELETE", path, None)?;
         self.parse(c, b)
     }
+    /// 二进制端点(如 planet export):2xx 返回原始字节,错误体仍走 JSON 解析。
+    /// 不复用 parse 的 Ok 分支——octet-stream 不是 JSON。
+    pub fn get_bytes(&self, path: &str) -> Result<Vec<u8>, GuiError> {
+        let (status, buf) = self.send("GET", path, None)?;
+        if (200..300).contains(&status) {
+            Ok(buf)
+        } else {
+            // 非 2xx 时 parse 恒走 Err 分支;Ok 臂仅为穷尽匹配,不可达
+            match self.parse(status, buf) {
+                Err(e) => Err(e),
+                Ok(_) => Err(GuiError::Api {
+                    status,
+                    code: None,
+                    message: String::from("unexpected success parsing error body"),
+                    candidates: None,
+                }),
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -266,5 +285,19 @@ mod tests {
             format!("http://127.0.0.1:{}", resolve_port("bogus")),
             format!("http://127.0.0.1:{DEFAULT_API_PORT}")
         );
+    }
+
+    /// get_bytes 负路径:daemon 不可达时与 get_json 一致返回 Offline,
+    /// 不 panic、不走 JSON parse(export 端点是 octet-stream)。
+    /// 正路径(2xx 原样字节)由 GUI↔daemon 集成覆盖,此处锁错误契约。
+    #[test]
+    fn get_bytes_offline_daemon_yields_offline_error() {
+        let c = ApiClient {
+            agent: make_agent(Some(PROBE_TIMEOUT)),
+            base: String::from("http://127.0.0.1:1"),
+            token: String::from("t"),
+        };
+        let err = c.get_bytes("/planets/x/export").unwrap_err();
+        assert!(matches!(err, GuiError::Offline { .. }), "unreachable 应为 Offline: {err:?}");
     }
 }

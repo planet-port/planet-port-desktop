@@ -28,6 +28,7 @@ fn main() {
                 let _ = w.set_focus();
             }
         }))
+        .plugin(tauri_plugin_dialog::init())
         .manage::<SharedState>(Mutex::new(GuiState {
             online: false,
             installed: api_client::installed(),
@@ -64,7 +65,12 @@ fn main() {
             commands::leave_network,
             commands::set_network,
             commands::get_peers,
-            commands::set_lang
+            commands::set_lang,
+            commands::planet_export,
+            commands::identity_get,
+            commands::identity_import_preflight,
+            commands::identity_import,
+            commands::write_file_bytes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

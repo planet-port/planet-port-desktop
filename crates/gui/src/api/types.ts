@@ -75,3 +75,10 @@ export interface EmbeddedManifest {
   version: string;
   target: string;
 }
+
+/// GET /identity 响应(与 daemon api_identity.rs 响应同构)
+export interface IdentityInfo {
+  global: { exists: boolean; nodeId: string | null };
+  mode: string; // shared | independent(daemon 现仅 shared)
+  planets: Array<{ id: string; name: string; nodeId: string | null; running: boolean }>;
+}

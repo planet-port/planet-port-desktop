@@ -65,3 +65,29 @@ pub fn set_lang(lang: String, app: tauri::AppHandle) -> Result<(), GuiError> {
     crate::tray::refresh(&app);
     Ok(())
 }
+
+/// planet 二进制导出(daemon octet-stream 原样字节;前端配合保存对话框落盘)
+#[tauri::command]
+pub fn planet_export(id: String) -> Result<Vec<u8>, GuiError> {
+    discover()?.get_bytes(&endpoints::planet_export(&id))
+}
+/// 节点身份信息:全局身份 + 各行星实际身份
+#[tauri::command]
+pub fn identity_get() -> Result<Value, GuiError> {
+    discover()?.get_json(endpoints::identity())
+}
+/// 身份导入预检(只读):body 带 preflight 标记,旧 daemon 对独立路由 404
+#[tauri::command]
+pub fn identity_import_preflight(path: String) -> Result<Value, GuiError> {
+    discover()?.post_json(&endpoints::identity_import_preflight(), &json!({ "preflight": true, "path": path }))
+}
+/// 身份导入:GUI 固定 shared 模式(无模式切换 UI);force 由前端覆盖确认后置真
+#[tauri::command]
+pub fn identity_import(path: String, force: bool) -> Result<Value, GuiError> {
+    discover()?.post_json(&endpoints::identity_import(), &json!({ "path": path, "force": force, "mode": "shared" }))
+}
+/// 前端数据(dataURL 解码后/atob 后的 bytes)写盘:二维码 PNG、planet 导出共用
+#[tauri::command]
+pub fn write_file_bytes(path: String, bytes: Vec<u8>) -> Result<(), GuiError> {
+    std::fs::write(&path, bytes).map_err(|e| GuiError::Usage { message: format!("write {path}: {e}") })
+}
