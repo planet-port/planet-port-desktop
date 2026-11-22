@@ -30,6 +30,9 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
   const [slots, setSlots] = useState<DnsSlots>(() => serversToSlots(row.customDns));
   const [expandedRoutes, setExpandedRoutes] = useState<Set<number>>(new Set());
   const [showQR, setShowQR] = useState(false);
+  /// 禁用态:daemon 对禁用网络 set 报 404,参数编辑区与保存整体禁用,
+  /// 提示恢复后可编辑(动态字段缺失靠占位行数据天然为 '—'/空)
+  const disabled = row.status === 'DISABLED';
   const [confirmDel, setConfirmDel] = useState(false);
   /// 网络二维码 = 网络 ID 纯文本(16 hex,与移动端扫码填 ID 互逆);
   /// data 身份须稳定——QRShareSheet 内部 useMemo 以 data 为依赖,内联编码会每渲染重置
@@ -88,7 +91,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
           </div>
           <div className="kv"><span>{t('networks.type')}</span><span>{row.type}</span></div>
           <div className="kv"><span>{t('networks.mac')}</span><span className="mono">{formatMac(row.mac)}</span></div>
-          <div className="kv"><span>{t('networks.mtu')}</span><span>{row.mtu}</span></div>
+          <div className="kv"><span>{t('networks.mtu')}</span><span>{row.mtu || '-'}</span></div>
         </section>
         <section className="detail-section">
           <h4>{t('networks.addrs')}</h4>
@@ -118,14 +121,14 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
           <h4>DNS</h4>
           <div className="seg">
             {(['none', 'network', 'custom'] as const).map(m => (
-              <button key={m} className={dnsMode === m ? 'active' : ''} onClick={() => setDnsMode(m)}>{t(`dns.mode.${m}`)}</button>
+              <button key={m} className={dnsMode === m ? 'active' : ''} disabled={disabled} onClick={() => setDnsMode(m)}>{t(`dns.mode.${m}`)}</button>
             ))}
           </div>
           {dnsMode === 'custom' && (
             <div className="dns-slots">
               {(['v4a', 'v4b', 'v6a', 'v6b'] as const).map(k => (
                 <input key={k} className="input mono" placeholder={t(`dns.${k}`)} value={slots[k]}
-                  onChange={e => setSlots({ ...slots, [k]: e.target.value })} />
+                  disabled={disabled} onChange={e => setSlots({ ...slots, [k]: e.target.value })} />
               ))}
               {!dnsOk && <p className="field-error">{t('dns.invalid')}</p>}
             </div>
@@ -133,10 +136,10 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
         </section>
         <section className="detail-section">
           <label className="field">
-            <input type="checkbox" checked={routeVia} disabled={row.routeViaLocked}
+            <input type="checkbox" checked={routeVia} disabled={row.routeViaLocked || disabled}
               onChange={e => setRouteVia(e.target.checked)} /> {t('join.routeVia')}
           </label>
-          <p className="small hint">{row.routeViaLocked ? t('networks.routeViaLocked') : t('join.routeViaFooter')}</p>
+          <p className="small hint">{disabled ? t('networks.disabledHint') : (row.routeViaLocked ? t('networks.routeViaLocked') : t('join.routeViaFooter'))}</p>
         </section>
         <div className="share-row">
           <span className="mono small">{row.nwid}</span>
@@ -147,7 +150,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
           <button className="btn danger" onClick={() => setConfirmDel(true)}>{t('networks.deleteNetwork')}</button>
           <span className="grow" />
           <button className="btn" onClick={close}>{t('common.cancel')}</button>
-          <button className="btn primary" disabled={!dnsOk || saveSettings.isPending} onClick={() => saveSettings.mutate()}>
+          <button className="btn primary" disabled={disabled || !dnsOk || saveSettings.isPending} onClick={() => saveSettings.mutate()}>
             {t('common.save')}
           </button>
         </div>

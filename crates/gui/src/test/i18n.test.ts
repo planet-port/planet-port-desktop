@@ -24,9 +24,11 @@ const dynamicPrefixes: Record<string, string[]> = {
   'transport.tcp': ['disabled', 'idle', 'connecting', 'established'], // Home: t(`transport.tcp.${t.tcp}`)
   // Home/NetworkCard/NetworkDialog: t(`networks.statusMap.${row.status}`)
   // 枚举 = daemon runtime::status_name 全量 + 本地合成 STOPPED(非运行 planet 占位条目)
+  // + daemon 合成 DISABLED(net_disabled 注册表占位行,api_net.rs)
   'networks.statusMap': [
     'OK', 'REQUESTING_CONFIGURATION', 'ACCESS_DENIED', 'NOT_FOUND',
     'PORT_ERROR', 'CLIENT_TOO_OLD', 'AUTHENTICATION_REQUIRED', 'STOPPED',
+    'DISABLED',
   ],
   'identity.mode': ['shared', 'independent'], // IdentitySection: t(`identity.mode.${m}`)
 };

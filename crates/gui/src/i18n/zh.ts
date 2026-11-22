@@ -91,13 +91,16 @@ export default {
     deleteNetwork: '删除网络',
     deleteConfirm: '删除网络 {{id}}？将离开该网络（leave），不影响其他网络。',
     left: '已离开网络',
+    disabledHint: '网络已禁用（脱离但保留本地配置），恢复后可编辑',
     /// 状态码映射:枚举 = daemon runtime::status_name 全量 + 本地合成 STOPPED
-    /// (非运行 planet 的占位条目);不能叫 status——同名词典叶子会挡住 i18next
+    /// (非运行 planet 的占位条目)+ daemon 合成 DISABLED(net_disabled 注册表
+    /// 占位行);不能叫 status——同名词典叶子会挡住 i18next
     /// 对 statusMap.* 的深层解析,徽标退化为裸码
     statusMap: {
       OK: '正常', REQUESTING_CONFIGURATION: '请求配置', ACCESS_DENIED: '未授权',
       NOT_FOUND: '不存在', PORT_ERROR: '端口错误', CLIENT_TOO_OLD: '客户端过旧',
       AUTHENTICATION_REQUIRED: '待认证', STOPPED: '已停止',
+      DISABLED: '已禁用',
     },
   },
   planets: {

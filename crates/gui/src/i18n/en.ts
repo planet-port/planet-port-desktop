@@ -91,14 +91,17 @@ export default {
     deleteNetwork: 'Delete Network',
     deleteConfirm: 'Delete network {{id}}? This leaves the network without affecting others.',
     left: 'Left network',
+    disabledHint: 'Network disabled (detached, local config kept); re-enable to edit',
     /// Status code map: enums = daemon runtime::status_name full set + local
-    /// STOPPED (placeholder entries of non-running planets). Must not be named
+    /// STOPPED (placeholder entries of non-running planets) + daemon-synthesized
+    /// DISABLED (net_disabled registry placeholder rows). Must not be named
     /// status — a same-named dictionary leaf blocks i18next deep resolution of
     /// statusMap.*, degrading badges to raw codes
     statusMap: {
       OK: 'OK', REQUESTING_CONFIGURATION: 'Requesting config', ACCESS_DENIED: 'Access denied',
       NOT_FOUND: 'Not found', PORT_ERROR: 'Port error', CLIENT_TOO_OLD: 'Client too old',
       AUTHENTICATION_REQUIRED: 'Auth required', STOPPED: 'Stopped',
+      DISABLED: 'Disabled',
     },
   },
   planets: {

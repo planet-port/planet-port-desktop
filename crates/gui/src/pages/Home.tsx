@@ -11,7 +11,7 @@ import QueryError from '../components/QueryError';
 import { useToast } from '../components/Toaster';
 
 /// 单页首页:行星分组头(状态/传输/计数) + 网络卡片流(卡片⇄列表,localStorage 记忆)。
-/// 加入入口移至顶栏「添加网络」抽屉;离开由卡片开关直切(同移动端,无确认弹层)
+/// 加入入口移至顶栏「添加网络」抽屉;卡片开关 = 禁用/启用(脱离保留配置/恢复),彻底删除走详情抽屉
 export default function Home() {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -38,16 +38,24 @@ export default function Home() {
     toast.error(`${ge?.message ?? String(e)}${cand}`);
   };
 
-  const leave = useMutation({
-    mutationFn: (row: NetworkEntry) => api.leaveNetwork(row.nwid, row.planet),
+  const rejoin = useMutation({
+    mutationFn: (row: NetworkEntry) => api.joinNetwork(row.nwid, row.planet),
     onSettled: () => {
       setToggling(null);
       invalidate();
     },
     onError: onErr,
   });
-  const rejoin = useMutation({
-    mutationFn: (row: NetworkEntry) => api.joinNetwork(row.nwid, row.planet),
+  const disable = useMutation({
+    mutationFn: (row: NetworkEntry) => api.disableNetwork(row.nwid, row.planet),
+    onSettled: () => {
+      setToggling(null);
+      invalidate();
+    },
+    onError: onErr,
+  });
+  const enable = useMutation({
+    mutationFn: (row: NetworkEntry) => api.enableNetwork(row.nwid, row.planet),
     onSettled: () => {
       setToggling(null);
       invalidate();
@@ -57,7 +65,10 @@ export default function Home() {
 
   const onToggle = (row: NetworkEntry) => {
     setToggling(`${row.planet}/${row.nwid}`);
-    if (row.status === 'OK') leave.mutate(row);
+    // 开关语义 = 网络启停:disable 脱离但保留配置,enable 恢复;彻底删除
+    // (leave)走详情抽屉「删除网络」;STOPPED 等占位行的开 = 重新 join
+    if (row.status === 'OK') disable.mutate(row);
+    else if (row.status === 'DISABLED') enable.mutate(row);
     else rejoin.mutate(row);
   };
   const switchView = (v: 'cards' | 'list') => {

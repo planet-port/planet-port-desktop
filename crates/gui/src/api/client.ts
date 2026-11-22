@@ -27,6 +27,8 @@ export const api = {
   networks: (planet?: string) => cmd<{ networks: NetworkEntry[] }>('get_networks', { planet: planet ?? null }),
   joinNetwork: (nwid: string, planet?: string) => cmd('join_network', { nwid, planet: planet ?? null }),
   leaveNetwork: (nwid: string, planet?: string) => cmd('leave_network', { nwid, planet: planet ?? null }),
+  enableNetwork: (nwid: string, planet?: string) => cmd('enable_network', { nwid, planet: planet ?? null }),
+  disableNetwork: (nwid: string, planet?: string) => cmd('disable_network', { nwid, planet: planet ?? null }),
   setNetwork: (
     nwid: string,
     body: { routeViaZeroTier?: boolean; dnsMode?: string; customDns?: string[] },

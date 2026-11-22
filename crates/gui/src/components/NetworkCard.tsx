@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { NetworkEntry } from '../api/types';
 
-/// 网络卡片:信息区点击进设置弹层,右下角开关切换加入/离开(同移动端)。
+/// 网络卡片:信息区点击进设置弹层,右下角开关切换禁用/启用(OK↔DISABLED,占位行=join)。
 /// pending 期开关换 spinner 并整卡禁点(防抖动)。
 export default function NetworkCard({
   row,
