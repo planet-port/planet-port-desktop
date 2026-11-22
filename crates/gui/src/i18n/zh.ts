@@ -63,7 +63,7 @@ export default {
     nwidPlaceholder: '网络 ID，如 9536600adcf2b350',
     join: '加入网络',
     allPlanets: '全部 planet',
-    id: '网络 ID', name: '名称', status: '状态', ips: '分配地址', iface: '接口',
+    id: '网络 ID', name: '名称', statusLabel: '状态', ips: '分配地址', iface: '接口',
     conflict: '冲突',
     settings: '设置', leave: '离开',
     leaveConfirm: '确定离开该网络？',
@@ -81,8 +81,15 @@ export default {
     deleteNetwork: '删除网络',
     deleteConfirm: '删除网络 {{id}}？将离开该网络（leave），不影响其他网络。',
     left: '已离开网络',
+    /// 状态码映射:枚举 = daemon runtime::status_name 全量 + 本地合成 STOPPED
+    /// (非运行 planet 的占位条目);不能叫 status——同名词典叶子会挡住 i18next
+    /// 对 statusMap.* 的深层解析,徽标退化为裸码
+    statusMap: {
+      OK: '正常', REQUESTING_CONFIGURATION: '请求配置', ACCESS_DENIED: '未授权',
+      NOT_FOUND: '不存在', PORT_ERROR: '端口错误', CLIENT_TOO_OLD: '客户端过旧',
+      AUTHENTICATION_REQUIRED: '待认证', STOPPED: '已停止',
+    },
   },
-  'networks.status': { OK: '正常', REQUESTING_CONFIGURATION: '请求配置', ACCESS_DENIED: '未授权', NOT_FOUND: '不存在', PORT_ERROR: '端口错误', CLIENT_DISABLED: '已禁用', AUTHENTICATION_REQUIRED: '待认证' },
   planets: {
     sourcePlaceholder: 'planet 文件路径或 URL',
     import: '导入',

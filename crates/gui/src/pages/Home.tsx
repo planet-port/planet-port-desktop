@@ -112,7 +112,7 @@ export default function Home() {
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>{t('networks.id')}</th><th>{t('networks.name')}</th><th>{t('networks.status')}</th>
+                      <th>{t('networks.id')}</th><th>{t('networks.name')}</th><th>{t('networks.statusLabel')}</th>
                       <th>{t('networks.ips')}</th><th />
                     </tr>
                   </thead>
@@ -121,7 +121,7 @@ export default function Home() {
                       <tr key={`${r.planet}/${r.nwid}`} onClick={() => setEditing(r)}>
                         <td className="mono">{r.nwid}</td>
                         <td>{r.name ?? '-'}</td>
-                        <td><span className={`badge ${r.status === 'OK' ? 'ok' : 'muted'}`}>{t(`networks.status.${r.status}`, { defaultValue: r.status })}</span></td>
+                        <td><span className={`badge ${r.status === 'OK' ? 'ok' : 'muted'}`}>{t(`networks.statusMap.${r.status}`, { defaultValue: r.status })}</span></td>
                         <td className="mono small">{r.assignedAddrs.join(', ') || '-'}</td>
                         <td>
                           {toggling === `${r.planet}/${r.nwid}` ? (

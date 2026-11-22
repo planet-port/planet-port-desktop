@@ -22,6 +22,12 @@ const dynamicPrefixes: Record<string, string[]> = {
   'planet.status': ['running', 'stopped'], // Home/PlanetManager: t(`planet.status.${p.status}`)
   'planet.kind': ['official', 'custom'], // PlanetManager: t(`planet.kind.${p.type}`)
   'transport.tcp': ['disabled', 'idle', 'connecting', 'established'], // Home: t(`transport.tcp.${t.tcp}`)
+  // Home/NetworkCard/NetworkDialog: t(`networks.statusMap.${row.status}`)
+  // 枚举 = daemon runtime::status_name 全量 + 本地合成 STOPPED(非运行 planet 占位条目)
+  'networks.statusMap': [
+    'OK', 'REQUESTING_CONFIGURATION', 'ACCESS_DENIED', 'NOT_FOUND',
+    'PORT_ERROR', 'CLIENT_TOO_OLD', 'AUTHENTICATION_REQUIRED', 'STOPPED',
+  ],
 };
 
 /// 收集 src 下全部 ts/tsx（跳过测试自身与资源文件，避免自引用）

@@ -75,8 +75,8 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
             <div className="kv"><span>{t('networks.id')}</span><span className="mono">{row.nwid}</span></div>
             <div className="kv"><span>{t('networks.name')}</span><span>{row.name ?? '-'}</span></div>
             <div className="kv">
-              <span>{t('networks.status')}</span>
-              <span className={`badge ${row.status === 'OK' ? 'ok' : 'muted'}`}>{t(`networks.status.${row.status}`, { defaultValue: row.status })}</span>
+              <span>{t('networks.statusLabel')}</span>
+              <span className={`badge ${row.status === 'OK' ? 'ok' : 'muted'}`}>{t(`networks.statusMap.${row.status}`, { defaultValue: row.status })}</span>
             </div>
             <div className="kv"><span>{t('networks.type')}</span><span>{row.type}</span></div>
             <div className="kv"><span>{t('networks.mac')}</span><span className="mono">{formatMac(row.mac)}</span></div>

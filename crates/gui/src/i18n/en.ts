@@ -63,7 +63,7 @@ export default {
     nwidPlaceholder: 'Network ID, e.g. 9536600adcf2b350',
     join: 'Join',
     allPlanets: 'All planets',
-    id: 'Network ID', name: 'Name', status: 'Status', ips: 'Assigned addrs', iface: 'Interface',
+    id: 'Network ID', name: 'Name', statusLabel: 'Status', ips: 'Assigned addrs', iface: 'Interface',
     conflict: 'Conflict',
     settings: 'Settings', leave: 'Leave',
     leaveConfirm: 'Leave this network?',
@@ -81,8 +81,16 @@ export default {
     deleteNetwork: 'Delete Network',
     deleteConfirm: 'Delete network {{id}}? This leaves the network without affecting others.',
     left: 'Left network',
+    /// Status code map: enums = daemon runtime::status_name full set + local
+    /// STOPPED (placeholder entries of non-running planets). Must not be named
+    /// status — a same-named dictionary leaf blocks i18next deep resolution of
+    /// statusMap.*, degrading badges to raw codes
+    statusMap: {
+      OK: 'OK', REQUESTING_CONFIGURATION: 'Requesting config', ACCESS_DENIED: 'Access denied',
+      NOT_FOUND: 'Not found', PORT_ERROR: 'Port error', CLIENT_TOO_OLD: 'Client too old',
+      AUTHENTICATION_REQUIRED: 'Auth required', STOPPED: 'Stopped',
+    },
   },
-  'networks.status': { OK: 'OK', REQUESTING_CONFIGURATION: 'Requesting config', ACCESS_DENIED: 'Access denied', NOT_FOUND: 'Not found', PORT_ERROR: 'Port error', CLIENT_DISABLED: 'Disabled', AUTHENTICATION_REQUIRED: 'Auth required' },
   planets: {
     sourcePlaceholder: 'Planet file path or URL',
     import: 'Import',

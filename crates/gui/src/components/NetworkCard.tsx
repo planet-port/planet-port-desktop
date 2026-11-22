@@ -20,7 +20,7 @@ export default function NetworkCard({
     <section className={`netcard ${pending ? 'pending' : ''}`} onClick={() => !pending && onOpen(row)}>
       <header>
         <span className="name">{row.name ?? row.nwid}</span>
-        <span className={`badge ${on ? 'ok' : 'muted'}`}>{t(`networks.status.${row.status}`, { defaultValue: row.status })}</span>
+        <span className={`badge ${on ? 'ok' : 'muted'}`}>{t(`networks.statusMap.${row.status}`, { defaultValue: row.status })}</span>
         {row.conflict && <span className="badge warn" title={row.conflict}>{t('networks.conflict')}</span>}
       </header>
       <dl>

@@ -32,11 +32,25 @@ describe('settings drawer', () => {
   });
 
   it('设置抽屉开合与语言切换可用', async () => {
-    await browser.$('button[aria-label="设置"], .btn.icon').click();
+    await browser.$('[data-testid="topbar-settings"]').click();
     await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ timeout: 5000 });
     await browser.$('[data-testid="lang-en"]').click();
     await expect(browser.$('[data-testid="lang-en"].active')).toBeDisplayed();
     await browser.$('[data-testid="lang-zh"]').click();
     await expect(browser.$('[data-testid="lang-zh"].active')).toBeDisplayed();
+    // 关抽屉还原环境:mask 覆盖全屏,不关会拦住后续用例的顶栏点击
+    await browser.$('.drawer-mask').click();
+    await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ reverse: true });
+  });
+
+  it('主题切换:抽屉内切深色后 html 带 data-theme=dark', async () => {
+    await browser.$('[data-testid="topbar-settings"]').click();
+    await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ timeout: 5000 });
+    await browser.$('[data-testid="theme-dark"]').click();
+    const attr = await browser.execute(() => document.documentElement.getAttribute('data-theme'));
+    expect(attr).toBe('dark');
+    await browser.$('[data-testid="theme-system"]').click(); // 还原默认
+    await browser.$('.drawer-mask').click();
+    await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ reverse: true });
   });
 });

@@ -10,34 +10,78 @@ describe('online main ui', () => {
     expect(await browser.getTitle()).toBe('planet-port');
   });
 
-  it('总览页加载 planet 卡片(Overview .card)', async () => {
+  it('单页首页加载行星分组头(.pgroup)', async () => {
     // react-query 首拉 + 心跳收敛在线态,留足余量
-    const card = await browser.$('.page .cards .card');
-    await card.waitForDisplayed({ timeout: 30000 });
-    const name = await browser.$('.page .cards .card .name').getText();
-    expect(name.length).toBeGreaterThan(0);
+    const head = await browser.$('.pgroup-head .pgroup-name');
+    await head.waitForDisplayed({ timeout: 30000 });
+    expect((await head.getText()).length).toBeGreaterThan(0);
   });
 
-  it('planet 卡片显示运行状态徽标', async () => {
-    const badge = await browser.$('.page .cards .card .badge').getText();
-    expect(badge.length).toBeGreaterThan(0);
+  it('行星分组头显示状态摘要', async () => {
+    const small = await browser.$('.pgroup-head .small');
+    expect((await small.getText()).length).toBeGreaterThan(0);
   });
 
-  it('导航切换四页均渲染(.page 存在)', async () => {
-    const buttons = await browser.$$('nav button');
-    expect(buttons.length).toBe(4);
-    for (const b of buttons) {
-      await b.click();
-      await expect(browser.$('.page')).toBeDisplayed();
-    }
+  it('顶栏三操作按钮 + 卡片⇄列表切换', async () => {
+    await expect(browser.$('[data-testid="topbar-add-network"]')).toBeDisplayed();
+    await expect(browser.$('[data-testid="topbar-add-planet"]')).toBeDisplayed();
+    await expect(browser.$('[data-testid="topbar-settings"]')).toBeDisplayed();
+    // 行星下无网络时两种视图容器都不渲染(.empty 占位),此时仅校验顶栏入口
+    if (!(await browser.$('.netcards .netcard, .table').isDisplayed())) return;
+    await browser.$('.viewtoggle button[aria-label="list"]').click();
+    await expect(browser.$('.table')).toBeDisplayed();
+    await browser.$('.viewtoggle button[aria-label="cards"]').click();
+    await expect(browser.$('.netcards')).toBeDisplayed();
   });
 
-  it('语言切换后 planet 卡片仍在(zh ↔ en 不破布局)', async () => {
-    const en = await browser.$('.lang button:nth-child(2)');
-    const zh = await browser.$('.lang button:nth-child(1)');
-    await en.click();
-    await expect(browser.$('.page .cards .card')).toBeDisplayed();
-    await zh.click();
-    await expect(browser.$('.page .cards .card')).toBeDisplayed();
+  it('语言切换后行星分组仍在(zh ↔ en 不破布局)', async () => {
+    await browser.$('[data-testid="topbar-settings"]').click();
+    await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ timeout: 5000 });
+    await browser.$('[data-testid="lang-en"]').click();
+    await expect(browser.$('.pgroup-head .pgroup-name')).toBeDisplayed();
+    await browser.$('[data-testid="lang-zh"]').click();
+    await expect(browser.$('.pgroup-head .pgroup-name')).toBeDisplayed();
+    // 关抽屉还原环境:mask 覆盖全屏,不关会拦住后续用例的顶栏点击
+    await browser.$('.drawer-mask').click();
+    await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ reverse: true });
+  });
+
+  // —— 增补交互冒烟(2026-11-22 新需求面;入口级断言,不改 daemon 数据) ——
+  it('添加网络抽屉:非法 ID 禁用提交,遮罩可关', async () => {
+    await browser.$('[data-testid="topbar-add-network"]').click();
+    await browser.$('[data-testid="add-network-drawer"]').waitForDisplayed({ timeout: 5000 });
+    await browser.$('[data-testid="add-network-drawer"] input').setValue('xyz');
+    const join = await browser.$('[data-testid="add-network-drawer"] .btn.primary');
+    expect(await join.getAttribute('disabled')).toBe('true');
+    await browser.$('.drawer-mask').click();
+    await browser.$('[data-testid="add-network-drawer"]').waitForDisplayed({ reverse: true });
+  });
+
+  it('添加行星抽屉:图标预览在位,未填名称禁用提交', async () => {
+    await browser.$('[data-testid="topbar-add-planet"]').click();
+    await browser.$('[data-testid="add-planet-drawer"]').waitForDisplayed({ timeout: 5000 });
+    await expect(browser.$('[data-testid="add-planet-drawer"] .planet-icon')).toBeDisplayed();
+    const add = await browser.$('[data-testid="add-planet-drawer"] .btn.primary');
+    expect(await add.getAttribute('disabled')).toBe('true');
+    await browser.$('.drawer-mask').click();
+    await browser.$('[data-testid="add-planet-drawer"]').waitForDisplayed({ reverse: true });
+  });
+
+  it('网络详情与行星设置入口(有数据时):卡片开详情/分组头⚙开设置', async () => {
+    // 前序用例可能把视图切到列表态(netview 存 localStorage),先归位卡片视图
+    await browser.$('.viewtoggle button[aria-label="cards"]').click();
+    const card = await browser.$('.netcards .netcard');
+    if (!(await card.isDisplayed())) return; // 无网络环境跳过详情部分
+    await card.click();
+    await browser.$('[data-testid="network-detail"]').waitForDisplayed({ timeout: 5000 });
+    await expect(browser.$('[data-testid="network-detail"] .kv .mono')).toBeDisplayed();
+    // 保存按钮关闭弹层(提交同值 setNetwork,无副作用;语言无关选择器)
+    await browser.$('[data-testid="network-detail"] .dialog-actions .btn.primary').click();
+    await browser.$('[data-testid="network-detail"]').waitForDisplayed({ reverse: true });
+    await browser.$('.pgroup-head .btn.icon').click(); // 分组头 ⚙
+    await browser.$('[data-testid="planet-settings"]').waitForDisplayed({ timeout: 5000 });
+    await expect(browser.$('[data-testid="planet-settings"] .kv .mono')).toBeDisplayed(); // World ID 行
+    await browser.$('[data-testid="planet-settings"] .dialog-actions .btn:not(.danger)').click(); // 关闭
+    await browser.$('[data-testid="planet-settings"]').waitForDisplayed({ reverse: true });
   });
 });
