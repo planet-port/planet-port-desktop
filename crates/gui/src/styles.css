@@ -244,3 +244,25 @@ select.input { cursor: pointer; }
 .id-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .btn.sm { padding: 2px 8px; font-size: 12px; }
 .share-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+
+/* ---- 行星图标体系(Task 12) ---- */
+.planet-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px; flex: none; color: #fff; font-size: 11px;
+}
+.planet-icon img { width: 60%; height: 60%; }
+.color-page { display: flex; align-items: center; gap: 12px; margin: 8px 0; flex-wrap: wrap; }
+.icon-grid {
+  display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px;
+  max-height: 240px; overflow-y: auto; margin: 8px 0;
+}
+.icon-grid button {
+  display: flex; align-items: center; justify-content: center; height: 32px;
+  border-radius: 6px; background: var(--panel); border: 1px solid var(--border);
+}
+.icon-grid button.active { border-color: var(--primary); }
+.icon-grid img { width: 20px; height: 20px; filter: brightness(0); opacity: 0.75; }
+[data-theme='dark'] .icon-grid img { filter: none; opacity: 1; }
+.color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; flex: 1; }
+.color-grid button { height: 26px; border-radius: 6px; border: 2px solid var(--border); }
+.color-grid button.active { border-color: var(--text); }

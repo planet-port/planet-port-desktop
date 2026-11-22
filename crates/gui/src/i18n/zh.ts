@@ -5,7 +5,9 @@ export default {
     saved: '已保存', empty: '暂无数据', close: '关闭',
     loadError: '加载失败',
     authError: '鉴权失败：token 与 daemon 不匹配，请检查 PLANET_PORT_TOKEN 或重装服务',
+    done: '完成',
   },
+  icon: { title: '选择图标', graphic: '图形', color: '底色', randomColor: '随机底色' },
   settings: {
     title: '设置', language: '语言', appearance: '外观', about: '关于', advanced: '高级',
     theme: { light: '浅色', dark: '深色', system: '跟随系统' },

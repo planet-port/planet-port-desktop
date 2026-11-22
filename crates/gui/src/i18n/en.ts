@@ -5,7 +5,9 @@ export default {
     saved: 'Saved', empty: 'No data', close: 'Close',
     loadError: 'Failed to load',
     authError: 'Authentication failed: token does not match the daemon. Check PLANET_PORT_TOKEN or reinstall the service',
+    done: 'Done',
   },
+  icon: { title: 'Choose Icon', graphic: 'Graphic', color: 'Color', randomColor: 'Random color' },
   settings: {
     title: 'Settings', language: 'Language', appearance: 'Appearance', about: 'About', advanced: 'Advanced',
     theme: { light: 'Light', dark: 'Dark', system: 'System' },
