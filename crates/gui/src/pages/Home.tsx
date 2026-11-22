@@ -11,13 +11,12 @@ import PlanetSettingsDialog from '../components/PlanetSettingsDialog';
 import QueryError from '../components/QueryError';
 import { useToast } from '../components/Toaster';
 
-/// 单页首页:行星分组头(状态/传输/计数) + 网络卡片流(卡片⇄列表,localStorage 记忆)。
+/// 单页首页:行星分组头(状态/传输/计数) + 网络卡片网格(方案C卡片,泊位灯)。
 /// 加入入口移至顶栏「添加网络」抽屉;卡片开关 = 禁用/启用(脱离保留配置/恢复),彻底删除走详情抽屉
 export default function Home() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const toast = useToast();
-  const [view, setView] = useState<'cards' | 'list'>(() => (localStorage.getItem('netview') === 'list' ? 'list' : 'cards'));
   const [editing, setEditing] = useState<NetworkEntry | null>(null);
   /// 行星设置弹层(分组头 ⚙);删除成功后 onDone 走全局失效
   const [editPlanet, setEditPlanet] = useState<PlanetStatus | null>(null);
@@ -73,21 +72,9 @@ export default function Home() {
     else if (row.status === 'DISABLED') enable.mutate(row);
     else rejoin.mutate(row);
   };
-  const switchView = (v: 'cards' | 'list') => {
-    setView(v);
-    localStorage.setItem('netview', v);
-  };
 
   return (
     <div className="page home">
-      <div className="toolbar">
-        <span className="grow" />
-        <div className="viewtoggle">
-          <button className={`btn ${view === 'cards' ? 'active' : ''}`} onClick={() => switchView('cards')} aria-label="cards">▤</button>
-          <button className={`btn ${view === 'list' ? 'active' : ''}`} onClick={() => switchView('list')} aria-label="list">☰</button>
-        </div>
-      </div>
-
       {status.isError ? (
         <QueryError error={status.error} />
       ) : planets.length === 0 ? (
@@ -117,39 +104,12 @@ export default function Home() {
               </header>
               {mine.length === 0 ? (
                 <div className="empty small">{t('home.noNetworks')}</div>
-              ) : view === 'cards' ? (
+              ) : (
                 <div className="netcards">
                   {mine.map(r => (
                     <NetworkCard key={`${r.planet}/${r.nwid}`} row={r} pending={toggling === `${r.planet}/${r.nwid}`} onOpen={setEditing} onToggle={onToggle} />
                   ))}
                 </div>
-              ) : (
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>{t('networks.id')}</th><th>{t('networks.name')}</th><th>{t('networks.statusLabel')}</th>
-                      <th>{t('networks.ips')}</th><th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mine.map(r => (
-                      <tr key={`${r.planet}/${r.nwid}`} onClick={() => setEditing(r)}>
-                        <td className="mono">{r.nwid}</td>
-                        <td>{r.name ?? '-'}</td>
-                        <td><span className={`badge ${r.status === 'OK' ? 'ok' : 'muted'}`}>{t(`networks.statusMap.${r.status}`, { defaultValue: r.status })}</span></td>
-                        <td className="mono small">{r.assignedAddrs.join(', ') || '-'}</td>
-                        <td>
-                          {toggling === `${r.planet}/${r.nwid}` ? (
-                            <span className="spinner" />
-                          ) : (
-                            <button className={`switch sm ${r.status === 'OK' ? 'on' : ''}`} role="switch" aria-checked={r.status === 'OK'}
-                              onClick={e => { e.stopPropagation(); onToggle(r); }} />
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               )}
             </section>
           );

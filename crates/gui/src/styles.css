@@ -16,6 +16,8 @@
   --ok: #19935a;
   --warn: #a97a0a;
   --off: #a5aab4;
+  --veil: #ffffff;
+  --lamp: #0d9488;
   --track: #d3d7de;
   --knob: #ffffff;
   --knob-on: #ffffff;
@@ -37,6 +39,8 @@
   --ok: #4ade80;
   --warn: #f5c147;
   --off: #525866;
+  --veil: rgba(255, 255, 255, 0.03);
+  --lamp: #5eead4;
   --track: #22262e;
   --knob: #98a0ac;
   --knob-on: #0c0e11;
@@ -248,65 +252,66 @@ select.input { cursor: pointer; }
   white-space: nowrap;
 }
 .pgroup-head .planet-icon { border-radius: 5px; }
-/* 网络列表:单列面板容器,行间 1px 分隔 */
+/* 网络卡片网格:方案C卡片——弱透明卡面+hairline 边框,泊位灯承载网络级状态 */
 .netcards {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
 }
 .netcard {
-  height: 40px;
   display: flex;
-  align-items: center;
-  padding: 0 14px 0 16px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--veil);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   cursor: pointer;
-  transition: background-color .12s ease;
+  transition: border-color .12s ease, background-color .12s ease;
 }
-.netcard + .netcard { border-top: 1px solid var(--border-soft); }
-.netcard:hover { background: var(--panel-2); outline: 1px solid var(--border-h); outline-offset: -1px; }
+.netcard:hover { border-color: var(--border-h); background: var(--panel-2); }
 .netcard.pending { opacity: 0.7; cursor: default; }
-.sdot { width: 6px; height: 6px; border-radius: 2px; background: var(--ok); flex: none; }
-.sdot.ok { background: var(--ok); }
+.netcard.is-off { opacity: 0.55; }
+/* 泊位灯:8px 圆角方灯,在线=青光带 4px glow(方案C母题,青仅此处使用) */
+.sdot { width: 8px; height: 8px; border-radius: 2px; background: var(--off); flex: none; }
+.sdot.ok { background: var(--lamp); box-shadow: 0 0 4px var(--lamp); }
 .sdot.warn { background: var(--warn); }
 .sdot.off { background: var(--off); }
+.netcard header { display: flex; align-items: center; gap: 10px; }
 .netcard .name {
-  margin-left: 10px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: none;
+  flex: 1;
 }
 .netcard.is-off .name { color: var(--muted); font-weight: 400; }
+.netcard-body { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
 .netcard .nwid {
-  margin-left: 12px;
   font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   font-size: 12px;
   line-height: 1;
   letter-spacing: .1px;
   color: var(--muted);
-  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .netcard .addr {
-  margin-left: 12px;
-  min-width: 0;
-  max-width: 170px;
+  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: .1px;
+  color: var(--text);
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
-  line-height: 1;
-  letter-spacing: .1px;
-  color: var(--muted);
 }
 .netcard .addr.is-blank { opacity: .45; }
-.netcard .badge { margin-left: 14px; flex: none; }
+.netcard .badge { margin-top: 2px; }
 /* 紧凑开关:32×18 轨道,28px 高点击区(background-clip 把轨道画进内容盒) */
 .switch {
   margin-left: 14px;
@@ -336,7 +341,6 @@ select.input { cursor: pointer; }
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.viewtoggle { display: flex; gap: 4px; }
 .dialog-wide { width: min(760px, calc(100vw - 40px)); }
 
 /* 设置抽屉(右侧弹层;遮罩点击关闭) */
