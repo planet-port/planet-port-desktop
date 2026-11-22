@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api, asError } from '../api/client';
 import { emptySlots, slotsToServers, slotsValid, type DnsSlots } from '../dns';
+import DrawerShell from './DrawerShell';
 import { useToast } from './Toaster';
 
 const isHex16 = (s: string) => /^[0-9a-fA-F]{16}$/.test(s);
@@ -52,54 +53,51 @@ export default function AddNetworkDrawer({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <>
-      <div className="drawer-mask" onClick={onClose} />
-      <aside className="drawer" data-testid="add-network-drawer">
-        <header>
-          <h3>{t('join.title')}</h3>
-          <button className="btn icon" onClick={onClose}>×</button>
-        </header>
-        <section className="drawer-section">
-          <h4>{t('networks.id')}</h4>
-          <input className="input mono" autoFocus placeholder={t('join.idPlaceholder')} value={nwid}
-            onChange={e => setNwid(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && idValid && dnsOk && !join.isPending && join.mutate()} />
-          {nwid.trim() !== '' && !idValid && <p className="field-error">{t('join.idInvalid')}</p>}
-        </section>
-        <section className="drawer-section">
-          <h4>{t('join.planet')}</h4>
-          <select className="input" value={planet} onChange={e => setPlanet(e.target.value)}>
-            <option value="">{t('join.defaultPlanet')}</option>
-            {planets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </section>
-        <section className="drawer-section">
-          <label className="field">
-            <input type="checkbox" checked={routeVia} onChange={e => setRouteVia(e.target.checked)} /> {t('join.routeVia')}
-          </label>
-          <p className="small hint">{t('join.routeViaFooter')}</p>
-        </section>
-        <section className="drawer-section">
-          <h4>DNS</h4>
-          <div className="seg">
-            {(['none', 'network', 'custom'] as const).map(m => (
-              <button key={m} className={dnsMode === m ? 'active' : ''} onClick={() => setDnsMode(m)}>{t(`dns.mode.${m}`)}</button>
+    <DrawerShell open onClose={onClose} testId="add-network-drawer">
+      <header>
+        <h3>{t('join.title')}</h3>
+        <button className="btn icon" aria-label={t('common.close')} onClick={onClose}>×</button>
+      </header>
+      <section className="drawer-section">
+        <h4>{t('networks.id')}</h4>
+        <input className="input mono" autoFocus placeholder={t('join.idPlaceholder')} value={nwid}
+          onChange={e => setNwid(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && idValid && dnsOk && !join.isPending && join.mutate()} />
+        {nwid.trim() !== '' && !idValid && <p className="field-error">{t('join.idInvalid')}</p>}
+      </section>
+      <section className="drawer-section">
+        <h4>{t('join.planet')}</h4>
+        <select className="input" value={planet} onChange={e => setPlanet(e.target.value)}>
+          <option value="">{t('join.defaultPlanet')}</option>
+          {planets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </section>
+      <section className="drawer-section">
+        <label className="field">
+          <input type="checkbox" checked={routeVia} onChange={e => setRouteVia(e.target.checked)} /> {t('join.routeVia')}
+        </label>
+        <p className="small hint">{t('join.routeViaFooter')}</p>
+      </section>
+      <section className="drawer-section">
+        <h4>DNS</h4>
+        <div className="seg">
+          {(['none', 'network', 'custom'] as const).map(m => (
+            <button key={m} className={dnsMode === m ? 'active' : ''} onClick={() => setDnsMode(m)}>{t(`dns.mode.${m}`)}</button>
+          ))}
+        </div>
+        {dnsMode === 'custom' && (
+          <div className="dns-slots">
+            {(['v4a', 'v4b', 'v6a', 'v6b'] as const).map(k => (
+              <input key={k} className="input mono" placeholder={t(`dns.${k}`)} value={slots[k]}
+                onChange={e => setSlots({ ...slots, [k]: e.target.value })} />
             ))}
+            {!dnsOk && <p className="field-error">{t('dns.invalid')}</p>}
           </div>
-          {dnsMode === 'custom' && (
-            <div className="dns-slots">
-              {(['v4a', 'v4b', 'v6a', 'v6b'] as const).map(k => (
-                <input key={k} className="input mono" placeholder={t(`dns.${k}`)} value={slots[k]}
-                  onChange={e => setSlots({ ...slots, [k]: e.target.value })} />
-              ))}
-              {!dnsOk && <p className="field-error">{t('dns.invalid')}</p>}
-            </div>
-          )}
-        </section>
-        <button className="btn primary" disabled={!idValid || !dnsOk || join.isPending} onClick={() => join.mutate()}>
-          {t('join.action')}
-        </button>
-      </aside>
-    </>
+        )}
+      </section>
+      <button className="btn primary" disabled={!idValid || !dnsOk || join.isPending} onClick={() => join.mutate()}>
+        {t('join.action')}
+      </button>
+    </DrawerShell>
   );
 }

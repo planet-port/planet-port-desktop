@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getVersion } from '@tauri-apps/api/app';
 import IdentitySection from './IdentitySection';
+import DrawerShell from './DrawerShell';
 import PeersDialog from './PeersDialog';
 import PlanetManager from './PlanetManager';
 import { setTheme, getTheme, type ThemeMode } from '../theme';
@@ -17,14 +18,12 @@ export default function SettingsDrawer({ open, onClose }: { open: boolean; onClo
   useEffect(() => {
     if (open && !version) void getVersion().then(setVersion).catch(() => setVersion('-'));
   }, [open, version]);
-  if (!open) return null;
   return (
     <>
-      <div className="drawer-mask" onClick={onClose} />
-      <aside className="drawer" data-testid="settings-drawer">
+      <DrawerShell open={open} onClose={onClose} testId="settings-drawer">
         <header>
           <h3>{t('settings.title')}</h3>
-          <button className="btn icon" onClick={onClose}>×</button>
+          <button className="btn icon" aria-label={t('common.close')} onClick={onClose}>×</button>
         </header>
         <IdentitySection />
         <section className="drawer-section">
@@ -61,7 +60,8 @@ export default function SettingsDrawer({ open, onClose }: { open: boolean; onClo
           <button className="btn" onClick={() => setLayer('planets')}>{t('settings.planetManager')}</button>
           <button className="btn" onClick={() => setLayer('peers')}>{t('settings.peers')}</button>
         </section>
-      </aside>
+      </DrawerShell>
+      {/* 行星管理/节点表与设置抽屉平级(DrawerShell 经 portal 挂 body):后挂者居上 */}
       {layer === 'planets' && <PlanetManager onClose={() => setLayer('none')} />}
       {layer === 'peers' && <PeersDialog onClose={() => setLayer('none')} />}
     </>

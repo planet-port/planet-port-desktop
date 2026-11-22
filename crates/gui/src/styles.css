@@ -283,3 +283,12 @@ select.input { cursor: pointer; }
 .link { background: none; border: none; padding: 2px 0; text-align: left; cursor: pointer; color: var(--text); width: fit-content; }
 .link.muted, .link:disabled { color: var(--muted); cursor: default; }
 .dialog-actions .grow { flex: 1; }
+
+/* ---- 抽屉开合动画(Task 19;250ms;jsdom/测试环境不跑 transition,内容常在) ---- */
+.drawer-mask.fade { opacity: 0; transition: opacity .25s ease; }
+.drawer-mask.fade.in { opacity: 1; }
+.drawer.slide { transform: translateX(100%); transition: transform .25s ease; }
+.drawer.slide.in { transform: translateX(0); }
+.drawer.wide { width: 480px; }
+/* 二维码分享壳迁入抽屉后取消定宽,保留居中排版 */
+.drawer .qr-sheet { width: auto; }

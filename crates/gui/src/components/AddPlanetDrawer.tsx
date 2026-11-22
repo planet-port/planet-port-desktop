@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { api, asError } from '../api/client';
 import { randomAnimal, randomColorHex } from '../icons/planetIcon';
+import DrawerShell from './DrawerShell';
 import IconPicker from './IconPicker';
 import PlanetIconView from './PlanetIconView';
 import { useToast } from './Toaster';
@@ -48,11 +49,10 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      <div className="drawer-mask" onClick={onClose} />
-      <aside className="drawer" data-testid="add-planet-drawer">
+      <DrawerShell open onClose={onClose} testId="add-planet-drawer">
         <header>
           <h3>{t('addplanet.title')}</h3>
-          <button className="btn icon" onClick={onClose}>×</button>
+          <button className="btn icon" aria-label={t('common.close')} onClick={onClose}>×</button>
         </header>
         <section className="drawer-section addplanet-preview">
           <button className="plain" aria-label={t('icon.title')} onClick={() => setShowPicker(true)}>
@@ -80,7 +80,8 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
         <button className="btn primary" disabled={!canAdd} onClick={() => add.mutate()}>
           {t('addplanet.action')}
         </button>
-      </aside>
+      </DrawerShell>
+      {/* 图标选择与添加行星抽屉平级(DrawerShell 经 portal 挂 body):后挂者居上 */}
       {showPicker && (
         <IconPicker
           animal={animal}

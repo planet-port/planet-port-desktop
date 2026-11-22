@@ -5,6 +5,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { api, asError } from '../api/client';
 import type { PlanetStatus } from '../api/types';
 import ConfirmDialog from './ConfirmDialog';
+import DrawerShell from './DrawerShell';
 import IconPicker from './IconPicker';
 import PlanetIconView from './PlanetIconView';
 import QRShareSheet from './QRShareSheet';
@@ -95,9 +96,12 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
 
   const d = detail.data;
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="dialog" data-testid="planet-settings" onClick={e => e.stopPropagation()}>
-        <h3>{t('planet.settingsTitle', { name: planet.name })}</h3>
+    <>
+      <DrawerShell open onClose={onClose} wide testId="planet-settings">
+        <header>
+          <h3>{t('planet.settingsTitle', { name: planet.name })}</h3>
+          <button className="btn icon" aria-label={t('common.close')} onClick={onClose}>×</button>
+        </header>
         <section className="detail-section addplanet-preview">
           <PlanetIconView icon={icon} color={color} name={name || planet.name} id={planet.id} size={56} />
           {custom && <button className="btn" onClick={() => setShowPicker(true)}>{t('icon.title')}</button>}
@@ -131,37 +135,39 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
             <button className="btn" onClick={() => void openQr()}>{t('planets.shareQr')}</button>
           </div>
         )}
-        {showPicker && (
-          <IconPicker
-            animal={icon}
-            color={color}
-            onSelect={(a, c) => {
-              setIcon(a);
-              setColor(c);
-            }}
-            onClose={() => setShowPicker(false)}
-          />
-        )}
-        <ConfirmDialog
-          open={confirmDel}
-          title={t('common.delete')}
-          message={planet.status === 'running'
-            ? t('planets.removeRunningConfirm', { name: planet.name })
-            : t('planets.removeConfirm', { name: planet.name })}
-          confirmLabel={t('common.delete')}
-          danger
-          onConfirm={() => remove.mutate()}
-          onCancel={() => setConfirmDel(false)}
+      </DrawerShell>
+      {/* 图标选择/确认框/二维码与设置抽屉平级(DrawerShell 经 portal 挂 body):避免嵌在
+          transform 抽屉内被裁剪,且后挂者居上 */}
+      {showPicker && (
+        <IconPicker
+          animal={icon}
+          color={color}
+          onSelect={(a, c) => {
+            setIcon(a);
+            setColor(c);
+          }}
+          onClose={() => setShowPicker(false)}
         />
-        {qrData && (
-          <QRShareSheet
-            title={t('planets.shareQrTitle', { name: planet.name })}
-            subtitle={t('planets.shareQrHint')}
-            data={qrData}
-            onDismiss={() => setQrData(null)}
-          />
-        )}
-      </div>
-    </div>
+      )}
+      <ConfirmDialog
+        open={confirmDel}
+        title={t('common.delete')}
+        message={planet.status === 'running'
+          ? t('planets.removeRunningConfirm', { name: planet.name })
+          : t('planets.removeConfirm', { name: planet.name })}
+        confirmLabel={t('common.delete')}
+        danger
+        onConfirm={() => remove.mutate()}
+        onCancel={() => setConfirmDel(false)}
+      />
+      {qrData && (
+        <QRShareSheet
+          title={t('planets.shareQrTitle', { name: planet.name })}
+          subtitle={t('planets.shareQrHint')}
+          data={qrData}
+          onDismiss={() => setQrData(null)}
+        />
+      )}
+    </>
   );
 }

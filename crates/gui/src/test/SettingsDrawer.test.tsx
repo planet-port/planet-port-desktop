@@ -60,8 +60,9 @@ describe('SettingsDrawer', () => {
   });
 
   it('open=false 不渲染', () => {
-    const { container } = renderDrawer({ open: false });
-    expect(container.querySelector('.drawer')).not.toBeInTheDocument();
+    renderDrawer({ open: false });
+    // DrawerShell 经 portal 挂 body,断言面向整个文档
+    expect(document.querySelector('.drawer')).not.toBeInTheDocument();
   });
 
   it('点深色立即落 data-theme=dark 且按钮高亮', () => {
@@ -76,8 +77,8 @@ describe('SettingsDrawer', () => {
 
   it('点遮罩关闭抽屉', () => {
     const onClose = vi.fn();
-    const { container } = renderDrawer({ onClose });
-    fireEvent.click(container.querySelector('.drawer-mask')!);
+    renderDrawer({ onClose });
+    fireEvent.click(document.querySelector('.drawer-mask')!);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

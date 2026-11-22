@@ -5,6 +5,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { api, asError } from '../api/client';
 import type { NetworkEntry } from '../api/types';
 import ConfirmDialog from './ConfirmDialog';
+import DrawerShell from './DrawerShell';
 import QRShareSheet from './QRShareSheet';
 import { useToast } from './Toaster';
 import { serversToSlots, slotsToServers, slotsValid, type DnsSlots } from '../dns';
@@ -68,84 +69,86 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
 
   return (
     <>
-      <div className="overlay" onClick={onClose}>
-        <div className="dialog dialog-wide" data-testid="network-detail" onClick={e => e.stopPropagation()}>
+      <DrawerShell open onClose={onClose} wide testId="network-detail">
+        <header>
           <h3>{t('networks.detailTitle', { name: row.name ?? row.nwid })}</h3>
-          <section className="detail-section">
-            <div className="kv"><span>{t('networks.id')}</span><span className="mono">{row.nwid}</span></div>
-            <div className="kv"><span>{t('networks.name')}</span><span>{row.name ?? '-'}</span></div>
-            <div className="kv">
-              <span>{t('networks.statusLabel')}</span>
-              <span className={`badge ${row.status === 'OK' ? 'ok' : 'muted'}`}>{t(`networks.statusMap.${row.status}`, { defaultValue: row.status })}</span>
-            </div>
-            <div className="kv"><span>{t('networks.type')}</span><span>{row.type}</span></div>
-            <div className="kv"><span>{t('networks.mac')}</span><span className="mono">{formatMac(row.mac)}</span></div>
-            <div className="kv"><span>{t('networks.mtu')}</span><span>{row.mtu}</span></div>
-          </section>
-          <section className="detail-section">
-            <h4>{t('networks.addrs')}</h4>
-            {row.assignedAddrs.length === 0 ? (
-              <span className="small">-</span>
-            ) : (
-              row.assignedAddrs.map(a => (
-                <button key={a} className="link mono" onClick={() => copy(a)}>{a}</button>
-              ))
-            )}
-          </section>
-          <section className="detail-section">
-            <h4>{t('networks.routes')}</h4>
-            {row.managedRoutes.map((r, i) => (
-              <button
-                key={`${r.target}/${r.via ?? ''}`}
-                className={`link mono ${r.via ? '' : 'muted'}`}
-                disabled={!r.via}
-                title={r.via ? t('networks.routeToggleHint') : t('networks.directRoute')}
-                onClick={() => toggleRoute(i, r.via)}
-              >
-                {expandedRoutes.has(i) && r.via ? `via ${r.via}` : r.target}
-              </button>
-            ))}
-          </section>
-          <section className="detail-section">
-            <h4>DNS</h4>
-            <div className="seg">
-              {(['none', 'network', 'custom'] as const).map(m => (
-                <button key={m} className={dnsMode === m ? 'active' : ''} onClick={() => setDnsMode(m)}>{t(`dns.mode.${m}`)}</button>
-              ))}
-            </div>
-            {dnsMode === 'custom' && (
-              <div className="dns-slots">
-                {(['v4a', 'v4b', 'v6a', 'v6b'] as const).map(k => (
-                  <input key={k} className="input mono" placeholder={t(`dns.${k}`)} value={slots[k]}
-                    onChange={e => setSlots({ ...slots, [k]: e.target.value })} />
-                ))}
-                {!dnsOk && <p className="field-error">{t('dns.invalid')}</p>}
-              </div>
-            )}
-          </section>
-          <section className="detail-section">
-            <label className="field">
-              <input type="checkbox" checked={routeVia} disabled={row.routeViaLocked}
-                onChange={e => setRouteVia(e.target.checked)} /> {t('join.routeVia')}
-            </label>
-            <p className="small hint">{row.routeViaLocked ? t('networks.routeViaLocked') : t('join.routeViaFooter')}</p>
-          </section>
-          <div className="share-row">
-            <span className="mono small">{row.nwid}</span>
-            <button className="btn" onClick={() => copy(row.nwid)}>{t('networks.copyId')}</button>
-            <button className="btn" onClick={() => setShowQR(true)}>{t('networks.qr')}</button>
+          <button className="btn icon" aria-label={t('common.close')} onClick={onClose}>×</button>
+        </header>
+        <section className="detail-section">
+          <div className="kv"><span>{t('networks.id')}</span><span className="mono">{row.nwid}</span></div>
+          <div className="kv"><span>{t('networks.name')}</span><span>{row.name ?? '-'}</span></div>
+          <div className="kv">
+            <span>{t('networks.statusLabel')}</span>
+            <span className={`badge ${row.status === 'OK' ? 'ok' : 'muted'}`}>{t(`networks.statusMap.${row.status}`, { defaultValue: row.status })}</span>
           </div>
-          <div className="dialog-actions">
-            <button className="btn danger" onClick={() => setConfirmDel(true)}>{t('networks.deleteNetwork')}</button>
-            <span className="grow" />
-            <button className="btn" onClick={onClose}>{t('common.cancel')}</button>
-            <button className="btn primary" disabled={!dnsOk || saveSettings.isPending} onClick={() => saveSettings.mutate()}>
-              {t('common.save')}
+          <div className="kv"><span>{t('networks.type')}</span><span>{row.type}</span></div>
+          <div className="kv"><span>{t('networks.mac')}</span><span className="mono">{formatMac(row.mac)}</span></div>
+          <div className="kv"><span>{t('networks.mtu')}</span><span>{row.mtu}</span></div>
+        </section>
+        <section className="detail-section">
+          <h4>{t('networks.addrs')}</h4>
+          {row.assignedAddrs.length === 0 ? (
+            <span className="small">-</span>
+          ) : (
+            row.assignedAddrs.map(a => (
+              <button key={a} className="link mono" onClick={() => copy(a)}>{a}</button>
+            ))
+          )}
+        </section>
+        <section className="detail-section">
+          <h4>{t('networks.routes')}</h4>
+          {row.managedRoutes.map((r, i) => (
+            <button
+              key={`${r.target}/${r.via ?? ''}`}
+              className={`link mono ${r.via ? '' : 'muted'}`}
+              disabled={!r.via}
+              title={r.via ? t('networks.routeToggleHint') : t('networks.directRoute')}
+              onClick={() => toggleRoute(i, r.via)}
+            >
+              {expandedRoutes.has(i) && r.via ? `via ${r.via}` : r.target}
             </button>
+          ))}
+        </section>
+        <section className="detail-section">
+          <h4>DNS</h4>
+          <div className="seg">
+            {(['none', 'network', 'custom'] as const).map(m => (
+              <button key={m} className={dnsMode === m ? 'active' : ''} onClick={() => setDnsMode(m)}>{t(`dns.mode.${m}`)}</button>
+            ))}
           </div>
+          {dnsMode === 'custom' && (
+            <div className="dns-slots">
+              {(['v4a', 'v4b', 'v6a', 'v6b'] as const).map(k => (
+                <input key={k} className="input mono" placeholder={t(`dns.${k}`)} value={slots[k]}
+                  onChange={e => setSlots({ ...slots, [k]: e.target.value })} />
+              ))}
+              {!dnsOk && <p className="field-error">{t('dns.invalid')}</p>}
+            </div>
+          )}
+        </section>
+        <section className="detail-section">
+          <label className="field">
+            <input type="checkbox" checked={routeVia} disabled={row.routeViaLocked}
+              onChange={e => setRouteVia(e.target.checked)} /> {t('join.routeVia')}
+          </label>
+          <p className="small hint">{row.routeViaLocked ? t('networks.routeViaLocked') : t('join.routeViaFooter')}</p>
+        </section>
+        <div className="share-row">
+          <span className="mono small">{row.nwid}</span>
+          <button className="btn" onClick={() => copy(row.nwid)}>{t('networks.copyId')}</button>
+          <button className="btn" onClick={() => setShowQR(true)}>{t('networks.qr')}</button>
         </div>
-      </div>
-      {/* QRShareSheet 与详情弹层的 overlay 平级:点二维码遮罩只收二维码,不冒泡关闭详情 */}
+        <div className="dialog-actions">
+          <button className="btn danger" onClick={() => setConfirmDel(true)}>{t('networks.deleteNetwork')}</button>
+          <span className="grow" />
+          <button className="btn" onClick={onClose}>{t('common.cancel')}</button>
+          <button className="btn primary" disabled={!dnsOk || saveSettings.isPending} onClick={() => saveSettings.mutate()}>
+            {t('common.save')}
+          </button>
+        </div>
+      </DrawerShell>
+      {/* QRShareSheet/确认框与详情抽屉平级(DrawerShell 经 portal 挂 body):
+          点二维码遮罩只收二维码,不冒泡关闭详情 */}
       {showQR && (
         <QRShareSheet
           title={t('networks.qrTitle')}

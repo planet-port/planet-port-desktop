@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as QRCode from 'qrcode';
+import DrawerShell from './DrawerShell';
 import { encodeFrames, QRTooLargeError } from '../ztp/frames';
 
 /// 二维码分享弹层:单帧静态直出保存按钮;多帧轮播(速度四档+手动切换),
@@ -62,9 +63,12 @@ export default function QRShareSheet({
   }, [manual, speed, frames, urls.length]);
 
   return (
-    <div className="overlay" onClick={onDismiss}>
-      <div className="dialog qr-sheet" onClick={e => e.stopPropagation()}>
+    <DrawerShell open onClose={onDismiss} width={380}>
+      <header>
         <h3>{title}</h3>
+        <button className="btn icon" aria-label={t('common.close')} onClick={onDismiss}>×</button>
+      </header>
+      <div className="qr-sheet">
         {subtitle && <p className="small">{subtitle}</p>}
         {frames === null ? (
           <div className="empty">{t('qrtransfer.tooLarge')}</div>
@@ -104,6 +108,6 @@ export default function QRShareSheet({
           </>
         )}
       </div>
-    </div>
+    </DrawerShell>
   );
 }

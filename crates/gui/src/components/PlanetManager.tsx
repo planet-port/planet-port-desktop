@@ -5,6 +5,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { api, asError } from '../api/client';
 import type { PlanetStatus } from '../api/types';
 import ConfirmDialog from './ConfirmDialog';
+import DrawerShell from './DrawerShell';
 import QRShareSheet from './QRShareSheet';
 import QueryError from './QueryError';
 import { useToast } from './Toaster';
@@ -81,9 +82,12 @@ export default function PlanetManager({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="dialog dialog-wide" onClick={e => e.stopPropagation()}>
-        <h3>{t('planets.managerTitle')}</h3>
+    <>
+      <DrawerShell open onClose={onClose} wide>
+        <header>
+          <h3>{t('planets.managerTitle')}</h3>
+          <button className="btn icon" aria-label={t('common.close')} onClick={onClose}>×</button>
+        </header>
         <div className="toolbar">
           <input className="input grow" placeholder={t('planets.sourcePlaceholder')} value={source} onChange={e => setSource(e.target.value)} />
           <button className="btn primary" disabled={!source.trim() || importP.isPending} onClick={() => importP.mutate()}>
@@ -139,30 +143,32 @@ export default function PlanetManager({ onClose }: { onClose: () => void }) {
         <div className="dialog-actions">
           <button className="btn" onClick={onClose}>{t('common.close')}</button>
         </div>
-        <ConfirmDialog
-          open={pendingRemove !== null}
-          title={t('common.delete')}
-          message={pendingRemove ? removeMessage(pendingRemove) : ''}
-          confirmLabel={t('common.delete')}
-          danger
-          onConfirm={() => {
-            if (pendingRemove) remove.mutate(pendingRemove.id);
-            setPendingRemove(null);
+      </DrawerShell>
+      {/* 确认框/二维码与行星管理抽屉平级(DrawerShell 经 portal 挂 body):避免嵌在
+          transform 抽屉内被裁剪,且后挂者居上 */}
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        title={t('common.delete')}
+        message={pendingRemove ? removeMessage(pendingRemove) : ''}
+        confirmLabel={t('common.delete')}
+        danger
+        onConfirm={() => {
+          if (pendingRemove) remove.mutate(pendingRemove.id);
+          setPendingRemove(null);
+        }}
+        onCancel={() => setPendingRemove(null)}
+      />
+      {qrPlanet && qrData && (
+        <QRShareSheet
+          title={t('planets.shareQrTitle', { name: qrPlanet.name })}
+          subtitle={t('planets.shareQrHint')}
+          data={qrData}
+          onDismiss={() => {
+            setQrPlanet(null);
+            setQrData(null);
           }}
-          onCancel={() => setPendingRemove(null)}
         />
-        {qrPlanet && qrData && (
-          <QRShareSheet
-            title={t('planets.shareQrTitle', { name: qrPlanet.name })}
-            subtitle={t('planets.shareQrHint')}
-            data={qrData}
-            onDismiss={() => {
-              setQrPlanet(null);
-              setQrData(null);
-            }}
-          />
-        )}
-      </div>
-    </div>
+      )}
+    </>
   );
 }
