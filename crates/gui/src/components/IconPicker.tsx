@@ -18,10 +18,9 @@ export default function IconPicker({ animal, color, onSelect, onClose }: {
   const [a, setA] = useState(animal);
   const [c, setC] = useState(color);
   return (
-    <DrawerShell open={open} onClose={close} onClosed={onClose} wide>
+    <DrawerShell open={open} onClose={close} onClosed={onClose}>
       <header>
         <h3>{t('icon.title')}</h3>
-        <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>
       </header>
       <div className="seg">
         <button className={tab === 'graphic' ? 'active' : ''} onClick={() => setTab('graphic')}>{t('icon.graphic')}</button>

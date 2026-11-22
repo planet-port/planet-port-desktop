@@ -20,7 +20,7 @@ export default function PeersDialog({ planet, onClose }: { planet?: string; onCl
   });
   const rows = q.data?.peers ?? [];
   return (
-    <DrawerShell open={open} onClose={close} onClosed={onClose} wide testId="peers-dialog">
+    <DrawerShell open={open} onClose={close} onClosed={onClose} testId="peers-dialog">
       <header>
         <h3>{t('peers.title')}</h3>
       </header>

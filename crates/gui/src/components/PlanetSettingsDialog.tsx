@@ -124,7 +124,7 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
   const d = detail.data;
   return (
     <>
-      <DrawerShell open={open} onClose={close} onClosed={onClose} wide testId="planet-settings">
+      <DrawerShell open={open} onClose={close} onClosed={onClose} testId="planet-settings">
         <header>
           <h3>{t('planet.settingsTitle', { name: planet.name })}</h3>
         </header>

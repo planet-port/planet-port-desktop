@@ -1,6 +1,11 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import DrawerShell from '../components/DrawerShell';
+import { initTestI18n } from './i18n';
+
+beforeAll(async () => {
+  await initTestI18n('zh');
+});
 
 /// jsdom 不跑 CSS transition,开合动画的挂载/卸载时序由定时器承载,
 /// 用 fake timers 精确推进 16ms(进)/250ms(出)两个节点
@@ -132,19 +137,63 @@ describe('DrawerShell', () => {
     expect(screen.getByTestId('shell')).toBeInTheDocument();
   });
 
-  it('wide 加宽档,width 内联覆盖默认宽', () => {
+  it('右上角统一渲染关闭按钮,点击触发 onClose', () => {
+    const onClose = vi.fn();
+    render(
+      <DrawerShell open onClose={onClose} testId="shell">
+        <p>抽屉内容</p>
+      </DrawerShell>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('多层抽屉按挂载序取层号 --stack:首个 0,第二个 1(右偏层叠)', async () => {
+    render(
+      <>
+        <DrawerShell open onClose={() => {}} testId="first">
+          <p>第一层</p>
+        </DrawerShell>
+        <DrawerShell open onClose={() => {}} testId="second">
+          <p>第二层</p>
+        </DrawerShell>
+      </>,
+    );
+    // MutationObserver 回调在 microtask 后触发,flush 后层号落位
+    await act(async () => {});
+    expect(screen.getByTestId('first').style.getPropertyValue('--stack')).toBe('0');
+    expect(screen.getByTestId('second').style.getPropertyValue('--stack')).toBe('1');
+  });
+
+  it('上层抽屉卸载后,下层层号回落(层叠重排)', async () => {
     const { rerender } = render(
-      <DrawerShell open onClose={() => {}} testId="shell" wide>
-        <p>抽屉内容</p>
-      </DrawerShell>,
+      <>
+        <DrawerShell open onClose={() => {}} testId="first">
+          <p>第一层</p>
+        </DrawerShell>
+        <DrawerShell open onClose={() => {}} testId="second">
+          <p>第二层</p>
+        </DrawerShell>
+      </>,
     );
-    expect(screen.getByTestId('shell')).toHaveClass('wide');
+    await act(async () => {});
+    expect(screen.getByTestId('second').style.getPropertyValue('--stack')).toBe('1');
+    // 关闭第二层:250ms 动画期仍占位,卸载后第一层回落 0
     rerender(
-      <DrawerShell open onClose={() => {}} testId="shell" width={320}>
-        <p>抽屉内容</p>
-      </DrawerShell>,
+      <>
+        <DrawerShell open onClose={() => {}} testId="first">
+          <p>第一层</p>
+        </DrawerShell>
+        <DrawerShell open={false} onClose={() => {}} testId="second">
+          <p>第二层</p>
+        </DrawerShell>
+      </>,
     );
-    expect(screen.getByTestId('shell')).not.toHaveClass('wide');
-    expect(screen.getByTestId('shell')).toHaveStyle({ width: '320px' });
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    await act(async () => {});
+    expect(screen.queryByTestId('second')).not.toBeInTheDocument();
+    expect(screen.getByTestId('first').style.getPropertyValue('--stack')).toBe('0');
   });
 });

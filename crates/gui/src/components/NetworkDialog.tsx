@@ -107,7 +107,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
 
   return (
     <>
-      <DrawerShell open={open} onClose={close} onClosed={onClose} wide testId="network-detail">
+      <DrawerShell open={open} onClose={close} onClosed={onClose} testId="network-detail">
         <header>
           <h3>{t('networks.detailTitle', { name: row.name ?? row.nwid })}</h3>
         </header>

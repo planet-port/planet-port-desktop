@@ -67,7 +67,7 @@ export default function QRShareSheet({
   }, [manual, speed, frames, urls.length]);
 
   return (
-    <DrawerShell open={open} onClose={close} onClosed={onDismiss} width={380}>
+    <DrawerShell open={open} onClose={close} onClosed={onDismiss}>
       <header>
         <h3>{title}</h3>
         <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>

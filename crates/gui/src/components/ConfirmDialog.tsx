@@ -16,7 +16,7 @@ interface Props {
 export default function ConfirmDialog({ open, title, message, confirmLabel, danger, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   return (
-    <DrawerShell open={open} onClose={onCancel} width={320} testId="confirm-dialog">
+    <DrawerShell open={open} onClose={onCancel} testId="confirm-dialog">
       <header>
         <h3>{title}</h3>
         <button className="btn icon" aria-label={t('common.close')} onClick={onCancel}>×</button>

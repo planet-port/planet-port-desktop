@@ -368,14 +368,27 @@ select.input { cursor: pointer; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .dialog-wide { width: min(760px, calc(100vw - 40px)); }
 
-/* 设置抽屉(右侧弹层;遮罩点击关闭) */
-.drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.25); z-index: 30; }
+/* 设置抽屉(右侧弹层;遮罩点击关闭)。宽度统一 360(「添加行星服务器」口径);
+   --stack 层号来自 DrawerShell:多层抽屉每深一层右偏 44px,露出下层右缘
+   (被本层遮罩压暗)形成层叠,可直观看到当前叠了几层 */
+.drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.25); z-index: calc(30 + var(--stack, 0)); }
 .drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: 360px; z-index: 31;
+  position: fixed; top: 0; right: calc(var(--stack, 0) * 44px); bottom: 0; width: 360px;
+  z-index: calc(31 + var(--stack, 0));
   background: var(--panel-2); border-left: 1px solid var(--border);
   padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+  box-shadow: -8px 0 24px rgba(0,0,0,0.12);
 }
-.drawer header { display: flex; align-items: center; justify-content: space-between; }
+.drawer header { display: flex; align-items: center; justify-content: space-between; padding-right: 30px; }
+/* 抽屉右上角关闭按钮(壳统一渲染):muted 图形钮,hover 面底提亮 */
+.drawer-close {
+  position: absolute; top: 10px; right: 10px;
+  width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; padding: 0;
+  font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer;
+  transition: background-color .12s ease, color .12s ease;
+}
+.drawer-close:hover { background: var(--panel); color: var(--text); }
 .drawer h3 { margin: 0; font-size: 14px; font-weight: 500; }
 .drawer-section { border-top: 1px solid var(--border); padding: 12px 0; display: flex; flex-direction: column; gap: 8px; }
 .drawer-section h4 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 500; }
@@ -506,7 +519,6 @@ button.kv:hover .chev { color: var(--muted); }
 .drawer-mask.fade.in { opacity: 1; }
 .drawer.slide { transform: translateX(100%); transition: transform .25s ease; }
 .drawer.slide.in { transform: translateX(0); }
-.drawer.wide { width: 480px; }
 /* 关闭动画期(撤 in 后 250ms)遮罩/抽屉不可交互,防窗口内误触(如确认框双击) */
 .drawer-mask.fade:not(.in), .drawer.slide:not(.in) { pointer-events: none; }
 /* 二维码分享壳迁入抽屉后取消定宽,保留居中排版 */

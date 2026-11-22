@@ -87,7 +87,7 @@ export default function PlanetManager({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      <DrawerShell open={open} onClose={close} onClosed={onClose} wide>
+      <DrawerShell open={open} onClose={close} onClosed={onClose}>
         <header>
           <h3>{t('planets.managerTitle')}</h3>
           <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>
