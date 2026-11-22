@@ -162,7 +162,7 @@ fn import(
                 rust_i18n::t!("cli.identity.needForce", old = old).to_string(),
             ));
         }
-        let ans = ask(&rust_i18n::t!("cli.identity.confirmOverwrite", old = old).to_string());
+        let ans = ask(rust_i18n::t!("cli.identity.confirmOverwrite", old = old).as_ref());
         if !ans.eq_ignore_ascii_case("y") && !ans.eq_ignore_ascii_case("yes") {
             println!("{}", rust_i18n::t!("cli.identity.cancelled"));
             return Ok(());
@@ -180,7 +180,7 @@ fn import(
                 ));
             }
             loop {
-                let ans = ask(&rust_i18n::t!("cli.identity.chooseMode").to_string());
+                let ans = ask(rust_i18n::t!("cli.identity.chooseMode").as_ref());
                 match ans.as_str() {
                     "1" => break IdentityMode::Shared,
                     "2" => break IdentityMode::Independent,
@@ -197,13 +197,13 @@ fn import(
         if let Some(cur) = cur.filter(|c| *c != official_node) {
             let name = pre["matchingPlanet"]["name"].as_str().unwrap_or("-");
             loop {
-                let ans = ask(&rust_i18n::t!(
+                let ans = ask(rust_i18n::t!(
                     "cli.identity.choosePlanetIdentity",
                     name = name,
                     old = cur,
                     new = official_node
                 )
-                .to_string());
+                .as_ref());
                 match ans.as_str() {
                     "1" => {
                         planet_official = true;

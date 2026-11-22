@@ -229,32 +229,6 @@ fn plan_layout(prev_real: bool, link_ok: bool) -> LayoutPlan {
     }
 }
 
-#[cfg(test)]
-mod layout_tests {
-    use super::*;
-
-    #[test]
-    fn fresh_when_nothing_installed() {
-        assert_eq!(plan_layout(false, false), LayoutPlan::Fresh);
-    }
-
-    #[test]
-    fn migrate_from_legacy_real_file() {
-        assert_eq!(plan_layout(true, false), LayoutPlan::Migrate);
-    }
-
-    #[test]
-    fn inplace_when_cli_entry_is_symlink() {
-        assert_eq!(plan_layout(false, true), LayoutPlan::InPlace);
-    }
-
-    #[test]
-    fn link_wins_over_legacy() {
-        // 软链已就位时即使误判有真实文件也走 InPlace(软链存在则真实文件必已迁走)
-        assert_eq!(plan_layout(true, true), LayoutPlan::InPlace);
-    }
-}
-
 // ---- 子命令实现 ----
 
 fn status(json: bool) -> Result<(), CliError> {
@@ -321,4 +295,30 @@ fn status(json: bool) -> Result<(), CliError> {
     // 不在线诊断留给平台实现,不在线 = 异常态,退出码 3(与 CLI 的 Offline 语义一致)
     platform::offline_diag();
     std::process::exit(3);
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    #[test]
+    fn fresh_when_nothing_installed() {
+        assert_eq!(plan_layout(false, false), LayoutPlan::Fresh);
+    }
+
+    #[test]
+    fn migrate_from_legacy_real_file() {
+        assert_eq!(plan_layout(true, false), LayoutPlan::Migrate);
+    }
+
+    #[test]
+    fn inplace_when_cli_entry_is_symlink() {
+        assert_eq!(plan_layout(false, true), LayoutPlan::InPlace);
+    }
+
+    #[test]
+    fn link_wins_over_legacy() {
+        // 软链已就位时即使误判有真实文件也走 InPlace(软链存在则真实文件必已迁走)
+        assert_eq!(plan_layout(true, true), LayoutPlan::InPlace);
+    }
 }
