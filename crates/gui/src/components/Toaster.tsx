@@ -1,33 +1,22 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { Toaster as ToastLayer, pushToast } from './ui-x/Toaster';
 
-interface Toast {
-  id: number;
-  kind: 'ok' | 'error';
-  text: string;
-}
+/// 全局 toast 薄层:useToast()/ToastProvider 对外签名与原实现一致(消费方
+/// 零改动),入队与渲染全部下沉到 ui-x/Toaster(sonner 封装)。
 
 const Ctx = createContext<{ ok: (t: string) => void; error: (t: string) => void }>({ ok: () => {}, error: () => {} });
 
 export const useToast = () => useContext(Ctx);
 
-export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [items, setItems] = useState<Toast[]>([]);
-  const seq = useRef(0);
-  const push = useCallback((kind: 'ok' | 'error', text: string) => {
-    const id = ++seq.current;
-    setItems(v => [...v, { id, kind, text }]);
-    setTimeout(() => setItems(v => v.filter(i => i.id !== id)), 4000);
-  }, []);
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const value = useMemo(
+    () => ({ ok: (t: string) => pushToast('ok', t), error: (t: string) => pushToast('error', t) }),
+    [],
+  );
   return (
-    <Ctx.Provider value={useMemo(() => ({ ok: t => push('ok', t), error: t => push('error', t) }), [push])}>
+    <Ctx.Provider value={value}>
       {children}
-      <div className="toasts">
-        {items.map(i => (
-          <div key={i.id} className={`toast ${i.kind}`}>
-            {i.text}
-          </div>
-        ))}
-      </div>
+      <ToastLayer />
     </Ctx.Provider>
   );
 }
