@@ -11,7 +11,9 @@ import SetupWizard from './SetupWizard';
 const INSTALL_URL = 'https://api.github.com/repos/planet-port/planet-port-desktop/contents/scripts';
 
 /// 离线引导双态:bundle 内嵌安装资源且需要安装/升级 → 自动安装区置顶(手动命令折叠为后备);
-/// 无内嵌资源(dev 或未组包)→ 维持纯手动引导
+/// 无内嵌资源(dev 或未组包)→ 维持纯手动引导。
+/// 旧 .guide 系规则对译:根自承滚动(视口已锁死)+ 720px 上限、h2 15px/500、
+/// details 10px 上距、summary 手型、灰注文字、命令双列网格 320px auto-fill
 export default function OfflineGuide({ installed }: { installed: boolean }) {
   const { t } = useTranslation();
   const os = useMemo(detectOs, []);
@@ -31,27 +33,30 @@ export default function OfflineGuide({ installed }: { installed: boolean }) {
 
   const manual = (
     <>
-      <h2>{installed ? t('guide.titleInstalled') : t('guide.titleNotInstalled')}</h2>
-      <p className="muted">{win ? t('guide.windowsNote') : t('guide.unixNote')}</p>
+      <h2 className="mb-1 mt-2 text-[15px] font-medium">
+        {installed ? t('guide.titleInstalled') : t('guide.titleNotInstalled')}
+      </h2>
+      <p className="text-muted-foreground">{win ? t('guide.windowsNote') : t('guide.unixNote')}</p>
       <CmdBlock
         label={installed ? t('guide.start') : t('guide.hintNotInstalled')}
         cmd={installed ? `${sudo}planet-port service start` : installCmd}
       />
-      <div className="cmd-grid">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-x-[18px] gap-y-1">
         <CmdBlock label={t('guide.status')} cmd={`planet-port service status`} />
         <CmdBlock label={t('guide.logs')} cmd={`planet-port service logs`} />
         <CmdBlock label={t('guide.stop')} cmd={`${sudo}planet-port service stop`} />
       </div>
-      <p className="muted">{t('guide.retried')}</p>
+      <p className="text-muted-foreground">{t('guide.retried')}</p>
     </>
   );
 
-  if (!auto || manifest === null) return <div className="guide">{manual}</div>;
+  if (!auto || manifest === null)
+    return <div className="max-w-[720px] flex-1 overflow-y-auto">{manual}</div>;
   return (
-    <div className="guide">
+    <div className="max-w-[720px] flex-1 overflow-y-auto">
       <SetupWizard manifest={manifest} installed={installed} sudo={sudo} />
-      <details>
-        <summary className="muted">{t('guide.manualTitle')}</summary>
+      <details className="mt-2.5">
+        <summary className="cursor-pointer text-muted-foreground">{t('guide.manualTitle')}</summary>
         {manual}
       </details>
     </div>

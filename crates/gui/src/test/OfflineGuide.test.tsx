@@ -73,9 +73,10 @@ describe('OfflineGuide 双态', () => {
     expect(btn).toHaveTextContent('立即安装');
     expect(screen.getByText(/0\.5\.0/)).toBeInTheDocument(); // 版本说明插值
     // 手动命令退到折叠区(details/summary),不与自动安装区并排裸露
+    // (CmdBlock 终端块经 Tailwind 化后无 .cmd-body 类,锚定 pre 元素)
     expect(screen.getByText('手动安装命令')).toBeInTheDocument();
     const details = container.querySelector('details');
-    expect(details?.querySelector('.cmd-body')).not.toBeNull();
+    expect(details?.querySelector('pre')).not.toBeNull();
   });
 
   it('已装场景(无已装版本号):按钮文案「升级」', async () => {

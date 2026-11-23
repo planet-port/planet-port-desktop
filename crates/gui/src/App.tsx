@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
+import { Settings } from 'lucide-react';
 import { api } from './api/client';
 import logo from './assets/icon-1024.png';
 import AddNetworkDrawer from './components/AddNetworkDrawer';
 import AddPlanetDrawer from './components/AddPlanetDrawer';
 import SettingsDrawer from './components/SettingsDrawer';
-import GearIcon from './components/GearIcon';
 import Statusbar from './components/Statusbar';
 import { useToast } from './components/Toaster';
 import Home from './pages/Home';
 import OfflineGuide from './pages/OfflineGuide';
 import { detectOs } from './platform';
+import { cn } from '@/lib/utils';
 
 /// 顶栏抽屉状态机:三入口(添加网络/添加行星/设置)同一时刻仅开一个。
 /// 添加网络入口已从顶栏按钮移至首页卡片尾的空卡,planet 为空 = 默认行星
@@ -54,24 +55,51 @@ export default function App() {
   }, [toast]);
 
   return (
-    <div className="app app-single">
+    <div className="flex h-screen flex-col">
       {!online ? (
         <OfflineGuide installed={installed} />
       ) : (
-        <main className="main">
+        <main className="flex min-w-0 flex-1 flex-col">
           {/* 标题栏(方案 C 布局):[灯位留白] logo · 应用名 │ 在线 …… 动作组。
-              非交互子元素同样标注 drag-region —— Tauri 只认 mousedown 目标元素 */}
-          <header className={`topbar ${mac ? 'mac' : ''}`} data-tauri-drag-region>
-            <img src={logo} alt="logo" className="app-logo" data-tauri-drag-region />
-            <span className="app-title" data-tauri-drag-region>Planet Port</span>
-            <span className="tb-sep" data-tauri-drag-region aria-hidden="true" />
-            <span className="tb-online" data-tauri-drag-region>
-              <span className={`dot ${online ? 'on' : 'off'}`} />
+              非交互子元素同样标注 drag-region —— Tauri 只认 mousedown 目标元素。
+              旧 .topbar/.tb-sep/.tb-online/.dot/.tb-act/.plain 规则对译:52px 恒定高
+              与 --bg 同底 + hairline 下边、mac 96px 灯位、动作钮透明底 hover 显面 */}
+          <header
+            className={cn(
+              'flex h-[52px] shrink-0 items-center justify-start gap-2.5 border-b border-[var(--border-soft)] bg-background pr-3.5 pl-5 text-muted-foreground',
+              mac && 'pl-24',
+            )}
+            data-tauri-drag-region
+          >
+            <img src={logo} alt="logo" className="h-[22px] w-[22px] flex-none rounded-[5px]" data-tauri-drag-region />
+            <span className="whitespace-nowrap text-[15px] font-semibold tracking-[0.2px] text-foreground" data-tauri-drag-region>
+              Planet Port
+            </span>
+            <span className="ml-4 h-4 w-px flex-none bg-[var(--border-h)]" data-tauri-drag-region aria-hidden="true" />
+            <span className="inline-flex items-center gap-[7px] text-xs text-muted-foreground" data-tauri-drag-region>
+              <span
+                className={`inline-block h-1.5 w-1.5 flex-none rounded-[2px] ${
+                  online ? 'bg-[var(--ok)]' : 'bg-[var(--off)]'
+                }`}
+              />
               {online ? t('daemon.online') : t('daemon.offline')}
             </span>
-            <span className="grow" data-tauri-drag-region />
-            <button className="tb-act" data-testid="topbar-add-planet" onClick={() => setDrawer({ kind: 'addPlanet' })}>{t('home.addPlanet')}</button>
-            <button className="plain" data-testid="topbar-settings" aria-label={t('settings.title')} onClick={() => setDrawer({ kind: 'settings' })}><GearIcon /></button>
+            <span className="flex-[1_1_auto]" data-tauri-drag-region />
+            <button
+              className="inline-flex min-h-7 cursor-pointer items-center gap-1.5 rounded-[6px] border-none bg-transparent px-2.5 text-[13px] text-muted-foreground transition-[background-color,color] duration-[120ms] ease-[ease] enabled:hover:bg-card enabled:hover:text-foreground focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1"
+              data-testid="topbar-add-planet"
+              onClick={() => setDrawer({ kind: 'addPlanet' })}
+            >
+              {t('home.addPlanet')}
+            </button>
+            <button
+              className="inline-flex min-h-7 min-w-7 cursor-pointer items-center justify-center rounded-[6px] border-none bg-transparent p-0 text-muted-foreground transition-[background-color,color] duration-[120ms] ease-[ease] enabled:hover:bg-card enabled:hover:text-foreground focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1"
+              data-testid="topbar-settings"
+              aria-label={t('settings.title')}
+              onClick={() => setDrawer({ kind: 'settings' })}
+            >
+              <Settings size={14} strokeWidth={1.6} aria-hidden="true" />
+            </button>
           </header>
           <Home onAddNetwork={planet => setDrawer({ kind: 'addNet', planet })} />
           <Statusbar />

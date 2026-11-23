@@ -72,7 +72,9 @@ const buttonVariants = cva(
   },
 );
 
-type ButtonProps = ComponentProps<typeof ButtonPrimitive> &
+// Omit 挖掉原件同名 prop 再交封装层 VariantProps:两个 variant 联合仅
+// "default" 重叠,直接交类型会收窄成 "default",primary/icon 等全 ts 报错
+type ButtonProps = Omit<ComponentProps<typeof ButtonPrimitive>, 'variant' | 'size'> &
   VariantProps<typeof buttonVariants> & {
     block?: boolean;
   };

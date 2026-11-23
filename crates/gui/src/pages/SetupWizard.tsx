@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { EmbeddedManifest } from '../api/types';
 import CmdBlock from '../components/CmdBlock';
+import { Button } from '../components/ui-x/Button';
 import type { InstallPhase } from './setup';
 
 /// install-done 后等待 daemon-online 的时限:超时本地转 failed,交还重试出口
@@ -80,21 +81,20 @@ export default function SetupWizard({
 
   const failKey = FAIL_KEY[reason];
   return (
-    <div className="wizard">
-      <h2>{t('guide.autoTitle')}</h2>
-      <p className="muted">{t('guide.autoDesc', { version: manifest.version })}</p>
+    <div>
+      <h2 className="mb-1 mt-2 text-[15px] font-medium">{t('guide.autoTitle')}</h2>
+      <p className="text-muted-foreground">{t('guide.autoDesc', { version: manifest.version })}</p>
       {phase === 'failed' ? (
         <>
-          <div className="fail" data-testid="install-fail">
-            <p>{failKey ? t(failKey) : t('guide.failGeneric')}</p>
+          <div className="text-destructive" data-testid="install-fail">
+            <p className="my-2">{failKey ? t(failKey) : t('guide.failGeneric')}</p>
             {/* 非枚举 reason(invoke reject 串)原样展示,错误详情 = 详情 + 日志指引 */}
             {failKey ? null : (
-              <p className="small">
-                <code className="mono">{reason}</code>
+              <p className="my-2 text-xs text-muted-foreground">
+                <code className="font-mono">{reason}</code>
               </p>
             )}
-            <button
-              className="btn"
+            <Button
               data-testid="install-retry"
               onClick={() => {
                 setReason('');
@@ -102,14 +102,14 @@ export default function SetupWizard({
               }}
             >
               {t('guide.retry')}
-            </button>
+            </Button>
           </div>
           <CmdBlock label={t('guide.logs')} cmd={`${sudo}planet-port service logs`} />
         </>
       ) : (
         <p>
-          <button
-            className="btn primary"
+          <Button
+            variant="primary"
             data-testid="install-btn"
             disabled={phase === 'installing'}
             onClick={startInstall}
@@ -119,7 +119,7 @@ export default function SetupWizard({
               : installed
                 ? t('guide.upgrade', { version: manifest.version })
                 : t('guide.installNow')}
-          </button>
+          </Button>
         </p>
       )}
     </div>

@@ -1,10 +1,15 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Check, Copy } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-/// 可复制值(语义同 iOS CopyableValue,图标为 lucide 形态):mono 文本 + 常驻
-/// 复制图标;点击复制后图标位置短暂变对勾(0.8s)作为反馈(不发 toast)。
-/// 占位值(空/'-'/'—')不可复制,图标随之隐藏,避免"看着能点、点了没反应"。
+/// 可复制值(语义同 iOS CopyableValue):mono 文本 + 常驻复制图标;点击复制后
+/// 图标位置短暂变对勾(0.8s)作为反馈(不发 toast)。占位值(空/'-'/'—')不可
+/// 复制且 hover 不亮图标,避免"看着能点、点了没反应"。
 /// iconSize 分两档:详情行 12px、卡片紧凑行 10px(约为文字字高的 2/3)。
+/// 旧 .copyable 系规则对译(根右对齐 28px 最高、gap 5px;值 span 跨行 break-all;
+/// 图标 tertiary 色 hover 抬主色,占位值不挂 hover 抬亮——对应原 .netcard
+/// .addr.is-blank 对图标的压制,由组件按 isPlaceholder 自持,调用方免传标记类)
 export default function CopyableValue({
   text,
   small,
@@ -32,21 +37,32 @@ export default function CopyableValue({
   const s = small ? 10 : 12;
   return (
     <button
-      className={`copyable ${className ?? ''}`}
+      className={cn(
+        'group inline-flex max-w-full min-h-7 items-center justify-end gap-[5px] border-0 bg-transparent px-0 py-0.5 text-right text-foreground cursor-pointer',
+        className,
+      )}
       onClick={copy}
       aria-label={t('guide.copy')}
       title={title ?? (isPlaceholder ? undefined : t('guide.copy'))}
     >
-      <span className="mono">{text}</span>
+      <span className="min-w-0 break-all text-right font-mono">{text}</span>
       {(!isPlaceholder || copied) && copied ? (
-        <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="var(--ok)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="copyable-icon">
-          <path d="M20 6 9 17l-5-5" />
-        </svg>
+        <Check
+          size={s}
+          strokeWidth={2.5}
+          aria-hidden="true"
+          className="shrink-0 text-[var(--ok)] transition-colors duration-[120ms] ease-[ease]"
+        />
       ) : (
-        <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="copyable-icon">
-          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-        </svg>
+        <Copy
+          size={s}
+          strokeWidth={2}
+          aria-hidden="true"
+          className={cn(
+            'shrink-0 text-[var(--faint)] transition-colors duration-[120ms] ease-[ease]',
+            !isPlaceholder && 'group-hover:text-[var(--primary)]',
+          )}
+        />
       )}
     </button>
   );
