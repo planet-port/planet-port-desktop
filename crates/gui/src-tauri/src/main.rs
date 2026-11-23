@@ -23,10 +23,7 @@ pub type SharedState = Mutex<GuiState>;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
+            tray::show_main(app);
         }))
         .plugin(tauri_plugin_dialog::init())
         .manage::<SharedState>(Mutex::new(GuiState {
@@ -46,6 +43,10 @@ fn main() {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = e {
                     api.prevent_close();
                     let _ = w.hide();
+                    // 关窗后藏 Dock 图标(仅 macOS):应用退居托盘,Dock 不再占位;
+                    // show_main 拉起窗口时恢复。Windows/Linux 无此概念不受影响
+                    #[cfg(target_os = "macos")]
+                    let _ = w.app_handle().set_dock_visibility(false);
                 }
             });
             Ok(())

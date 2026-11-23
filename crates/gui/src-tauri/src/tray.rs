@@ -315,8 +315,13 @@ fn notify_error(app: &AppHandle, e: &crate::api_client::GuiError) {
     let _ = app.emit("tray-error", message);
 }
 
-fn show_main(app: &AppHandle) {
+/// 拉起主窗口:先恢复 Dock 图标(关窗时藏了)再 show+focus。
+/// single_instance 二次启动拉活也走这里
+pub fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
+        // 仅 macOS 有 Dock;Windows/Linux 为 no-op 不受影响
+        #[cfg(target_os = "macos")]
+        let _ = app.set_dock_visibility(true);
         let _ = w.show();
         let _ = w.set_focus();
     }
