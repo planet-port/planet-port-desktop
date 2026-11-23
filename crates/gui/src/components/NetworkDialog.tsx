@@ -10,6 +10,7 @@ import DrawerShell from './DrawerShell';
 import QRIcon from './QRIcon';
 import QRShareSheet from './QRShareSheet';
 import { useToast } from './Toaster';
+import { Switch } from './ui-x/Switch';
 import { serversToSlots, slotsToServers, slotsValid, type DnsSlots } from '../dns';
 
 /// daemon mac 若为 12 位裸十六进制则补冒号小写(aa:bb:cc:dd:ee:ff),已带分隔原样
@@ -88,9 +89,10 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
     if (servers.join(',') === savedServers) return;
     apply.mutate({ dnsMode: 'custom', customDns: servers }, { onSuccess: () => setSavedServers(servers.join(',')) });
   };
-  const toggleRouteVia = () => {
+  /// 开关即时生效:下一态由 Radix onCheckedChange(boolean) 给出(禁用态下
+  /// 原件不触发点击,这里仍保留守卫兜底 routeViaLocked),失败回滚本地态
+  const toggleRouteVia = (next: boolean) => {
     if (disabled || row.routeViaLocked) return;
-    const next = !routeVia;
     setRouteVia(next);
     apply.mutate({ routeViaZeroTier: next }, { onError: () => setRouteVia(!next) });
   };
@@ -195,13 +197,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
         <section className="detail-section">
           <div className="kv">
             <span>{t('join.routeVia')}</span>
-            <button
-              className={`switch ${routeVia ? 'on' : ''}`}
-              role="switch"
-              aria-checked={routeVia}
-              disabled={row.routeViaLocked || disabled}
-              onClick={toggleRouteVia}
-            />
+            <Switch checked={routeVia} onCheckedChange={toggleRouteVia} disabled={row.routeViaLocked || disabled} />
           </div>
           <p className="section-foot">
             {disabled ? t('networks.disabledHint') : (row.routeViaLocked ? t('networks.routeViaLocked') : t('join.routeViaFooter'))}

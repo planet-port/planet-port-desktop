@@ -7,6 +7,7 @@ import DrawerShell from './DrawerShell';
 import QRScannerDialog, { extractNetworkId } from './QRScannerDialog';
 import QRIcon from './QRIcon';
 import { useToast } from './Toaster';
+import { Switch } from './ui-x/Switch';
 
 const isHex16 = (s: string) => /^[0-9a-fA-F]{16}$/.test(s);
 
@@ -123,12 +124,8 @@ export default function AddNetworkDrawer({ defaultPlanet, onClose }: { defaultPl
         <section className="detail-section">
           <div className="kv">
             <span>{t('join.routeVia')}</span>
-            <button
-              className={`switch ${routeVia ? 'on' : ''}`}
-              role="switch"
-              aria-checked={routeVia}
-              onClick={() => setRouteVia(!routeVia)}
-            />
+            {/* Radix 受控开关:点击即回调 onCheckedChange(boolean),无自管 onClick */}
+            <Switch checked={routeVia} onCheckedChange={setRouteVia} />
           </div>
           <p className="section-foot">{t('join.routeViaFooter')}</p>
         </section>

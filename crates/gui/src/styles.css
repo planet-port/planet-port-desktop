@@ -132,7 +132,7 @@ select.input { cursor: pointer; }
 }
 .btn:hover:not(:disabled) { border-color: var(--border-h); background: var(--panel-2); }
 .btn:active:not(:disabled) { background: var(--panel-2); }
-.btn:focus-visible, .switch:focus-visible, .link:focus-visible, .plain:focus-visible {
+.btn:focus-visible, .link:focus-visible, .plain:focus-visible {
   outline: 1px solid var(--primary);
   outline-offset: 1px;
 }
@@ -354,34 +354,8 @@ select.input { cursor: pointer; }
 }
 .netcard.add > svg { color: var(--primary); }
 .netcard.add:hover { border-color: var(--primary); color: var(--text); background: color-mix(in srgb, var(--veil) 80%, transparent); }
-/* 紧凑开关:胶囊轨道(34×20,圆角=高一半 10px)+ 圆滑块,开启 = 主色
-   (Linear toggle 形态)。轨道是真实 ::before 元素,标称圆角=视觉圆角;
-   本体 28px 高只作点击区——曾用 background-clip 把轨道画进 content-box,
-   但 radius 按 28px 盒绘制、背景按 20px 内容盒裁切,坐标系错位导致
-   圆角怎么调都不准,已弃用 */
-.switch {
-  margin-left: 14px;
-  width: 34px; height: 28px; flex: none;
-  position: relative;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  background: none;
-}
-.switch::before {
-  content: ''; position: absolute; inset: 4px 0;
-  border-radius: 10px;
-  background: var(--track);
-  transition: background-color .15s ease;
-}
-.switch::after {
-  content: ''; position: absolute; top: 7px; left: 3px; width: 14px; height: 14px;
-  border-radius: 50%; background: var(--knob);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  transition: left .15s ease, background-color .15s ease;
-}
-.switch.on::before { background: var(--primary); }
-.switch.on::after { left: 17px; background: var(--knob-on); }
+/* 开关视觉已迁 ui-x/Switch(包 shadcn 原件,Tailwind 类定格 34×20 胶囊 +
+   14px 滑块),此处不再有 .switch 规则 */
 .spinner {
   width: 16px; height: 16px; border-radius: 50%; display: inline-block; flex: none;
   border: 2px solid var(--border); border-top-color: var(--primary);

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { NetworkEntry } from '../api/types';
 import CopyableValue from './CopyableValue';
+import { Switch } from './ui-x/Switch';
 
 /// 网络卡片(方案C卡片网格,弱透明卡面+泊位灯):信息区点击进设置弹层,卡头开关
 /// 切换禁用/启用(OK↔DISABLED,占位行=join)。泊位灯=网络级状态(在线青光/DISABLED 灰/冲突黄),
@@ -30,15 +31,9 @@ export default function NetworkCard({
         {pending ? (
           <span className="spinner" aria-label="pending" />
         ) : (
-          <button
-            className={`switch ${on ? 'on' : ''}`}
-            role="switch"
-            aria-checked={on}
-            onClick={e => {
-              e.stopPropagation();
-              onToggle(row);
-            }}
-          />
+          // 卡头开关:stopPropagation 挡住卡面 onClick 进详情;Radix 点击仍会
+          // 内部翻转并回调 onCheckedChange,业务回调保持传 row 的原签名
+          <Switch checked={on} onCheckedChange={() => onToggle(row)} onClick={e => e.stopPropagation()} />
         )}
       </header>
       <div className="netcard-body">
