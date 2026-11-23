@@ -98,11 +98,14 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
     },
     onError: onErr,
   });
-  /// 导出 .planet 文件:daemon bytes → dialog save → write_file_bytes(同 PlanetManager)
+  /// 导出 .planet 文件:save 与 daemon 导出并行(save 不依赖 bytes,点击即弹窗,
+  /// 导出在用户挑路径期间后台完成);取消保存只浪费一次本地导出请求
   const shareFile = async () => {
     try {
-      const bytes = await api.planetExport(planet.id);
-      const path = await save({ defaultPath: `${planet.name || planet.id}.planet` });
+      const [bytes, path] = await Promise.all([
+        api.planetExport(planet.id),
+        save({ defaultPath: `${planet.name || planet.id}.planet` }),
+      ]);
       if (!path) return;
       await api.writeBytes(path, bytes);
       toast.ok(t('common.saved'));
@@ -171,6 +174,7 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
               <span>{t('planet.share')}</span>
               <span className="kv-val">
                 <button className="link" onClick={() => void shareFile()}>{t('planets.shareFile')}</button>
+                <span className="link-sep" aria-hidden="true">|</span>
                 <button className="link" onClick={() => void openQr()}>{t('planets.shareQr')}</button>
               </span>
             </div>

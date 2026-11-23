@@ -489,6 +489,8 @@ select.input { cursor: pointer; }
 .kv .mono { text-align: right; word-break: break-all; }
 /* kv 值区:值 + 附属动作(二维码按钮/多分享按钮)并排 */
 .kv-val { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+/* kv-val 内并排 link 按钮之间的竖线分隔(导出文件 | 二维码) */
+.link-sep { color: var(--muted); user-select: none; }
 /* 整行可点的 kv(诊断入口/图标行):button 复用 .kv 排版;hover 整行
    背景变化(负 margin + padding 补偿撑满行宽),背景才是"可点"的信号 */
 button.kv {
