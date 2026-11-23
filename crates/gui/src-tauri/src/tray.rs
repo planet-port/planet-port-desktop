@@ -181,15 +181,16 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             )?;
         }
         info.append(&PredefinedMenuItem::separator(app)?)?;
+        // 启停 toggle:运行中→断开(disable),已停→连接(enable),判据同 status
         info.append(&MenuItem::with_id(
             app,
-            format!("planet|{pid}"),
+            if running { format!("planetoff|{pid}") } else { format!("planet|{pid}") },
             if running {
-                tr(&lang, "✓ 运行中", "✓ Running")
+                tr(&lang, "断开行星", "Disconnect planet")
             } else {
-                tr(&lang, "切换到此行星", "Switch to this planet")
+                tr(&lang, "连接行星", "Connect planet")
             },
-            !running,
+            true,
             None::<&str>,
         )?)?;
         menu.append(&info)?;
@@ -211,6 +212,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 format!("{dot} {name}")
             };
             let net = Submenu::with_id(app, format!("ngrp|{pid}|{nwid}"), label, true)?;
+            // 网络ID:首项,可点击复制(id 即复制内容)
+            net.append(&MenuItem::with_id(app, format!("copy|{nwid}"), nwid.clone(), true, None::<&str>)?)?;
             if !s(n, "conflict").is_empty() {
                 ro(
                     app,
@@ -231,6 +234,15 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 &mut ro_n,
                 format!("{}: {}", tr(&lang, "类型", "Type"), s(n, "type")),
             )?;
+            if !s(n, "interface").is_empty() {
+                ro(
+                    app,
+                    &net,
+                    &mut ro_n,
+                    format!("{}: {}", tr(&lang, "接口", "Interface"), s(n, "interface")),
+                )?;
+            }
+            // IP 在接口之后,可点击复制(复制纯地址,不带 "IP: " 前缀)
             let addrs = n
                 .get("assignedAddrs")
                 .and_then(|x| x.as_array())
@@ -242,21 +254,32 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 })
                 .unwrap_or_default();
             if !addrs.is_empty() {
-                ro(app, &net, &mut ro_n, format!("IP: {addrs}"))?;
-            }
-            if !s(n, "interface").is_empty() {
-                ro(
+                net.append(&MenuItem::with_id(
                     app,
-                    &net,
-                    &mut ro_n,
-                    format!("{}: {}", tr(&lang, "接口", "Interface"), s(n, "interface")),
-                )?;
+                    format!("copy|{addrs}"),
+                    format!("IP: {addrs}"),
+                    true,
+                    None::<&str>,
+                )?)?;
             }
             net.append(&PredefinedMenuItem::separator(app)?)?;
+            // 启停 toggle:已连接(OK)→断开(disable),其余→连接(enable),判据同前端 NetworkCard
+            let on = s(n, "status") == "OK";
+            net.append(&MenuItem::with_id(
+                app,
+                if on { format!("netoff|{pid}|{nwid}") } else { format!("neton|{pid}|{nwid}") },
+                if on {
+                    tr(&lang, "断开网络", "Disconnect network")
+                } else {
+                    tr(&lang, "连接网络", "Connect network")
+                },
+                true,
+                None::<&str>,
+            )?)?;
             net.append(&MenuItem::with_id(
                 app,
                 format!("net|{pid}|{nwid}"),
-                tr(&lang, "离开网络", "Leave network"),
+                tr(&lang, "退出网络", "Leave network"),
                 true,
                 None::<&str>,
             )?)?;
@@ -282,7 +305,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     menu.append(&MenuItem::with_id(
         app,
         "addplanet",
-        tr(&lang, "加入行星", "Add planet"),
+        tr(&lang, "+ 加入行星", "+ Add planet"),
         true,
         None::<&str>,
     )?)?;
@@ -301,7 +324,7 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
     let parts: Vec<&str> = id.split('|').collect();
     match parts[0] {
         "net" if parts.len() == 3 => {
-            // 网络子菜单「离开网络」;planet 维度随条目携带。
+            // 网络子菜单「退出网络」(leave);planet 维度随条目携带。
             // 动作含同步 HTTP(超时 10s),必须在独立线程执行,否则冻结主线程/菜单;
             // 结果(图标+菜单)与失败提示分别经 refresh 与 tray-error 事件回传
             let app = app.clone();
@@ -314,6 +337,24 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 refresh(&app); // 立即反映;下次心跳会再校准
             });
         }
+        // 网络启停 toggle:连接(enable) / 断开(disable),HTTP 动作同走后台线程
+        "neton" | "netoff" if parts.len() == 3 => {
+            let enable = parts[0] == "neton";
+            let app = app.clone();
+            let nwid = parts[2].to_string();
+            let planet = parts[1].to_string();
+            std::thread::spawn(move || {
+                let r = if enable {
+                    commands::enable_network(nwid, Some(planet))
+                } else {
+                    commands::disable_network(nwid, Some(planet))
+                };
+                if let Err(e) = r {
+                    notify_error(&app, &e);
+                }
+                refresh(&app);
+            });
+        }
         "planet" => {
             let app = app.clone();
             let planet = parts[1].to_string();
@@ -323,6 +364,22 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 }
                 refresh(&app);
             });
+        }
+        // 行星断开(disable);连接复用 "planet"(enable)
+        "planetoff" => {
+            let app = app.clone();
+            let planet = parts[1].to_string();
+            std::thread::spawn(move || {
+                if let Err(e) = commands::disable_planet(planet) {
+                    notify_error(&app, &e);
+                }
+                refresh(&app);
+            });
+        }
+        // 复制到剪贴板(网络 ID / IP 条目);id 后半段即复制内容
+        "copy" => {
+            use tauri_plugin_clipboard_manager::ClipboardExt;
+            let _ = app.clipboard().write_text(parts[1..].join("|"));
         }
         "join" => {
             // 带行星维度:加入网络抽屉预选该行星(parts = ["join", planet])

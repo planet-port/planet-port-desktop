@@ -19,6 +19,7 @@ ureq = "3"
 
 # 保存/选择文件对话框(二维码保存 PNG、planet 导出、身份文件选择)
 tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
 
 # Windows UAC 提权拉起安装子进程(bootstrap.rs):ShellExecuteW 的 runas 动词。
 # 仅 Windows 目标引入,MIT/Apache-2.0;版本对齐 cli 既有 0.59。

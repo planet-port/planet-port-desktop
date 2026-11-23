@@ -30,6 +30,7 @@ fn main() {
             tray::show_main(app);
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage::<SharedState>(Mutex::new(GuiState {
             online: false,
             installed: api_client::installed(),
