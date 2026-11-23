@@ -1,0 +1,31 @@
+@import 'tailwindcss';
+
+/* 项目主题 = data-theme 属性切换(非 prefers-color-scheme);styles.css 的
+   :root/[data-theme='dark'] 变量块是单一真源(accent 内联覆盖 --primary、
+   has-bg 背景图都挂在那套变量上),这里只做 token 映射不自持色值 */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--panel);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--panel);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--bg);
+  --color-secondary: var(--panel-2);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--panel-2);
+  --color-muted-foreground: var(--muted);
+  --color-accent: var(--panel-2);
+  --color-accent-foreground: var(--text);
+  /* --danger 已存在于 styles.css 两主题变量块(亮 #d4494f / 暗 #f87171),直接映射 */
+  --color-destructive: var(--danger);
+  --color-border: var(--border);
+  --color-input: var(--border-h);
+  --color-ring: var(--primary);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+}

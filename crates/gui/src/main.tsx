@@ -8,6 +8,7 @@ import { initBackground } from './background';
 initTheme();
 initBackground();
 import './styles.css';
+import '../tailwind.css';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
