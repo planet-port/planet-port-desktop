@@ -350,14 +350,15 @@ select.input { cursor: pointer; }
 }
 .netcard.add > svg { color: var(--primary); }
 .netcard.add:hover { border-color: var(--primary); color: var(--text); background: color-mix(in srgb, var(--veil) 80%, transparent); }
-/* 紧凑开关:胶囊轨道(34×20)+ 圆滑块,开启 = 主色(Linear toggle 形态);
-   28px 高点击区(background-clip 把轨道画进内容盒) */
+/* 紧凑开关:圆角轨道(34×20,圆角=轨道高一半=10px)+ 圆滑块,开启 = 主色
+   (Linear toggle 形态);28px 高点击区(background-clip 把轨道画进内容盒,
+   radius 作用于 28px 盒、背景经 clip 后实际观感略小于标称值) */
 .switch {
   margin-left: 14px;
   width: 34px; height: 28px; flex: none;
   position: relative;
   border: 0;
-  border-radius: 999px;
+  border-radius: 10px;
   padding: 4px 0;
   cursor: pointer;
   background-color: var(--track);
