@@ -53,8 +53,9 @@ describe('SettingsDrawer', () => {
   it('打开后渲染五区:身份/语言/外观/关于/高级,版本来自 getVersion', async () => {
     renderDrawer();
     expect(await screen.findByText('节点身份')).toBeInTheDocument();
-    expect(screen.getByText('语言')).toBeInTheDocument();
-    expect(screen.getByText('外观')).toBeInTheDocument();
+    // 「语言」「外观」同时是组标题与值行 label(iOS 值行与组同名),断言至少一处
+    expect(screen.getAllByText('语言').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('外观').length).toBeGreaterThan(0);
     expect(screen.getByText('关于')).toBeInTheDocument();
     expect(screen.getByText('planet-port')).toBeInTheDocument();
     expect(screen.getByText('0.4.1')).toBeInTheDocument();
@@ -80,13 +81,13 @@ describe('SettingsDrawer', () => {
     }
   });
 
-  it('点深色立即落 data-theme=dark 且按钮高亮', () => {
+  it('外观走值行进下级勾选页:点深色立即落 data-theme=dark 且当前值更新', () => {
     renderDrawer();
-    // fireEvent(经 act)而非原生 .click():高亮断言依赖 React state 同步刷新
+    // 值行(右侧当前值+›)开下级页,点选项即生效(iOS 设置形态)
+    fireEvent.click(screen.getByRole('button', { name: /^外观/ }));
     fireEvent.click(screen.getByTestId('theme-dark'));
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-    expect(screen.getByTestId('theme-dark')).toHaveClass('active');
-    fireEvent.click(screen.getByTestId('theme-system')); // 还原
+    fireEvent.click(screen.getByTestId('theme-light')); // 还原
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
@@ -106,12 +107,12 @@ describe('SettingsDrawer', () => {
     }
   });
 
-  it('语言分段切换中文/English', () => {
+  it('语言走值行进下级勾选页:切 English 后界面语言切换,切回中文还原', () => {
     renderDrawer();
+    fireEvent.click(screen.getByRole('button', { name: /^语言/ }));
     fireEvent.click(screen.getByTestId('lang-en'));
-    expect(screen.getByTestId('lang-en')).toHaveClass('active');
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('lang-zh'));
-    expect(screen.getByTestId('lang-zh')).toHaveClass('active');
+    fireEvent.click(screen.getByTestId('lang-zh')); // 还原
+    expect(screen.getByRole('heading', { name: '设置' })).toBeInTheDocument();
   });
 });

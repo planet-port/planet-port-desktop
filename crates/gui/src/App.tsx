@@ -39,9 +39,10 @@ export default function App() {
     const unsubs = [
       listen('daemon-online', () => setOnline(true)),
       listen('daemon-offline', () => setOnline(false)),
-      // 托盘「加入网络…」:打开添加网络抽屉(与首页空卡同一入口)
-      listen<{ focusJoin?: boolean }>('navigate', e => {
-        if (e.payload.focusJoin) setDrawer({ kind: 'addNet' });
+      // 托盘导航:「+ 加入网络…」带行星维度预选;「加入行星」开添加行星抽屉
+      listen<{ focusJoin?: boolean; planet?: string; addPlanet?: boolean }>('navigate', e => {
+        if (e.payload.addPlanet) setDrawer({ kind: 'addPlanet' });
+        else if (e.payload.focusJoin) setDrawer({ kind: 'addNet', planet: e.payload.planet });
       }),
       // 托盘动作失败提示(Rust 侧在后台线程执行,失败经此回传)
       listen<string>('tray-error', e => toast.error(e.payload)),

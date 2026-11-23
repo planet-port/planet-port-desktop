@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { api, asError } from '../api/client';
+import CheckListSheet from './CheckListSheet';
 import ConfirmDialog from './ConfirmDialog';
 import { useToast } from './Toaster';
 
@@ -18,6 +19,7 @@ export default function IdentitySection() {
   const toast = useToast();
   const [confirming, setConfirming] = useState<{ path: string; nodeId: string; oldNodeId: string | null } | null>(null);
   const [pendingMode, setPendingMode] = useState<IdentityMode | null>(null);
+  const [modeSheet, setModeSheet] = useState(false);
 
   const q = useQuery({ queryKey: ['identity'], queryFn: api.identityGet });
   const importMut = useMutation({
@@ -74,26 +76,19 @@ export default function IdentitySection() {
       <section className="drawer-section">
       {q.data && (
         <>
-          <div data-testid="id-mode">
-            <p className="small">{t('identity.modeLabel')}</p>
-            <div className="seg">
-              {(['shared', 'independent'] as const).map(m => (
-                <button
-                  key={m}
-                  data-testid={`id-mode-${m}`}
-                  className={q.data?.mode === m ? 'active' : ''}
-                  disabled={runningCount > 0 || modeMut.isPending}
-                  onClick={() => setPendingMode(m)}
-                >
-                  {t(`identity.mode.${m}`)}
-                </button>
-              ))}
-            </div>
-            <p className="small hint">
-              {q.data.mode === 'independent' ? t('identity.modeIndependent') : t('identity.modeShared')}
-            </p>
-            {runningCount > 0 && <p className="small hint">{t('identity.modeBlocked', { count: runningCount })}</p>}
-          </div>
+          {/* 模式行:当前值 + › 进下级勾选页(iOS 设置形态);运行中禁用 */}
+          <button
+            className="kv"
+            data-testid="id-mode"
+            disabled={runningCount > 0 || modeMut.isPending}
+            onClick={() => setModeSheet(true)}
+          >
+            <span>{t('identity.modeLabel')}</span>
+            <span className="kv-val">
+              <span className="small">{t(`identity.mode.${q.data.mode}`)}</span>
+              <span className="chev" aria-hidden="true">›</span>
+            </span>
+          </button>
           <div className="id-row">
             <span className="mono">{q.data.global.nodeId ?? '-'}</span>
             <button className="btn sm" onClick={() => { void navigator.clipboard.writeText(q.data!.global.nodeId ?? ''); toast.ok(t('guide.copied')); }}>
@@ -111,7 +106,25 @@ export default function IdentitySection() {
       <button className="btn" onClick={() => void startImport()} disabled={importMut.isPending}>
         {t('identity.import')}
       </button>
-      <p className="small hint">{t('identity.hint')}</p>
+      </section>
+      <p className="group-foot">{t('identity.hint')}</p>
+      {modeSheet && q.data && (
+        <CheckListSheet
+          title={t('identity.modeLabel')}
+          value={q.data.mode}
+          options={(['shared', 'independent'] as const).map(m => ({
+            value: m,
+            label: t(`identity.mode.${m}`),
+            disabled: runningCount > 0 || modeMut.isPending,
+          }))}
+          onPick={v => {
+            if (v !== q.data!.mode) setPendingMode(v as IdentityMode);
+            return true; // 选完即回,确认弹窗浮在设置抽屉上层
+          }}
+          onClose={() => setModeSheet(false)}
+          testId="id-mode"
+        />
+      )}
       <ConfirmDialog
         open={confirming !== null}
         title={t('identity.import')}
@@ -137,7 +150,6 @@ export default function IdentitySection() {
         }}
         onCancel={() => setPendingMode(null)}
       />
-      </section>
     </>
   );
 }

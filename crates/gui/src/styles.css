@@ -421,7 +421,21 @@ select.input { cursor: pointer; }
   margin: 2px 8px -6px 0;
   font-size: 12px; color: var(--muted); font-weight: 500;
 }
-.drawer-section > * + *, .detail-section > * + * { border-top: 1px solid var(--border-soft); }
+/* 组尾说明(iOS 设置 footer):卡外裸小字,负 margin 贴近卡片 */
+.group-foot {
+  margin: -6px 8px 0 0;
+  font-size: 12px; color: var(--muted);
+}
+/* iOS 形态分隔线:从行文字起点开始(左缩进),右到卡边——
+   行盒统一负 margin 撑满卡内宽(padding 8px 内嵌),线挂行首伪元素 */
+.drawer-section > *, .detail-section > * { position: relative; }
+.drawer-section > * + *, .detail-section > * + * { border-top: none; }
+.drawer-section > * + *::before, .detail-section > * + *::before {
+  content: ''; position: absolute; top: 0; left: 16px; right: 0;
+  border-top: 1px solid var(--border-soft);
+}
+/* iOS 勾选态:选中行右侧 primary 色 ✓ */
+.check { color: var(--primary); font-weight: 600; }
 /* 分段控件:整组一个圆角凹陷轨道(底色比所在卡再深一档,浅色下不与卡面同色),
    选中项浮起为面板块——选中态由"块"而非颜色承担 */
 .seg {
@@ -487,7 +501,8 @@ select.input { cursor: pointer; }
 /* ---- 网络详情/行星设置(Task 14/15) ---- */
 .detail-section h4 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 500; }
 .kv { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; padding: 6px 0; }
-.kv > span:first-child { color: var(--muted); flex: none; }
+/* iOS 设置行:label 主文字色(可点行的可点信号),值侧灰 */
+.kv > span:first-child { color: var(--text); flex: none; }
 .kv .mono { text-align: right; word-break: break-all; }
 /* kv 值区:值 + 附属动作(二维码按钮/多分享按钮)并排 */
 .kv-val { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
@@ -502,6 +517,9 @@ button.kv {
 }
 button.kv:hover { background: var(--panel); }
 button.kv:hover .chev { color: var(--muted); }
+/* 卡内 kv 行盒统一(iOS):div 行也补内嵌 padding+负 margin 撑满卡内宽,
+   行文字起点与 button 行一致(卡内 16px),分隔线::before 缩进对齐 */
+.drawer-section > .kv, .detail-section > .kv { padding: 6px 8px; margin: 0 -8px; }
 /* 行内编辑(行星名称):右对齐透明底,hover/focus 才显形 */
 .inline-edit {
   border: 1px solid transparent; border-radius: 6px; background: none;

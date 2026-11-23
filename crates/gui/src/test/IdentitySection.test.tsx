@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import IdentitySection from '../components/IdentitySection';
 import { ToastProvider } from '../components/Toaster';
@@ -94,41 +94,40 @@ describe('IdentitySection', () => {
     expect(invokeMock.mock.calls.map(c => c[0])).not.toContain('identity_import');
   });
 
-  it('模式 seg 渲染当前态:shared 高亮且展示共享描述', async () => {
+  it('模式行展示当前值,进下级勾选页 ✓ 当前项(全停可交互)', async () => {
     invokeMock.mockImplementation((cmd: string) =>
-      cmd === 'identity_get' ? Promise.resolve(identity) : Promise.resolve(null));
+      cmd === 'identity_get' ? Promise.resolve(identityIdle) : Promise.resolve(null));
     renderSection();
     await screen.findByText('gozi25');
-    expect(screen.getByTestId('id-mode-shared')).toHaveClass('active');
-    expect(screen.getByTestId('id-mode-independent')).not.toHaveClass('active');
-    expect(screen.getByText('共享身份：所有行星使用同一节点')).toBeInTheDocument();
-    expect(screen.queryByText('独立身份：每行星各自节点')).not.toBeInTheDocument();
+    // 值行右侧显示当前模式(iOS 值行形态)
+    expect(screen.getByTestId('id-mode')).toHaveTextContent('共享身份');
+    fireEvent.click(screen.getByTestId('id-mode'));
+    expect(screen.getByTestId('id-mode-shared').textContent).toContain('✓');
+    expect(screen.getByTestId('id-mode-independent').textContent).not.toContain('✓');
   });
 
-  it('independent 模式高亮独立项且描述行同步', async () => {
+  it('independent 模式下级页 ✓ 独立项', async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === 'identity_get' ? Promise.resolve(identityIndependent) : Promise.resolve(null));
     renderSection();
     await screen.findByText('gozi25');
-    expect(screen.getByTestId('id-mode-independent')).toHaveClass('active');
-    expect(screen.getByTestId('id-mode-shared')).not.toHaveClass('active');
-    expect(screen.getByText('独立身份：每行星各自节点')).toBeInTheDocument();
+    expect(screen.getByTestId('id-mode')).toHaveTextContent('独立身份');
+    fireEvent.click(screen.getByTestId('id-mode'));
+    expect(screen.getByTestId('id-mode-independent').textContent).toContain('✓');
+    expect(screen.getByTestId('id-mode-shared').textContent).not.toContain('✓');
   });
 
-  it('有运行中行星时模式按钮禁用并提示,点击不弹确认', async () => {
+  it('有运行中行星时模式行禁用,不可进下级页', async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === 'identity_get' ? Promise.resolve(identity) : Promise.resolve(null));
     renderSection();
     await screen.findByText('gozi25');
-    expect(screen.getByTestId('id-mode-shared')).toBeDisabled();
-    expect(screen.getByTestId('id-mode-independent')).toBeDisabled();
-    expect(screen.getByText(/有 1 个行星运行中/)).toBeInTheDocument();
-    screen.getByTestId('id-mode-independent').click();
-    expect(screen.queryByText(/切换到「独立身份」/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('id-mode')).toBeDisabled();
+    expect(screen.queryByTestId('id-mode-independent')).not.toBeInTheDocument();
     expect(invokeMock.mock.calls.map(c => c[0])).not.toContain('identity_mode_set');
   });
 
-  it('全停后点击弹确认,确认后调 identity_mode_set 并 toast+invalidate', async () => {
+  it('全停后下级页选独立弹确认,确认后调 identity_mode_set 并 toast+invalidate', async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === 'identity_get') return Promise.resolve(identityIdle);
       if (cmd === 'identity_mode_set') return Promise.resolve({ result: 'ok', mode: 'independent' });
@@ -136,8 +135,9 @@ describe('IdentitySection', () => {
     });
     const { invalidateSpy } = renderSection();
     await screen.findByText('gozi25');
-    expect(screen.getByTestId('id-mode-independent')).not.toBeDisabled();
-    screen.getByTestId('id-mode-independent').click();
+    expect(screen.getByTestId('id-mode')).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId('id-mode'));
+    fireEvent.click(screen.getByTestId('id-mode-independent'));
     // 确认弹层展示目标模式与重授权警示
     expect(await screen.findByText('切换身份模式')).toBeInTheDocument();
     expect(screen.getByText(/切换到「独立身份」/)).toBeInTheDocument();
