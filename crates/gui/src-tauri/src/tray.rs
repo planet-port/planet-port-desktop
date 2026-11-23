@@ -37,19 +37,60 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// 两态图标 + 菜单重建(心跳周期与语言切换时调用)
+/// 两态图标 + 菜单重建(心跳周期与语言切换时调用)。
+/// 门控:托盘菜单开着时被 set_menu/set_icon 替换会立即收起(macOS),
+/// 心跳 3s 一拍无条件替换即「菜单很快自动消失」的根因——
+/// 故仅在与上次实际设置的内容不同时才替换,数据静稳时菜单可一直开着,
+/// 点击菜单外区域由系统原生行为收起
 pub fn refresh(app: &AppHandle) {
-    let online = app.state::<SharedState>().lock().unwrap().online;
+    let (online, lang, planets, networks, old_fp, old_icon) = {
+        let state = app.state::<SharedState>();
+        let st = state.lock().unwrap();
+        (
+            st.online,
+            st.lang.clone(),
+            st.snapshot_planets.as_array().cloned().unwrap_or_default(),
+            st.snapshot_networks.as_array().cloned().unwrap_or_default(),
+            st.menu_fp.clone(),
+            st.icon_online,
+        )
+    };
     if let Some(tray) = app.tray_by_id("main") {
-        let bytes = if online { ICON_ONLINE } else { ICON_OFFLINE };
-        if let Ok(img) = tauri::image::Image::from_bytes(bytes) {
-            let _ = tray.set_icon(Some(img));
+        if old_icon != Some(online) {
+            let bytes = if online { ICON_ONLINE } else { ICON_OFFLINE };
+            if let Ok(img) = tauri::image::Image::from_bytes(bytes) {
+                let _ = tray.set_icon(Some(img));
+            }
+            let _ = tray.set_tooltip(Some(if online { "planet-port: online" } else { "planet-port: offline" }));
+            let state = app.state::<SharedState>();
+            state.lock().unwrap().icon_online = Some(online);
         }
-        let _ = tray.set_tooltip(Some(if online { "planet-port: online" } else { "planet-port: offline" }));
-        if let Ok(menu) = build_menu(app) {
-            let _ = tray.set_menu(Some(menu));
+        let fp = menu_fingerprint(&lang, &planets, &networks);
+        if fp != old_fp {
+            if let Ok(menu) = build_menu(app) {
+                let _ = tray.set_menu(Some(menu));
+                let state = app.state::<SharedState>();
+                state.lock().unwrap().menu_fp = fp;
+            }
         }
     }
+}
+
+/// 菜单内容指纹:仅含菜单实际渲染的字段。daemon 快照里的其余字段
+/// (peers/uptime 等)每 tick 都变,若纳入则门控形同虚设
+fn menu_fingerprint(lang: &str, planets: &[Value], networks: &[Value]) -> String {
+    let mut parts = vec![lang.to_string()];
+    for p in planets {
+        for k in ["id", "name", "status", "nodeId", "type", "coreVersion"] {
+            parts.push(p.get(k).map(|v| v.to_string()).unwrap_or_default());
+        }
+    }
+    for n in networks {
+        for k in ["planet", "nwid", "name", "status", "type", "conflict", "interface", "assignedAddrs"] {
+            parts.push(n.get(k).map(|v| v.to_string()).unwrap_or_default());
+        }
+    }
+    parts.join("\u{1f}")
 }
 
 /// 只读信息条目(菜单二级展示用):禁用态灰显,点击无动作,直接挂到子菜单
@@ -329,7 +370,8 @@ pub fn show_main(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::tr;
+    use super::{menu_fingerprint, tr};
+    use serde_json::json;
 
     /// 默认（zh 及任何未知值）取中文文案
     #[test]
@@ -343,5 +385,33 @@ mod tests {
     fn tr_returns_en_for_en() {
         assert_eq!(tr("en", "打开主窗口", "Open window"), "Open window");
         assert_eq!(tr("en", "退出", "Quit"), "Quit");
+    }
+
+    /// 菜单渲染字段变化 → 指纹变化(refresh 触发 set_menu)
+    #[test]
+    fn fingerprint_changes_when_menu_fields_change() {
+        let p1 = vec![json!({"id": "1", "name": "gozi", "status": "running"})];
+        let p2 = vec![json!({"id": "1", "name": "gozi", "status": "stopped"})];
+        assert_ne!(
+            menu_fingerprint("zh", &p1, &[]),
+            menu_fingerprint("zh", &p2, &[])
+        );
+        // 语言切换也触发(菜单文案重建)
+        assert_ne!(
+            menu_fingerprint("zh", &p1, &[]),
+            menu_fingerprint("en", &p1, &[])
+        );
+    }
+
+    /// 菜单不渲染的字段变化 → 指纹不变(refresh 跳过 set_menu,
+    /// 托盘菜单开着时不被顶掉)
+    #[test]
+    fn fingerprint_stable_for_non_menu_fields() {
+        let a = vec![json!({"id": "1", "name": "gozi", "status": "running", "uptime": 10, "peers": 99})];
+        let b = vec![json!({"id": "1", "name": "gozi", "status": "running", "uptime": 20, "peers": 0})];
+        assert_eq!(
+            menu_fingerprint("zh", &a, &[json!({"nwid": "a", "latency": 5})]),
+            menu_fingerprint("zh", &b, &[json!({"nwid": "a", "latency": 120})])
+        );
     }
 }

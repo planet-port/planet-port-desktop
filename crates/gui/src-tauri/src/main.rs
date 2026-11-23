@@ -16,6 +16,10 @@ pub struct GuiState {
     pub lang: String,
     pub snapshot_planets: serde_json::Value,
     pub snapshot_networks: serde_json::Value,
+    /// 上次 set_menu 时的菜单内容指纹(refresh 门控用,见 tray::refresh)
+    pub menu_fp: String,
+    /// 上次 set_icon 时的在线态(None = 尚未设置过)
+    pub icon_online: Option<bool>,
 }
 
 pub type SharedState = Mutex<GuiState>;
@@ -32,6 +36,8 @@ fn main() {
             lang: String::from("zh"),
             snapshot_planets: serde_json::Value::Array(Vec::new()),
             snapshot_networks: serde_json::Value::Array(Vec::new()),
+            menu_fp: String::new(),
+            icon_online: None,
         }))
         .setup(|app| {
             tray::init(app.handle())?;
