@@ -48,6 +48,9 @@
   --knob-on: #0c0e11;
 }
 * { box-sizing: border-box; }
+/* 视口锁死:滚动只发生在 .page/.guide 等内容区,topbar/statusbar 恒定在位;
+   同时切断 WKWebView 整页(body 级)滚动与弹性滚动带来的跟随位移 */
+html, body, #root { height: 100%; overflow: hidden; }
 body {
   margin: 0;
   font: 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
@@ -172,7 +175,8 @@ select.input { cursor: pointer; }
 .card-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
 .empty { color: var(--muted); text-align: center; padding: 48px 0; }
 .hint { color: var(--muted); margin: 0; }
-.guide { max-width: 720px; }
+/* 离线引导无 .page 包裹,根元素自承滚动(视口已锁死) */
+.guide { max-width: 720px; flex: 1; overflow-y: auto; }
 .guide h2 { margin: 8px 0 4px; font-size: 15px; font-weight: 500; }
 .guide details { margin-top: 10px; }
 .guide summary { cursor: pointer; }
@@ -358,7 +362,7 @@ select.input { cursor: pointer; }
   width: 34px; height: 28px; flex: none;
   position: relative;
   border: 0;
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 4px 0;
   cursor: pointer;
   background-color: var(--track);
