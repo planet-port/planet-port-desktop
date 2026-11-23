@@ -248,22 +248,18 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                     format!("{}: {}", tr(&lang, "接口", "Interface"), s(n, "interface")),
                 )?;
             }
-            // IP 在接口之后,可点击复制(复制纯地址,不带 "IP: " 前缀)
-            let addrs = n
+            // IP 在接口之后,可点击复制(复制纯地址);多地址逐条一行,
+            // 首行带 "IP: " 前缀,后续行裸地址
+            let addrs: Vec<&str> = n
                 .get("assignedAddrs")
                 .and_then(|x| x.as_array())
-                .map(|v| {
-                    v.iter()
-                        .filter_map(|i| i.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
+                .map(|v| v.iter().filter_map(|i| i.as_str()).collect())
                 .unwrap_or_default();
-            if !addrs.is_empty() {
+            for (i, a) in addrs.iter().enumerate() {
                 net.append(&MenuItem::with_id(
                     app,
-                    format!("copy|{addrs}"),
-                    format!("IP: {addrs}"),
+                    format!("copy|{a}"),
+                    if i == 0 { format!("IP: {a}") } else { (*a).to_string() },
                     true,
                     None::<&str>,
                 )?)?;
