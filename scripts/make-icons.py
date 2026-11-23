@@ -4,7 +4,8 @@
 口径(用户指定):mac/linux 托盘恒用白色单色形状,win 恒用彩色 logo,
 均取 256 源图;每色两态:online 实心 / offline 按 alpha 45% 淡化区分。
 裁掉形状外围透明像素,源图尺度各留 12px 边距保证饱满,再缩到目标尺寸。
-应用图标(dock/安装器/快捷方式)不走本脚本,由 `tauri icon <彩色 1024 源图>` 生成。"""
+应用图标(dock/安装器/快捷方式)不走本脚本,先经 make-app-icon.py 加工出
+squircle 底板源,再 `tauri icon <app-icon-mac.png>` 全套生成。"""
 import os
 
 def tray(path, size, alpha_scale, src_name):
