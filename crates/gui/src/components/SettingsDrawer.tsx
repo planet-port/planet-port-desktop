@@ -7,7 +7,6 @@ import BackgroundPickerSheet from './BackgroundPickerSheet';
 import CheckListSheet from './CheckListSheet';
 import IdentitySection from './IdentitySection';
 import DrawerShell from './DrawerShell';
-import PlanetManager from './PlanetManager';
 import ThemeColorSheet from './ThemeColorSheet';
 import { backgroundUrl } from '../background';
 import { setTheme, getTheme, type ThemeMode } from '../theme';
@@ -24,7 +23,7 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(true);
   const close = () => setOpen(false);
-  const [layer, setLayer] = useState<'none' | 'planets' | 'accent' | 'background' | 'lang' | 'theme'>('none');
+  const [layer, setLayer] = useState<'none' | 'accent' | 'background' | 'lang' | 'theme'>('none');
   const [version, setVersion] = useState('');
   /// theme 本地镜像:setTheme 只写 DOM/localStorage 不触发渲染,须同步 state 高亮当前项
   const [theme, setThemeState] = useState<ThemeMode>(getTheme());
@@ -96,15 +95,8 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
           <div className="kv"><span>planet-port</span><span className="mono">{version || '-'}</span></div>
           <div className="kv"><span>ZeroTier Core</span><span className="mono">{coreVersion ?? '-'}</span></div>
         </section>
-        <h4 className="group-title">{t('settings.advanced')}</h4>
-        <section className="drawer-section">
-          <button className="kv" onClick={() => setLayer('planets')}>
-            <span>{t('settings.planetManager')}</span>
-            <span className="chev" aria-hidden="true">›</span>
-          </button>
-        </section>
       </DrawerShell>
-      {/* 语言/外观/行星管理/主题色/背景弹层与设置抽屉平级(DrawerShell 经 portal 挂 body):后挂者居上 */}
+      {/* 语言/外观/主题色/背景弹层与设置抽屉平级(DrawerShell 经 portal 挂 body):后挂者居上 */}
       {layer === 'lang' && (
         <CheckListSheet
           title={t('settings.language')}
@@ -135,7 +127,6 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
           testId="theme"
         />
       )}
-      {layer === 'planets' && <PlanetManager onClose={() => setLayer('none')} />}
       {layer === 'accent' && <ThemeColorSheet onClose={() => setLayer('none')} />}
       {layer === 'background' && <BackgroundPickerSheet onClose={() => setLayer('none')} />}
     </>

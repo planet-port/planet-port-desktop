@@ -7,7 +7,6 @@ import { initTestI18n } from './i18n';
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn<(cmd: string, args?: unknown) => Promise<unknown>>() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
-vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn().mockResolvedValue('/tmp/identity.secret') }));
 
 const identity = {
   global: { exists: true, nodeId: '1792e3382e' },
@@ -36,116 +35,44 @@ function renderSection() {
 }
 
 describe('IdentitySection', () => {
-  it('展示全局 nodeId 与各行星身份', async () => {
-    invokeMock.mockImplementation((cmd: string) =>
-      cmd === 'identity_get' ? Promise.resolve(identity) : Promise.resolve(null));
-    renderSection();
-    expect(await screen.findAllByText('1792e3382e')).not.toHaveLength(0);
-    expect(await screen.findByText('gozi25')).toBeInTheDocument();
-  });
-
-  it('预检→覆盖确认→import 带 force:true(不带 mode,daemon 缺省保持现有模式)', async () => {
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === 'identity_get') return Promise.resolve(identity);
-      if (cmd === 'identity_import_preflight')
-        return Promise.resolve({ preflight: true, nodeId: 'aaaabbbbcc', globalIdentity: { exists: true, nodeId: '1792e3382e' } });
-      if (cmd === 'identity_import') return Promise.resolve({ nodeId: 'aaaabbbbcc' });
-      return Promise.resolve(null);
-    });
-    renderSection();
-    await screen.findByText('gozi25');
-    screen.getByRole('button', { name: /导入身份/ }).click();
-    // 覆盖确认弹层展示将导入的新地址
-    expect(await screen.findByText(/aaaabbbbcc/)).toBeInTheDocument();
-    screen.getByRole('button', { name: '确定' }).click();
-    expect(await screen.findByText('身份已导入')).toBeInTheDocument();
-    const importCall = invokeMock.mock.calls.find(c => c[0] === 'identity_import');
-    expect(importCall?.[1]).toEqual({ path: '/tmp/identity.secret', force: true });
-  });
-
-  it('无既有身份时确认导入不带 force(仅覆盖才置 true)', async () => {
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === 'identity_get') return Promise.resolve(identity);
-      if (cmd === 'identity_import_preflight')
-        return Promise.resolve({ preflight: true, nodeId: 'aaaabbbbcc', globalIdentity: { exists: false, nodeId: null } });
-      if (cmd === 'identity_import') return Promise.resolve({ nodeId: 'aaaabbbbcc' });
-      return Promise.resolve(null);
-    });
-    renderSection();
-    await screen.findByText('gozi25');
-    screen.getByRole('button', { name: /导入身份/ }).click();
-    expect(await screen.findByText(/aaaabbbbcc/)).toBeInTheDocument();
-    screen.getByRole('button', { name: '确定' }).click();
-    expect(await screen.findByText('身份已导入')).toBeInTheDocument();
-    const importCall = invokeMock.mock.calls.find(c => c[0] === 'identity_import');
-    expect(importCall?.[1]).toEqual({ path: '/tmp/identity.secret', force: false });
-  });
-
-  it('preflight 响应缺 preflight:true 标记 → 提示升级 daemon 且不 import', async () => {
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === 'identity_get') return Promise.resolve(identity);
-      if (cmd === 'identity_import_preflight') return Promise.resolve({});
-      return Promise.resolve(null);
-    });
-    renderSection();
-    await screen.findByText('gozi25');
-    screen.getByRole('button', { name: /导入身份/ }).click();
-    expect(await screen.findByText(/版本过旧/)).toBeInTheDocument();
-    expect(invokeMock.mock.calls.map(c => c[0])).not.toContain('identity_import');
-  });
-
-  it('模式行展示当前值,进下级勾选页 ✓ 当前项(全停可交互)', async () => {
+  it('shared 态 switch 未开启,foot 显示共享模式说明', async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === 'identity_get' ? Promise.resolve(identityIdle) : Promise.resolve(null));
     renderSection();
-    await screen.findByText('gozi25');
-    // 值行右侧显示当前模式(iOS 值行形态)
-    expect(screen.getByTestId('id-mode')).toHaveTextContent('共享身份');
-    fireEvent.click(screen.getByTestId('id-mode'));
-    expect(screen.getByTestId('id-mode-shared').textContent).toContain('✓');
-    expect(screen.getByTestId('id-mode-independent').textContent).not.toContain('✓');
+    expect(await screen.findByText(/所有行星使用同一节点/)).toBeInTheDocument();
+    expect(screen.getByTestId('id-mode').querySelector('.switch')).not.toHaveClass('on');
   });
 
-  it('independent 模式下级页 ✓ 独立项', async () => {
+  it('independent 态 switch 开启,foot 显示独立模式说明', async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === 'identity_get' ? Promise.resolve(identityIndependent) : Promise.resolve(null));
     renderSection();
-    await screen.findByText('gozi25');
-    expect(screen.getByTestId('id-mode')).toHaveTextContent('独立身份');
-    fireEvent.click(screen.getByTestId('id-mode'));
-    expect(screen.getByTestId('id-mode-independent').textContent).toContain('✓');
-    expect(screen.getByTestId('id-mode-shared').textContent).not.toContain('✓');
+    expect(await screen.findByText(/每行星各自节点/)).toBeInTheDocument();
+    expect(screen.getByTestId('id-mode').querySelector('.switch')).toHaveClass('on');
   });
 
-  it('有运行中行星时模式行禁用,不可进下级页', async () => {
-    invokeMock.mockImplementation((cmd: string) =>
-      cmd === 'identity_get' ? Promise.resolve(identity) : Promise.resolve(null));
-    renderSection();
-    await screen.findByText('gozi25');
-    expect(screen.getByTestId('id-mode')).toBeDisabled();
-    expect(screen.queryByTestId('id-mode-independent')).not.toBeInTheDocument();
-    expect(invokeMock.mock.calls.map(c => c[0])).not.toContain('identity_mode_set');
-  });
-
-  it('全停后下级页选独立弹确认,确认后调 identity_mode_set 并 toast+invalidate', async () => {
+  it('点击整行直接切换(无确认弹窗),成功后 toast+invalidate', async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === 'identity_get') return Promise.resolve(identityIdle);
       if (cmd === 'identity_mode_set') return Promise.resolve({ result: 'ok', mode: 'independent' });
       return Promise.resolve(null);
     });
     const { invalidateSpy } = renderSection();
-    await screen.findByText('gozi25');
-    expect(screen.getByTestId('id-mode')).not.toBeDisabled();
+    await screen.findByText(/所有行星使用同一节点/);
     fireEvent.click(screen.getByTestId('id-mode'));
-    fireEvent.click(screen.getByTestId('id-mode-independent'));
-    // 确认弹层展示目标模式与重授权警示
-    expect(await screen.findByText('切换身份模式')).toBeInTheDocument();
-    expect(screen.getByText(/切换到「独立身份」/)).toBeInTheDocument();
-    screen.getByRole('button', { name: '确定' }).click();
     expect(await screen.findByText('已切换为独立身份')).toBeInTheDocument();
     const setCall = invokeMock.mock.calls.find(c => c[0] === 'identity_mode_set');
     expect(setCall?.[1]).toEqual({ mode: 'independent' });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['identity'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['status'] });
+  });
+
+  it('有运行中行星时行禁用,foot 显示受阻提示且不触发切换', async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === 'identity_get' ? Promise.resolve(identity) : Promise.resolve(null));
+    renderSection();
+    expect(await screen.findByText(/停止全部行星后才能切换/)).toBeInTheDocument();
+    expect(screen.getByTestId('id-mode')).toBeDisabled();
+    expect(invokeMock.mock.calls.map(c => c[0])).not.toContain('identity_mode_set');
   });
 });

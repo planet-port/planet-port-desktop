@@ -80,9 +80,9 @@ describe('App 单页布局', () => {
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
   });
 
-  it('空态：无行星时显示导入引导空态', async () => {
+  it('空态：无行星时显示加入行星引导空态', async () => {
     renderApp();
-    expect(await screen.findByText(/导入/)).toBeInTheDocument();
+    expect(await screen.findByText(/加入行星/)).toBeInTheDocument();
   });
 
   it('navigate 事件 focusJoin 打开添加网络抽屉（与托盘同一入口）', async () => {
