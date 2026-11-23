@@ -70,7 +70,6 @@ export default function QRShareSheet({
     <DrawerShell open={open} onClose={close} onClosed={onDismiss}>
       <header>
         <h3>{title}</h3>
-        <button className="btn icon" aria-label={t('common.close')} onClick={close}>×</button>
       </header>
       <div className="qr-sheet">
         {subtitle && <p className="small">{subtitle}</p>}

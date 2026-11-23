@@ -148,7 +148,7 @@ describe('DrawerShell', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('多层抽屉按挂载序取层号 --stack:首个 0,第二个 1(右偏层叠)', async () => {
+  it('多层抽屉反向取号 --stack:最新层 0 贴右,底层 1 往里推;--layer 挂载序居上', async () => {
     render(
       <>
         <DrawerShell open onClose={() => {}} testId="first">
@@ -161,8 +161,10 @@ describe('DrawerShell', () => {
     );
     // MutationObserver 回调在 microtask 后触发,flush 后层号落位
     await act(async () => {});
-    expect(screen.getByTestId('first').style.getPropertyValue('--stack')).toBe('0');
-    expect(screen.getByTestId('second').style.getPropertyValue('--stack')).toBe('1');
+    expect(screen.getByTestId('first').style.getPropertyValue('--stack')).toBe('1');
+    expect(screen.getByTestId('second').style.getPropertyValue('--stack')).toBe('0');
+    expect(screen.getByTestId('first').style.getPropertyValue('--layer')).toBe('0');
+    expect(screen.getByTestId('second').style.getPropertyValue('--layer')).toBe('1');
   });
 
   it('上层抽屉卸载后,下层层号回落(层叠重排)', async () => {
@@ -177,8 +179,8 @@ describe('DrawerShell', () => {
       </>,
     );
     await act(async () => {});
-    expect(screen.getByTestId('second').style.getPropertyValue('--stack')).toBe('1');
-    // 关闭第二层:250ms 动画期仍占位,卸载后第一层回落 0
+    expect(screen.getByTestId('second').style.getPropertyValue('--stack')).toBe('0');
+    // 关闭第二层:250ms 动画期仍占位,卸载后第一层从 1 回落到 0(贴右)
     rerender(
       <>
         <DrawerShell open onClose={() => {}} testId="first">

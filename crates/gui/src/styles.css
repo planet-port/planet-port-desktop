@@ -380,10 +380,12 @@ select.input { cursor: pointer; }
 /* 设置抽屉(右侧弹层;遮罩点击关闭)。宽度统一 360(「添加行星服务器」口径);
    --stack 层号来自 DrawerShell:多层抽屉每深一层右偏 44px,露出下层右缘
    (被本层遮罩压暗)形成层叠,可直观看到当前叠了几层 */
-.drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.25); z-index: calc(30 + var(--stack, 0)); }
+.drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.25); z-index: calc(30 + var(--layer, 0)); }
+/* --stack=反向序(最新层 0 贴右,底层逐层往里推露左边缘);--layer=挂载序(后挂居上) */
 .drawer {
-  position: fixed; top: 0; right: calc(var(--stack, 0) * 44px); bottom: 0; width: 360px;
-  z-index: calc(31 + var(--stack, 0));
+  position: fixed; top: 0; right: calc(var(--stack, 0) * 44px); bottom: 0;
+  width: fit-content; min-width: 360px;
+  z-index: calc(31 + var(--layer, 0));
   background: var(--panel-2); border-left: 1px solid var(--border);
   padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
   box-shadow: -8px 0 24px rgba(0,0,0,0.12);

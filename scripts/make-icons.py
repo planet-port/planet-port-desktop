@@ -27,14 +27,21 @@ def png(path, size, rgb, alpha=255):
     print("wrote", path)
 
 def tray(path, size, alpha_scale):
-    """从品牌 shape 源图导出托盘态：纯黑形状+透明底(macOS 模板图，
-    系统按菜单栏深浅自动着色)；离线态按 alpha_scale 淡化区分。
-    注:画布留白对 macOS 渲染无效——系统按 alpha bbox 紧裁后归一化到
-    菜单栏标准高度,形状视觉密度由系统决定。"""
+    """从品牌 shape 源图导出托盘态：白色形状+透明底(非模板,菜单栏恒定白色,
+    用户指定口径)；裁掉形状外围透明像素,源图尺度各留 12px 边距保证饱满；
+    离线态按 alpha_scale 淡化区分。"""
     from PIL import Image
     here = os.path.dirname(os.path.abspath(__file__))
     src = os.path.join(here, "..", "crates", "gui", "src-tauri", "icons", "brand-shape.png")
-    im = Image.open(src).convert("RGBA").resize((size, size), Image.LANCZOS)
+    base = Image.open(src).convert("RGBA")
+    x0, y0, x1, y1 = base.getchannel("A").getbbox()
+    pad = 12
+    box = (max(0, x0 - pad), max(0, y0 - pad), min(base.width, x1 + pad), min(base.height, y1 + pad))
+    crop = base.crop(box)
+    # 形状填白:alpha 作遮罩,RGB 全白
+    white = Image.new("RGBA", crop.size, (255, 255, 255, 0))
+    white.paste((255, 255, 255, 255), (0, 0), crop.getchannel("A"))
+    im = white.resize((size, size), Image.LANCZOS)
     if alpha_scale < 1:
         a = im.getchannel("A").point(lambda v: int(v * alpha_scale))
         im.putalpha(a)

@@ -9,9 +9,9 @@ import { useTranslation } from 'react-i18next';
 /// 经 portal 挂到 body:.drawer.slide 的 transform 会成为 fixed 后代的
 /// 包含块,嵌套抽屉(确认框/二维码/图标选择等)若留在抽屉 DOM 内会被
 /// 裁剪错位——平铺为 body 兄弟节点后与遮罩同为全局层级,后者居上。
-/// 多层抽屉层叠:挂载后按 body 下 aside.drawer 的 DOM 序取层号 --stack,
-/// 每深一层右偏 44px 露出下层边缘(被本层遮罩压暗);兄弟抽屉增删由
-/// MutationObserver 监听 body childList 重排,关闭动画期尚未卸载的层仍占位。
+/// 多层抽屉层叠:最新一层贴右(--stack=0),底层逐层往里推 44px 露出边缘
+/// (被上层遮罩压暗);--layer 为挂载序管 z-index(后挂居上)。兄弟抽屉增删
+/// 由 MutationObserver 监听 body childList 重排,关闭动画期尚未卸载的层仍占位。
 export default function DrawerShell({
   open, onClose, onClosed, testId, children,
 }: {
@@ -21,6 +21,7 @@ export default function DrawerShell({
   const [mounted, setMounted] = useState(open);
   const [entered, setEntered] = useState(false);
   const [stack, setStack] = useState(0);
+  const [layer, setLayer] = useState(0);
   const ref = useRef<HTMLElement | null>(null);
   /// onClosed 存 ref:父层常传内联箭头函数,新引用不应重置卸载定时
   const onClosedRef = useRef(onClosed);
@@ -45,7 +46,10 @@ export default function DrawerShell({
     const el = ref.current;
     if (!el) return;
     const restack = () => {
-      setStack(Math.max(0, Array.from(document.querySelectorAll('aside.drawer')).indexOf(el)));
+      const drawers = Array.from(document.querySelectorAll('aside.drawer'));
+      const i = Math.max(0, drawers.indexOf(el));
+      setLayer(i);
+      setStack(drawers.length - 1 - i);
     };
     restack();
     const mo = new MutationObserver(restack);
@@ -57,13 +61,13 @@ export default function DrawerShell({
     <>
       <div
         className={`drawer-mask fade ${entered ? 'in' : ''}`}
-        style={{ '--stack': stack } as CSSProperties}
+        style={{ '--layer': layer } as CSSProperties}
         onClick={onClose}
       />
       <aside
         ref={ref}
         className={`drawer slide ${entered ? 'in' : ''}`}
-        style={{ '--stack': stack } as CSSProperties}
+        style={{ '--stack': stack, '--layer': layer } as CSSProperties}
         data-testid={testId}
       >
         <button className="drawer-close" aria-label={t('common.close')} onClick={onClose}>×</button>
