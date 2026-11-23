@@ -1,19 +1,27 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import { api, asError } from '../api/client';
 import { backgroundUrl, getBackground, setBackground } from '../background';
 import { useToast } from './Toaster';
+import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
+import { Button } from './ui-x/Button';
 
 /// 背景图选择弹层(iOS BackgroundImagePickerSheet 对位):预览当前背景,
-/// 选图(复制进 appData 后即刻生效)/清除。遮罩点击关闭
+/// 选图(复制进 appData 后即刻生效)/清除。遮罩点击/Esc 关闭,无右上角关闭钮
+/// (基线 overlay 形态)。容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序——
+/// 内部持有 open,关闭走退出动画后再回调父层卸载。
+/// 缩略图样式对译 styles.css .bg-thumb(本组件独占,迁完规则零引用):
+/// 全宽 120px 高 cover 裁切 + 1px 边 6px 圆角
 export default function BackgroundPickerSheet({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const [open, setOpen] = useState(true);
+  const close = () => setOpen(false);
   const [url, setUrl] = useState(() => backgroundUrl());
   const [busy, setBusy] = useState(false);
   const choose = async () => {
-    const path = await open({
+    const path = await openFileDialog({
       multiple: false,
       filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
     });
@@ -43,22 +51,26 @@ export default function BackgroundPickerSheet({ onClose }: { onClose: () => void
     }
   };
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="dialog" onClick={e => e.stopPropagation()}>
-        <h3>{t('settings.background')}</h3>
+    <Dialog open={open} onOpenChange={o => { if (!o) close(); }} onClosed={onClose}>
+      <DialogContent>
+        <DialogTitle>{t('settings.background')}</DialogTitle>
         {url ? (
-          <img className="bg-thumb" src={url} alt={t('settings.background')} />
+          <img
+            className="block h-[120px] w-full rounded-[6px] border border-border object-cover"
+            src={url}
+            alt={t('settings.background')}
+          />
         ) : (
           <div className="kv"><span>{t('common.notSet')}</span></div>
         )}
-        <div className="dialog-actions">
+        <div className="mt-4 flex items-center justify-end gap-2">
           {getBackground() && (
-            <button className="btn danger" disabled={busy} onClick={() => void clear()}>{t('settings.bgClear')}</button>
+            <Button variant="danger" disabled={busy} onClick={() => void clear()}>{t('settings.bgClear')}</Button>
           )}
-          <span className="grow" />
-          <button className="btn primary" disabled={busy} onClick={() => void choose()}>{t('settings.bgPick')}</button>
+          <span className="flex-1" />
+          <Button variant="primary" disabled={busy} onClick={() => void choose()}>{t('settings.bgPick')}</Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

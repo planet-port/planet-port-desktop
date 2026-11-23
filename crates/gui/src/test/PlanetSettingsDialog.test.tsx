@@ -69,7 +69,7 @@ describe('PlanetSettingsDialog', () => {
     expect(await screen.findByText('导出文件')).toBeInTheDocument();
     expect(screen.getByText('二维码')).toBeInTheDocument();
     fireEvent.click(screen.getByText('删除'));
-    fireEvent.click(await screen.findByText('删除', { selector: '[data-testid="confirm-dialog"] .btn.danger' }));
+    fireEvent.click(await screen.findByText('删除', { selector: '[data-testid="confirm-dialog"] [data-variant="danger"]' }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('remove_planet', { id: '1' }));
   });
 

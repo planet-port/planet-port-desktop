@@ -13,7 +13,8 @@ describe('IconPicker', () => {
     // testing-library 只在 within()/screen/render 上挂查询,元素本身无 getAllByRole
     const grid = within(screen.getByRole('grid'));
     expect(grid.getAllByRole('button').length).toBe(92);
-    expect(grid.getAllByRole('button')[72]).toHaveClass('active');
+    // 选中态迁 aria-pressed(原 .active 类随结构类一并 Tailwind 化)
+    expect(grid.getAllByRole('button')[72]).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('底色页渲染 24 预设 + 随机底色按钮,完成后回传选择', () => {

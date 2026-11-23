@@ -1,17 +1,28 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { QrCode } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { api, asError } from '../api/client';
 import type { NetworkEntry } from '../api/types';
 import ConfirmDialog from './ConfirmDialog';
 import CopyableValue from './CopyableValue';
-import DrawerShell from './DrawerShell';
-import QRIcon from './QRIcon';
 import QRShareSheet from './QRShareSheet';
 import { useToast } from './Toaster';
+import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
+import { Input } from './ui-x/Input';
 import { Switch } from './ui-x/Switch';
 import { serversToSlots, slotsToServers, slotsValid, type DnsSlots } from '../dns';
+
+/// styles.css .link 对译(本组件与 PlanetSettingsDialog 独占,迁完 .link 规则零引用):
+/// 卡内行内文字钮,负 margin 左撑 8px 对齐卡内 padding 缘,hover 抬 --panel 面底;
+/// muted/禁用转 --muted 灰(基线 .link.muted/.link:disabled 同款)
+const linkCls =
+  '-mx-2 inline-flex min-h-7 w-fit cursor-pointer items-center rounded-[6px] border-none bg-transparent px-2 py-0.5 text-left transition-colors duration-[120ms] ease-[ease] focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1 enabled:hover:bg-[var(--panel)] disabled:cursor-default disabled:text-[var(--muted)]';
+/// styles.css .danger-row 对译(同上,迁完规则零引用):居中红字删除行,
+/// hover 淡红底(10% 混色)面反馈优先于下划线,禁用转 --off
+const dangerRowCls =
+  '-mx-2 cursor-pointer rounded-[6px] border-none bg-transparent px-2 py-1.5 text-center text-[13px] text-[var(--danger)] transition-colors duration-[120ms] ease-[ease] focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1 enabled:hover:bg-[color:color-mix(in_srgb,var(--danger)_10%,transparent)] disabled:cursor-default disabled:text-[var(--off)]';
 
 /// daemon mac 若为 12 位裸十六进制则补冒号小写(aa:bb:cc:dd:ee:ff),已带分隔原样
 function formatMac(mac: string): string {
@@ -27,8 +38,8 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
   const { t } = useTranslation();
   const toast = useToast();
   const qc = useQueryClient();
-  /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走滑出动画,动画结束
-  /// (DrawerShell onClosed)才回调父层 onClose 清理(父层条件渲染才卸载)
+  /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走退出动画,动画结束
+  /// (ui-x/Dialog onClosed)才回调父层 onClose 清理(父层条件渲染才卸载)
   const [open, setOpen] = useState(true);
   const close = () => setOpen(false);
   const [routeVia, setRouteVia] = useState(row.routeViaZeroTier);
@@ -109,16 +120,17 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
 
   return (
     <>
-      <DrawerShell open={open} onClose={close} onClosed={onClose} testId="network-detail">
-        <header>
-          <h3>{t('networks.detailTitle', { name: row.name ?? row.nwid })}</h3>
-        </header>
-        <section className="detail-section">
+      {/* 详情弹层容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序不变——内部持有
+          open,onClose 只翻 state 走退出动画,动画结束(onClosed)才回调父层清理 */}
+      <Dialog open={open} onOpenChange={o => { if (!o) close(); }} onClosed={onClose}>
+        <DialogContent testId="network-detail" closeLabel={t('common.close')} className="gap-3">
+          <DialogTitle>{t('networks.detailTitle', { name: row.name ?? row.nwid })}</DialogTitle>
+          <section className="detail-section">
           <div className="kv">
             <span>{t('networks.id')}</span>
             <span className="kv-val">
               <CopyableValue text={row.nwid} />
-              <button className="plain" aria-label={t('networks.qr')} title={t('networks.qr')} onClick={() => setShowQR(true)}><QRIcon /></button>
+              <button className="plain" aria-label={t('networks.qr')} title={t('networks.qr')} onClick={() => setShowQR(true)}><QrCode size={14} aria-hidden="true" /></button>
             </span>
           </div>
           <div className="kv"><span>{t('networks.name')}</span><span className="mono">{row.name ?? '-'}</span></div>
@@ -155,7 +167,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
               <div className="kv" key={`${r.target}/${r.via ?? ''}/${i}`}>
                 <span>{t('networks.routeLabel', { index: i + 1 })}</span>
                 <button
-                  className={`link mono ${r.via ? '' : 'muted'}`}
+                  className={`${linkCls} mono ${r.via ? 'text-foreground' : 'text-[var(--muted)]'}`}
                   disabled={!r.via}
                   title={r.via ? t('networks.routeToggleHint') : t('networks.directRoute')}
                   onClick={() => toggleRoute(i, r.via)}
@@ -176,7 +188,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
           {dnsMode === 'custom' && (
             <div className="dns-slots">
               {(['v4a', 'v4b', 'v6a', 'v6b'] as const).map(k => (
-                <input key={k} className="input mono" placeholder={t(`dns.${k}`)} value={slots[k]}
+                <Input key={k} className="mono" placeholder={t(`dns.${k}`)} value={slots[k]}
                   disabled={disabled}
                   onChange={e => setSlots({ ...slots, [k]: e.target.value })}
                   onBlur={applySlots}
@@ -204,10 +216,11 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
           </p>
         </section>
         <section className="detail-section">
-          <button className="danger-row" onClick={() => setConfirmDel(true)}>{t('networks.deleteNetwork')}</button>
+          <button className={dangerRowCls} onClick={() => setConfirmDel(true)}>{t('networks.deleteNetwork')}</button>
         </section>
-      </DrawerShell>
-      {/* QRShareSheet/确认框与详情抽屉平级(DrawerShell 经 portal 挂 body):
+        </DialogContent>
+      </Dialog>
+      {/* QRShareSheet/确认框与详情弹层平级(均经 portal 挂 body):
           点二维码遮罩只收二维码,不冒泡关闭详情 */}
       {showQR && (
         <QRShareSheet

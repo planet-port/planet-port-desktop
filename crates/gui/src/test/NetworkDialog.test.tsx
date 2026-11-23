@@ -122,7 +122,7 @@ describe('NetworkDialog 网络详情', () => {
   it('删除网络:确认后 leave_network', async () => {
     renderDialog();
     fireEvent.click(await screen.findByText('删除网络'));
-    fireEvent.click(await screen.findByText('删除网络', { selector: '[data-testid="confirm-dialog"] .btn.danger' }));
+    fireEvent.click(await screen.findByText('删除网络', { selector: '[data-testid="confirm-dialog"] [data-variant="danger"]' }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('leave_network', { nwid: '5cf54f1815588318', planet: '3530253632' }));
     expect(await screen.findByText('已离开网络')).toBeInTheDocument();
   });

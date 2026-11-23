@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as QRCode from 'qrcode';
-import DrawerShell from './DrawerShell';
 import { encodeFrames, QRTooLargeError } from '../ztp/frames';
+import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
+import { Button } from './ui-x/Button';
 
 /// 二维码分享弹层:单帧静态直出保存按钮;多帧轮播(速度四档+手动切换),
 /// 与移动端 QRShareSheet 行为一致。编码在 useMemo、渲染 toDataURL 异步逐张。
+/// 容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序——内部持有 open,onClose 只翻
+/// state 走退出动画,动画结束(onClosed)才回调 onDismiss 让父层卸载。
+/// 内容布局类对译 styles.css .qr-* 系(本组件独占,迁完规则零引用):
+/// 居中排版 380px,图 260px pixelated,计数徽标挂图右下角
 const SPEEDS = [0.3, 0.5, 0.8, 1.2];
 
 export default function QRShareSheet({
@@ -22,8 +27,8 @@ export default function QRShareSheet({
   onDismiss: () => void;
 }) {
   const { t } = useTranslation();
-  /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走滑出动画,动画结束
-  /// (DrawerShell onClosed)才回调 onDismiss 让父层卸载
+  /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走退出动画,动画结束
+  /// (ui-x/Dialog onClosed)才回调 onDismiss 让父层卸载
   const [open, setOpen] = useState(true);
   const close = () => setOpen(false);
   const frames = useMemo(() => {
@@ -67,50 +72,54 @@ export default function QRShareSheet({
   }, [manual, speed, frames, urls.length]);
 
   return (
-    <DrawerShell open={open} onClose={close} onClosed={onDismiss}>
-      <header>
-        <h3>{title}</h3>
-      </header>
-      <div className="qr-sheet">
-        {subtitle && <p className="small">{subtitle}</p>}
-        {frames === null ? (
-          <div className="empty">{t('qrtransfer.tooLarge')}</div>
-        ) : urls.length === 0 ? (
-          <div className="empty">{t('qrtransfer.generating')}</div>
-        ) : (
-          <>
-            <div className="qr-stage">
-              <img src={urls[Math.min(index, urls.length - 1)]} alt="QR" />
-              {frames.length > 1 && <span className="qr-counter">{index + 1}/{frames.length}</span>}
-            </div>
-            {frames.length > 1 && (
-              <div className="qr-controls">
-                <label className="small">
-                  <input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} /> {t('qrtransfer.manual')}
-                </label>
-                <div className="qr-speeds">
-                  {SPEEDS.map((s, i) => (
-                    <button key={s} className={`btn qr-speed ${speed === i ? 'active' : ''}`} onClick={() => setSpeed(i)}>
-                      {s}s
-                    </button>
-                  ))}
-                </div>
-                {manual && (
-                  <div className="qr-manual">
-                    <button className="btn" onClick={() => setIndex(i => (i - 1 + frames.length) % frames.length)}>‹</button>
-                    <button className="btn" onClick={() => setIndex(i => (i + 1) % frames.length)}>›</button>
-                  </div>
+    <Dialog open={open} onOpenChange={o => { if (!o) close(); }} onClosed={onDismiss}>
+      <DialogContent closeLabel={t('common.close')}>
+        <DialogTitle>{title}</DialogTitle>
+        <div className="w-[380px] text-center">
+          {subtitle && <p className="small">{subtitle}</p>}
+          {frames === null ? (
+            <div className="py-12 text-center text-[var(--muted)]">{t('qrtransfer.tooLarge')}</div>
+          ) : urls.length === 0 ? (
+            <div className="py-12 text-center text-[var(--muted)]">{t('qrtransfer.generating')}</div>
+          ) : (
+            <>
+              <div className="relative my-2 inline-block">
+                <img src={urls[Math.min(index, urls.length - 1)]} alt="QR" className="size-[260px] [image-rendering:pixelated]" />
+                {frames.length > 1 && (
+                  <span className="absolute -right-2 -bottom-2 rounded-full border border-border bg-[var(--panel)] px-2.5 py-px text-xs text-[var(--muted)]">
+                    {index + 1}/{frames.length}
+                  </span>
                 )}
               </div>
-            )}
-            {frames.length === 1 && onSave && (
-              <div className="dialog-actions">
-                <button className="btn primary" onClick={() => onSave(urls[0])}>{t('qrtransfer.savePng')}</button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </DrawerShell>
+              {frames.length > 1 && (
+                <div className="mt-1.5 flex items-center justify-center gap-3.5">
+                  <label className="small">
+                    <input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} /> {t('qrtransfer.manual')}
+                  </label>
+                  <div className="flex gap-1">
+                    {SPEEDS.map((s, i) => (
+                      <Button key={s} size="sm" variant={speed === i ? 'active' : 'default'} onClick={() => setSpeed(i)}>
+                        {s}s
+                      </Button>
+                    ))}
+                  </div>
+                  {manual && (
+                    <div className="flex gap-1">
+                      <Button onClick={() => setIndex(i => (i - 1 + frames.length) % frames.length)}>‹</Button>
+                      <Button onClick={() => setIndex(i => (i + 1) % frames.length)}>›</Button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {frames.length === 1 && onSave && (
+                <div className="mt-4 flex justify-end gap-2">
+                  <Button variant="primary" onClick={() => onSave(urls[0])}>{t('qrtransfer.savePng')}</Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

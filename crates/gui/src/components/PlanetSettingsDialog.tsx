@@ -6,14 +6,26 @@ import { api, asError } from '../api/client';
 import type { PlanetStatus } from '../api/types';
 import ConfirmDialog from './ConfirmDialog';
 import CopyableValue from './CopyableValue';
-import DrawerShell from './DrawerShell';
 import IconPicker from './IconPicker';
 import PeersDialog from './PeersDialog';
 import PlanetIconView from './PlanetIconView';
 import QRShareSheet from './QRShareSheet';
 import { useToast } from './Toaster';
+import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
 import { animalFor, colorFor } from '../icons/planetIcon';
 import { planetPayloadContainer } from '../ztp/container';
+
+/// styles.css .link 对译(本组件与 NetworkDialog 独占,迁完 .link 规则零引用):
+/// 卡内行内文字钮,负 margin 左撑 8px,hover 抬 --panel 面底
+const linkCls =
+  '-mx-2 inline-flex min-h-7 w-fit cursor-pointer items-center rounded-[6px] border-none bg-transparent px-2 py-0.5 text-left transition-colors duration-[120ms] ease-[ease] focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1 enabled:hover:bg-[var(--panel)] disabled:cursor-default disabled:text-[var(--muted)]';
+/// styles.css .danger-row 对译(同上,迁完规则零引用):居中红字删除行,hover 淡红底
+const dangerRowCls =
+  '-mx-2 cursor-pointer rounded-[6px] border-none bg-transparent px-2 py-1.5 text-center text-[13px] text-[var(--danger)] transition-colors duration-[120ms] ease-[ease] focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1 enabled:hover:bg-[color:color-mix(in_srgb,var(--danger)_10%,transparent)] disabled:cursor-default disabled:text-[var(--off)]';
+/// styles.css .inline-edit 对译(本组件独占,迁完规则零引用):行内编辑(行星名称)
+/// 右对齐透明底,hover/focus 才显形
+const inlineEditCls =
+  'min-w-40 cursor-text rounded-[6px] border border-transparent bg-transparent px-1.5 py-[3px] text-right text-foreground enabled:hover:border-border focus:border-primary focus:outline-none disabled:cursor-default disabled:text-[var(--off)]';
 
 /// 文件大小 1000 进制(iOS 口径):B→KB→MB→GB→TB
 function locFileSize(n: number): string {
@@ -39,8 +51,8 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
   const qc = useQueryClient();
   const toast = useToast();
   const custom = planet.type === 'custom';
-  /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走滑出动画,动画结束
-  /// (DrawerShell onClosed)才回调父层 onClose 清理(父层条件渲染才卸载)
+  /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走退出动画,动画结束
+  /// (ui-x/Dialog onClosed)才回调父层 onClose 清理(父层条件渲染才卸载)
   const [open, setOpen] = useState(true);
   const close = () => setOpen(false);
   /// 编辑态与已保存态分开跟踪:即时保存按"与上次已保存值有差异"判定,
@@ -127,16 +139,16 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
   const d = detail.data;
   return (
     <>
-      <DrawerShell open={open} onClose={close} onClosed={onClose} testId="planet-settings">
-        <header>
-          <h3>{t('planet.settingsTitle', { name: planet.name })}</h3>
-        </header>
-        <section className="detail-section">
+      {/* 设置弹层容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序不变 */}
+      <Dialog open={open} onOpenChange={o => { if (!o) close(); }} onClosed={onClose}>
+        <DialogContent testId="planet-settings" closeLabel={t('common.close')} className="gap-3">
+          <DialogTitle>{t('planet.settingsTitle', { name: planet.name })}</DialogTitle>
+          <section className="detail-section">
           <div className="kv">
             <span>{t('addplanet.name')}</span>
             {custom ? (
               <input
-                className="inline-edit"
+                className={inlineEditCls}
                 value={name}
                 aria-label={t('addplanet.name')}
                 onChange={e => setName(e.target.value)}
@@ -173,9 +185,9 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
             <div className="kv">
               <span>{t('planet.share')}</span>
               <span className="kv-val">
-                <button className="link" onClick={() => void shareFile()}>{t('planets.shareFile')}</button>
-                <span className="link-sep" aria-hidden="true">|</span>
-                <button className="link" onClick={() => void openQr()}>{t('planets.shareQr')}</button>
+                <button className={linkCls} onClick={() => void shareFile()}>{t('planets.shareFile')}</button>
+                <span className="select-none text-[var(--muted)]" aria-hidden="true">|</span>
+                <button className={linkCls} onClick={() => void openQr()}>{t('planets.shareQr')}</button>
               </span>
             </div>
           )}
@@ -189,12 +201,13 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
         </section>
         {custom && (
           <section className="detail-section">
-            <button className="danger-row" onClick={() => setConfirmDel(true)}>{t('common.delete')}</button>
+            <button className={dangerRowCls} onClick={() => setConfirmDel(true)}>{t('common.delete')}</button>
           </section>
         )}
-      </DrawerShell>
-      {/* 图标选择/节点表/确认框/二维码与设置抽屉平级(DrawerShell 经 portal 挂 body):
-          避免嵌在 transform 抽屉内被裁剪,且后挂者居上 */}
+        </DialogContent>
+      </Dialog>
+      {/* 图标选择/节点表/确认框/二维码与设置弹层平级(均经 portal 挂 body):
+          后挂者居上(DOM 序) */}
       {showPicker && (
         <IconPicker
           animal={icon}
