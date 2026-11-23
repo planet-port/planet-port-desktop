@@ -16,6 +16,7 @@ export function PlanetIconView({ icon, color, name, id, size = 72, className }: 
         className,
       )}
       style={{ width: size, height: size, background: colorFor(color, id) }}
+      data-testid="planet-icon"
     >
       {src ? <img src={src} alt={animal} className="h-3/5 w-3/5" /> : animal}
     </span>

@@ -15,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger } from './ui-x/Tabs';
 
 const isHex16 = (s: string) => /^[0-9a-fA-F]{16}$/.test(s);
 
-/// .kv 语义类 Tailwind 对译(与报告速查表同口径,styles.css 待全量替换后删除):
+/// .kv 语义类 Tailwind 对译(与报告速查表同口径):
 /// 卡片组 = --panel 底 + 1px --border 边 + 8px 圆角 + 2px 8px 内衬(暗色 #22252d/#2c3038);
 /// 行盒 = 负 margin + padding 补偿撑满卡内宽(文字起点卡内 16px,分隔线 ::before 缩进对齐);
 /// 可点行 hover 抬 --panel(可点信号);iOS 形态分隔线挂在后续行的 before 上。

@@ -26,6 +26,7 @@ export default function NetworkCard({
   const on = row.status === 'OK';
   return (
     <section
+      data-testid="network-card"
       className={`flex flex-col gap-2 rounded-md border border-[var(--border)] bg-[var(--veil)] px-3.5 py-3 transition-[border-color,background-color] duration-[120ms] ease-[ease] hover:border-[var(--border-h)] hover:bg-secondary ${
         pending ? 'cursor-default opacity-70' : 'cursor-pointer'
       } ${on ? '' : 'opacity-55'}`}

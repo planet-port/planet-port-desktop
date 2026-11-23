@@ -12,9 +12,10 @@ describe('offline guide', () => {
     expect(title).toBe('planet-port');
   });
 
-  it('离线引导页可见(OfflineGuide .guide)', async () => {
-    // OfflineGuide 根节点 .guide;给心跳首探(3s 周期)离线确认留余量
-    await browser.$('.guide').waitForDisplayed({ timeout: 20000 });
+  it('离线引导页可见(OfflineGuide 根节点)', async () => {
+    // OfflineGuide 根节点 data-testid=offline-guide(批 E 锚点对齐:旧 .guide
+    // 语义类已随批 C Tailwind 化移除);给心跳首探(3s 周期)离线确认留余量
+    await browser.$('[data-testid="offline-guide"]').waitForDisplayed({ timeout: 20000 });
   });
 
   it('无内嵌资源时降级手动引导(不出现自动安装按钮)', async () => {
@@ -34,23 +35,45 @@ describe('settings drawer', () => {
   it('设置抽屉开合与语言切换可用', async () => {
     await browser.$('[data-testid="topbar-settings"]').click();
     await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ timeout: 5000 });
+    // 语言选择在二级勾选页(CheckListSheet):值行进页,选中项右侧 ✓(.check);
+    // 批 E 锚点对齐:旧 .lang-*.active 类已随抽屉/弹窗迁移移除,选项即选即关
+    await browser.$('[data-testid="settings-lang-row"]').click();
+    await browser.$('[data-testid="lang"]').waitForDisplayed({ timeout: 5000 });
+    // 选中项右侧 ✓(.check,语义类仍由 styles.css 保留)对位旧 .active 断言;
+    // 选项即选即关,每次切换后重开勾选页才能断选中态(旧用例勾选页保持打开)
+    await expect(browser.$('[data-testid="lang-zh"] .check')).toBeDisplayed();
     await browser.$('[data-testid="lang-en"]').click();
-    await expect(browser.$('[data-testid="lang-en"].active')).toBeDisplayed();
+    await browser.$('[data-testid="lang"]').waitForDisplayed({ reverse: true });
+    await browser.$('[data-testid="settings-lang-row"]').click();
+    await browser.$('[data-testid="lang"]').waitForDisplayed({ timeout: 5000 });
+    await expect(browser.$('[data-testid="lang-en"] .check')).toBeDisplayed();
     await browser.$('[data-testid="lang-zh"]').click();
-    await expect(browser.$('[data-testid="lang-zh"].active')).toBeDisplayed();
+    await browser.$('[data-testid="lang"]').waitForDisplayed({ reverse: true });
+    await browser.$('[data-testid="settings-lang-row"]').click();
+    await browser.$('[data-testid="lang"]').waitForDisplayed({ timeout: 5000 });
+    await expect(browser.$('[data-testid="lang-zh"] .check')).toBeDisplayed();
+    // 右上角关闭钮收勾选页(不触发任何选项)
+    await browser.$('[data-slot="dialog-close"]').click();
+    await browser.$('[data-testid="lang"]').waitForDisplayed({ reverse: true });
     // 关抽屉还原环境:mask 覆盖全屏,不关会拦住后续用例的顶栏点击
-    await browser.$('.drawer-mask').click();
+    await browser.$('[data-slot="sheet-overlay"]').click();
     await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ reverse: true });
   });
 
   it('主题切换:抽屉内切深色后 html 带 data-theme=dark', async () => {
     await browser.$('[data-testid="topbar-settings"]').click();
     await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ timeout: 5000 });
+    await browser.$('[data-testid="settings-appearance-row"]').click();
+    await browser.$('[data-testid="theme"]').waitForDisplayed({ timeout: 5000 });
     await browser.$('[data-testid="theme-dark"]').click();
+    await browser.$('[data-testid="theme"]').waitForDisplayed({ reverse: true });
     const attr = await browser.execute(() => document.documentElement.getAttribute('data-theme'));
     expect(attr).toBe('dark');
+    await browser.$('[data-testid="settings-appearance-row"]').click();
+    await browser.$('[data-testid="theme"]').waitForDisplayed({ timeout: 5000 });
     await browser.$('[data-testid="theme-system"]').click(); // 还原默认
-    await browser.$('.drawer-mask').click();
+    await browser.$('[data-testid="theme"]').waitForDisplayed({ reverse: true });
+    await browser.$('[data-slot="sheet-overlay"]').click();
     await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ reverse: true });
   });
 });

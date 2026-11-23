@@ -5,7 +5,7 @@ import PlanetIconView from './PlanetIconView';
 import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
 import { Button } from './ui-x/Button';
 
-/// styles.css .icon-grid 系对译(本组件独占,迁完规则零引用):92 宫格 8 列,
+/// 基线 .icon-grid 系对译(styles.css 已删,本组件独占):92 宫格 8 列,
 /// 32px 方钮 --panel 底 1px 边,选中主色边;亮色主题图形压黑、暗色还原
 const gridBtnCls =
   'flex h-8 cursor-pointer items-center justify-center rounded-[6px] border bg-[var(--panel)] transition-colors duration-[120ms] ease-[ease] focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1';

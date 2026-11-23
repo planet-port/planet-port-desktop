@@ -4,8 +4,8 @@ import { Button as ButtonPrimitive } from '../ui/button';
 import { cn } from '@/lib/utils';
 
 /// 项目按钮:包 shadcn 原件 ui/button.tsx(cva,官方源码不动),在封装层用项目
-/// CSS 变量 / Tailwind token 定格既有视觉基线(出处 styles.css .btn 全系
-/// 115-146 行与 .btn-block 607 行,待 Task 4 全量替换完成后删除):
+/// CSS 变量 / Tailwind token 定格既有视觉基线(基线 .btn 全系与 .btn-block,
+/// styles.css 已删):
 /// 几何:高 28px、12px 字(line-height 1、正常字重)、1px 边框 6px 圆角、
 ///   内边距 0 10px、gap 6px;icon 变体 28px 方、padding 0、14px 字;sm 仅
 ///   内边距收 0 8px(高度不变,基线 .btn.sm 不动 height)。
@@ -24,8 +24,8 @@ import { cn } from '@/lib/utils';
 /// 1px outline(--primary、offset 1px),ring 归零;aria-invalid 基线无、保留
 /// 原件作为可访问性增强)。原件 focus-visible:border-ring 与基线"聚焦不变边色"
 /// 冲突,各变体带同组 focus-visible:border-* 复位为本变体边色。
-/// 禁用态按基线级联复刻:styles.css .btn:disabled(139)在源序上先于
-/// .btn.primary/.danger/.active(140-144),同特异性后者胜——即非 default 变体
+/// 禁用态按基线级联复刻:基线 .btn:disabled 在源序上先于
+/// .btn.primary/.danger/.active,同特异性后者胜——即非 default 变体
 /// 禁用后仍保持原配色,仅 default 禁用转 --off 字 / --border 边 / 透明底。
 /// 因此 disabled 配色复位只写进 default 变体,其余变体不写,pointer-events-none
 /// 保留原件语义(等效基线 :hover:not(:disabled) 守卫)。

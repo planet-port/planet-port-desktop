@@ -5,7 +5,7 @@ import { api } from '../api/client';
 import QueryError from './QueryError';
 import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
 
-/// styles.css .table 系对译(本组件独占,迁完规则零引用):卡式表格,th 灰字
+/// 基线 .table 系对译(styles.css 已删,本组件独占):卡式表格,th 灰字
 /// --bg 底、行间 hairline 分隔、末行无分隔、--radius 圆角裁切
 const thCls =
   'border-b border-[var(--border-soft)] bg-[var(--bg)] px-3 py-2.5 text-left text-xs font-medium text-[var(--muted)]';

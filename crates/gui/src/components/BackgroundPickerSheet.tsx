@@ -11,7 +11,7 @@ import { Button } from './ui-x/Button';
 /// 选图(复制进 appData 后即刻生效)/清除。遮罩点击/Esc 关闭,无右上角关闭钮
 /// (基线 overlay 形态)。容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序——
 /// 内部持有 open,关闭走退出动画后再回调父层卸载。
-/// 缩略图样式对译 styles.css .bg-thumb(本组件独占,迁完规则零引用):
+/// 缩略图样式对译基线 .bg-thumb(styles.css 已删,本组件独占):
 /// 全宽 120px 高 cover 裁切 + 1px 边 6px 圆角
 export default function BackgroundPickerSheet({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();

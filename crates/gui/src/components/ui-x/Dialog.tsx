@@ -11,8 +11,7 @@ import { DialogOverlay as OverlayPrimitive, DialogTitle as TitlePrimitive } from
 import { cn } from '@/lib/utils';
 
 /// 项目弹窗:包 shadcn 原件系 ui/dialog.tsx + radix-ui Dialog 原语(官方源码不动),
-/// 在封装层定格 styles.css 弹层基线(.overlay 209-217 / .dialog 219-232 / .dialog.confirm
-/// 228 / .dialog-wide 365,弹层全部迁完后删除):
+/// 在封装层定格基线弹层(.overlay/.dialog/.dialog.confirm/.dialog-wide,styles.css 已删):
 /// 遮罩 rgba(0,0,0,0.25)(原件 bg-black/50 经 twMerge 互斥消解)、z-40 保持基线 z 序
 /// (.overlay 40:抽屉 31+layer 之上、toast z-50 之下);面板 --panel-2 底 + 1px --border
 /// 边 + --radius 圆角 + 18px 20px 内边距,无阴影(深度由遮罩承担,基线 .dialog 无
@@ -91,14 +90,14 @@ export function dialogMotionClasses(entered: boolean) {
 }
 
 /// modal={false} 下 Radix 在 document 层监听指针/焦点,toast 层(z-50,在遮罩
-/// z-40 之上)不在弹层内,点 toast 会被判 outside 而误关弹窗——对 toast 容器
-/// (现行 .toasts / 批 D sonner 的 [data-sonner-toaster])放行不 dismiss
+/// z-40 之上)不在弹层内,点 toast 会被判 outside 而误关弹窗——对 sonner 的
+/// toast 容器([data-sonner-toaster])放行不 dismiss
 export function allowToastLayer(e: {
   detail: { originalEvent: { target: EventTarget | null } };
   preventDefault(): void;
 }) {
   const t = e.detail.originalEvent.target;
-  if (t instanceof Element && t.closest('.toasts, [data-sonner-toaster]')) e.preventDefault();
+  if (t instanceof Element && t.closest('[data-sonner-toaster]')) e.preventDefault();
 }
 
 type DialogProps = ComponentProps<typeof DialogPrimitive.Root> & {

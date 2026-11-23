@@ -1,5 +1,7 @@
 /* 视觉体系:Linear 学派暗色密度 —— 1px 边框分层、无阴影无渐变、mono 机器数据、
-   彩色只承载状态与焦点。:root 亮色 + [data-theme='dark'] 暗色(主设计),亮色同构推导。 */
+   彩色只承载状态与焦点。:root 亮色 + [data-theme='dark'] 暗色(主设计),亮色同构推导。
+   本文件只剩两块:CSS 变量单一真源 + 弹层/抽屉批保留的语义类(kv 系/seg/check 等);
+   页面、卡片、按钮、输入、toast、抽屉壳均已迁 Tailwind/ui-x,不再有对应规则。 */
 :root {
   --bg: #fafafa;
   --panel: #ffffff;
@@ -48,8 +50,8 @@
   --knob-on: #0c0e11;
 }
 * { box-sizing: border-box; }
-/* 视口锁死:滚动只发生在 .page/.guide 等内容区,topbar/statusbar 恒定在位;
-   同时切断 WKWebView 整页(body 级)滚动与弹性滚动带来的跟随位移 */
+/* 视口锁死:滚动只发生在页面内容区(Home/OfflineGuide 各自的内容容器),
+   顶栏/状态栏恒定在位;同时切断 WKWebView 整页(body 级)滚动与弹性滚动带来的跟随位移 */
 html, body, #root { height: 100%; overflow: hidden; }
 body {
   margin: 0;
@@ -59,336 +61,14 @@ body {
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
-.app { display: flex; height: 100vh; }
-.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-/* 顶栏(方案 C 布局):52px 工具条,背景与 --bg 同色(不抬面板色),底边 1px hairline;
-   .mac = Overlay 标题栏(macOS 红绿灯悬浮于 webview)时的左侧灯位留白 */
-.topbar {
-  height: 52px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 0 14px 0 20px;
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--bg);
-  color: var(--muted);
-}
-.topbar.mac { padding-left: 96px; }
-/* 标题栏分隔线与在线态(方案 C) */
-.tb-sep { width: 1px; height: 16px; background: var(--border-h); margin-left: 16px; flex: none; }
-.tb-online { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
-/* 顶栏文字动作钮(macOS 工具栏形态):透明底无描边,hover 才显面底——
-   与红绿灯的轻量比例协调,不与正文 .btn 的描边块形态混用 */
-.tb-act {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 28px;
-  padding: 0 10px; border-radius: 6px; background: none; border: none;
-  font: inherit; font-size: 13px; color: var(--muted); cursor: pointer;
-  transition: background-color .12s ease, color .12s ease;
-}
-.tb-act:hover:not(:disabled) { background: var(--panel); color: var(--text); }
-.dot { width: 6px; height: 6px; border-radius: 2px; display: inline-block; flex: none; }
-.dot.on { background: var(--ok); }
-.dot.off { background: var(--off); }
-.page { padding: 16px 18px; overflow-y: auto; flex: 1; }
-.toolbar { display: flex; gap: 8px; margin-bottom: 14px; }
-.grow { flex: 1 1 auto; }
-/* 输入组件:边框 + 面板底构成"可输入"识别度;hover 提亮边框,
-   focus 换主色描边 + 1px ring(双层反馈,Linear 口径) */
-.input {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font: inherit;
-  background: var(--panel-2);
-  color: var(--text);
-  transition: border-color .12s ease, box-shadow .12s ease;
-}
-.input::placeholder { color: var(--muted); }
-.input:hover:not(:disabled) { border-color: var(--border-h); }
-.input:focus { outline: none; border-color: var(--primary); background: var(--panel); box-shadow: 0 0 0 1px var(--primary); }
-textarea.input { resize: vertical; }
-select.input { cursor: pointer; }
-.input:disabled { color: var(--off); background: var(--panel-2); cursor: default; }
-/* ghost 按钮:透明底 + 1px 边框,hover 抬 --panel-2 + 亮边框 */
-.btn {
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 10px;
-  font: inherit;
-  font-size: 12px;
-  line-height: 1;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color .12s ease, border-color .12s ease, background-color .12s ease;
-}
-.btn:hover:not(:disabled) { border-color: var(--border-h); background: var(--panel-2); }
-.btn:active:not(:disabled) { background: var(--panel-2); }
-.btn:focus-visible, .link:focus-visible, .plain:focus-visible {
+/* 裸图标钮(.plain,添加抽屉扫码/图标占位/详情二维码钮)聚焦态 */
+.plain:focus-visible {
   outline: 1px solid var(--primary);
   outline-offset: 1px;
 }
-.btn:disabled { color: var(--off); border-color: var(--border); background: none; cursor: default; }
-.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-.btn.primary:hover:not(:disabled) { background: var(--primary-h); border-color: var(--primary-h); }
-.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
-.btn.danger:hover:not(:disabled) { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
-.btn.active { color: var(--primary); border-color: var(--primary); }
-.btn.icon { width: 28px; padding: 0; font-size: 14px; }
-.btn.sm { padding: 0 8px; }
-.table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.table th, .table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-soft); }
-.table th { color: var(--muted); font-weight: 500; font-size: 12px; background: var(--bg); }
-.table tr:last-child td { border-bottom: none; }
 .mono { font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
 .small { font-size: 12px; color: var(--muted); }
-/* badge:边框式 —— 透明底 + 1px 状态色边 + 状态色字 */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--border-h);
-  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
-  line-height: 1;
-  color: var(--muted);
-}
-.badge.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 34%, transparent); }
-.badge.muted { color: var(--muted); border-color: var(--border-h); }
-.badge.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 34%, transparent); }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
-.card header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.card .name { font-weight: 500; font-size: 13px; flex: 1; }
-.card dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
-.card dt { color: var(--muted); }
-.card dd { margin: 0; word-break: break-all; }
-.card-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
-.empty { color: var(--muted); text-align: center; padding: 48px 0; }
-.hint { color: var(--muted); margin: 0; }
-/* 离线引导无 .page 包裹,根元素自承滚动(视口已锁死) */
-.guide { max-width: 720px; flex: 1; overflow-y: auto; }
-.guide h2 { margin: 8px 0 4px; font-size: 15px; font-weight: 500; }
-.guide details { margin-top: 10px; }
-.guide summary { cursor: pointer; }
-.wizard .fail { color: var(--danger); }
-.wizard .fail p { margin: 8px 0; }
-.muted { color: var(--muted); }
-.cmd { margin: 14px 0; }
-.cmd-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: var(--muted);
-  font-size: 12px;
-  margin-bottom: 4px;
-}
-/* 终端块:主题不变的暗色终端面 + 1px 边框 */
-.cmd-body {
-  margin: 0;
-  background: #101216;
-  border: 1px solid #262a33;
-  border-radius: 6px;
-  color: #e7e9ec;
-  padding: 10px 12px;
-  font: 12px/1.6 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  white-space: pre-wrap;
-  word-break: break-all;
-  user-select: text;
-}
-.cmd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 4px 18px; }
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 40;
-}
-/* 对话框:--panel-2 抬一层 + hairline 边框,无阴影,深度由遮罩承担 */
-.dialog {
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px 20px;
-  width: 460px;
-  max-width: calc(100vw - 40px);
-}
-.dialog h3 { margin: 0 0 14px; font-size: 14px; font-weight: 500; }
-.dialog.confirm { width: 380px; }
-.dialog-message { margin: 0; line-height: 1.6; word-break: break-word; }
-.field { display: block; margin: 10px 0; }
-.field .input { width: 100%; margin-top: 4px; }
-.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
-.toast {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  padding: 8px 12px;
-  font-size: 12px;
-  max-width: 380px;
-  user-select: text;
-}
-.toast.error { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
 
-/* 二维码分享弹层 */
-.qr-sheet { width: 380px; text-align: center; }
-.qr-stage { position: relative; display: inline-block; margin: 8px 0; }
-.qr-stage img { width: 260px; height: 260px; image-rendering: pixelated; }
-.qr-counter {
-  position: absolute; right: -8px; bottom: -8px;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
-  padding: 1px 10px; font-size: 12px; color: var(--muted);
-}
-.qr-controls { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 6px; }
-.qr-speeds { display: flex; gap: 4px; }
-.qr-speed { padding: 2px 8px; font-size: 12px; }
-.qr-speed.active { color: var(--primary); border-color: var(--primary); }
-.qr-manual { display: flex; gap: 4px; }
-
-/* 单页首页布局 */
-.app-single { flex-direction: column; }
-.app-logo { width: 22px; height: 22px; border-radius: 5px; flex: none; }
-.app-title { font-size: 15px; font-weight: 600; letter-spacing: .2px; color: var(--text); white-space: nowrap; }
-.pgroup { margin-bottom: 18px; }
-.pgroup.disabled { opacity: 0.55; }
-/* 分组头:32px 单行,16px 色块 + 组名 + mono 元信息 + 右侧计数 */
-.pgroup-head { height: 32px; display: flex; align-items: center; gap: 10px; padding: 0 6px; margin-bottom: 10px; }
-.pgroup-name { font-size: 13px; font-weight: 500; color: var(--text); }
-.pgroup-meta {
-  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
-  line-height: 1;
-  letter-spacing: .1px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.pgroup-head .planet-icon { border-radius: 5px; }
-/* 网络卡片网格:方案C卡片——弱透明卡面+hairline 边框,泊位灯承载网络级状态 */
-.netcards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 10px;
-}
-.netcard {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  background: var(--veil);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: border-color .12s ease, background-color .12s ease;
-}
-.netcard:hover { border-color: var(--border-h); background: var(--panel-2); }
-.netcard.pending { opacity: 0.7; cursor: default; }
-.netcard.is-off { opacity: 0.55; }
-/* 泊位灯:8px 圆角方灯,在线=青光带 4px glow(方案C母题,青仅此处使用) */
-.sdot { width: 8px; height: 8px; border-radius: 2px; background: var(--off); flex: none; }
-.sdot.ok { background: var(--lamp); box-shadow: 0 0 4px var(--lamp); }
-.sdot.warn { background: var(--warn); }
-.sdot.off { background: var(--off); }
-.netcard header { display: flex; align-items: center; gap: 10px; }
-.netcard .name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-.netcard.is-off .name { color: var(--muted); font-weight: 400; }
-.netcard-body { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
-.netcard .nwid {
-  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
-  line-height: 1;
-  letter-spacing: .1px;
-  color: var(--muted);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* 卡片内可复制 IP 行(挂在 CopyableValue 按钮上):沿用原 addr 视觉,
-   文本超宽省略,占位(无 IP)降透明 */
-.netcard .addr {
-  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
-  line-height: 1;
-  letter-spacing: .1px;
-  color: var(--text);
-  max-width: 100%;
-  overflow: hidden;
-}
-.netcard .addr .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.netcard .addr.is-blank { opacity: .45; cursor: default; }
-.netcard .addr.is-blank:hover .copyable-icon { color: var(--faint); }
-.netcard .badge { margin-top: 2px; }
-/* 空卡(添加网络入口):虚线边框占位卡;主色加号锚点+字重 500 让入口可发现,
-   虚线与灰字保持占位语义(不与实卡抢视觉),hover 主色描边 */
-.netcard.add {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 96px;
-  background: none;
-  border: 1px dashed var(--border-h);
-  color: var(--muted);
-  font-weight: 500;
-}
-.netcard.add > svg { color: var(--primary); }
-.netcard.add:hover { border-color: var(--primary); color: var(--text); background: color-mix(in srgb, var(--veil) 80%, transparent); }
-/* 开关视觉已迁 ui-x/Switch(包 shadcn 原件,Tailwind 类定格 34×20 胶囊 +
-   14px 滑块),此处不再有 .switch 规则 */
-.spinner {
-  width: 16px; height: 16px; border-radius: 50%; display: inline-block; flex: none;
-  border: 2px solid var(--border); border-top-color: var(--primary);
-  animation: spin 0.8s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-.dialog-wide { width: min(760px, calc(100vw - 40px)); }
-
-/* 设置抽屉(右侧弹层;遮罩点击关闭)。宽度统一 360(「添加行星服务器」口径);
-   --stack 层号来自 DrawerShell:多层抽屉每深一层右偏 44px,露出下层右缘
-   (被本层遮罩压暗)形成层叠,可直观看到当前叠了几层 */
-.drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.25); z-index: calc(30 + var(--layer, 0)); }
-/* --stack=反向序(最新层 0 贴右,底层逐层往里推露左边缘);--layer=挂载序(后挂居上) */
-.drawer {
-  position: fixed; top: 0; right: calc(var(--stack, 0) * 44px); bottom: 0;
-  width: fit-content; min-width: 360px;
-  z-index: calc(31 + var(--layer, 0));
-  background: var(--panel-2); border-left: 1px solid var(--border);
-  padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
-  box-shadow: -8px 0 24px rgba(0,0,0,0.12);
-  transition: right .25s ease; /* 多层抽屉时底层被内推(--stack 变化)平滑滑动 */
-}
-.drawer header { display: flex; align-items: center; justify-content: space-between; padding-right: 30px; }
-/* 抽屉右上角关闭按钮(壳统一渲染):常显面底+描边(空态即可识别为按钮),hover 提亮 */
-.drawer-close {
-  position: absolute; top: 10px; right: 10px;
-  width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 0;
-  font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer;
-  transition: background-color .12s ease, color .12s ease, border-color .12s ease;
-}
-.drawer-close:hover { background: var(--panel-2); border-color: var(--border-h); color: var(--text); }
-.drawer h3 { margin: 0; font-size: 14px; font-weight: 500; }
 /* 内容分组 = 卡片(macOS 系统设置/iOS Form 范式):卡底比抽屉底亮一档,
    行间 hairline 分隔——静止状态即可识别"这组东西可交互";可点行 hover
    背景以负 margin 撑满卡片内宽 */
@@ -408,11 +88,6 @@ select.input { cursor: pointer; }
 .group-title {
   margin: 2px 8px -6px 0;
   font-size: 12px; color: var(--muted); font-weight: 500;
-}
-/* 组尾说明(iOS 设置 footer):卡外裸小字,负 margin 贴近卡片 */
-.group-foot {
-  margin: -6px 8px 0 0;
-  font-size: 12px; color: var(--muted);
 }
 /* iOS 形态分隔线:从行文字起点开始(左缩进),右到卡边——
    行盒统一负 margin 撑满卡内宽(padding 8px 内嵌),线挂行首伪元素 */
@@ -441,42 +116,10 @@ select.input { cursor: pointer; }
 .seg button.active { color: var(--text); background: var(--panel); box-shadow: 0 0 0 1px var(--border); }
 [data-theme='dark'] .seg button.active { background: #2c313c; box-shadow: 0 0 0 1px #3a4050; }
 .seg button:disabled { color: var(--off); cursor: default; }
-.id-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.share-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 
-/* ---- 行星图标体系(Task 12) ---- */
-.planet-icon {
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 12px; flex: none; color: #fff; font-size: 11px;
-}
-.planet-icon img { width: 60%; height: 60%; }
-.color-page { display: flex; align-items: center; gap: 12px; margin: 8px 0; flex-wrap: wrap; }
-.icon-grid {
-  display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px;
-  max-height: 240px; overflow-y: auto; margin: 8px 0;
-}
-.icon-grid button {
-  display: flex; align-items: center; justify-content: center; height: 32px;
-  border-radius: 6px; background: var(--panel); border: 1px solid var(--border);
-  cursor: pointer; transition: border-color .12s ease;
-}
-.icon-grid button:hover:not(.active) { border-color: var(--border-h); }
-.icon-grid button.active { border-color: var(--primary); }
-.icon-grid img { width: 20px; height: 20px; filter: brightness(0); opacity: 0.75; }
-[data-theme='dark'] .icon-grid img { filter: none; opacity: 1; }
-.color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; flex: 1; }
-.color-grid button {
-  height: 28px; border-radius: 6px; border: 2px solid var(--border); cursor: pointer;
-  transition: border-color .12s ease, transform .12s ease;
-}
-.color-grid button:hover:not(.active) { border-color: var(--border-h); transform: scale(1.06); }
-.color-grid button.active { border-color: var(--text); }
-
-/* ---- 添加抽屉表单(Task 13) ---- */
+/* ---- 添加抽屉表单(Task 13):校验错误行、DNS 四槽、裸图标钮 ---- */
 .field-error { color: var(--danger); font-size: 12px; margin: 0; }
 .dns-slots { display: flex; flex-direction: column; gap: 6px; }
-.addplanet-preview { flex-direction: row; align-items: center; gap: 12px; }
-.url-row { display: flex; gap: 6px; }
 .plain {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 28px; min-height: 28px;
@@ -487,15 +130,12 @@ select.input { cursor: pointer; }
 .plain:hover:not(:disabled) { background: var(--panel); color: var(--text); }
 
 /* ---- 网络详情/行星设置(Task 14/15) ---- */
-.detail-section h4 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 500; }
 .kv { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; padding: 6px 0; }
 /* iOS 设置行:label 主文字色(可点行的可点信号),值侧灰 */
 .kv > span:first-child { color: var(--text); flex: none; }
 .kv .mono { text-align: right; word-break: break-all; }
 /* kv 值区:值 + 附属动作(二维码按钮/多分享按钮)并排 */
 .kv-val { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
-/* kv-val 内并排 link 按钮之间的竖线分隔(导出文件 | 二维码) */
-.link-sep { color: var(--muted); user-select: none; }
 /* 整行可点的 kv(诊断入口/图标行):button 复用 .kv 排版;hover 整行
    背景变化(负 margin + padding 补偿撑满行宽),背景才是"可点"的信号 */
 button.kv {
@@ -508,58 +148,12 @@ button.kv:hover .chev { color: var(--muted); }
 /* 卡内 kv 行盒统一(iOS):div 行也补内嵌 padding+负 margin 撑满卡内宽,
    行文字起点与 button 行一致(卡内 16px),分隔线::before 缩进对齐 */
 .drawer-section > .kv, .detail-section > .kv { padding: 6px 8px; margin: 0 -8px; }
-/* 行内编辑(行星名称):右对齐透明底,hover/focus 才显形 */
-.inline-edit {
-  border: 1px solid transparent; border-radius: 6px; background: none;
-  font: inherit; color: var(--text); text-align: right; min-width: 160px; padding: 3px 6px;
-  cursor: text;
-}
-.inline-edit:hover:not(:disabled) { border-color: var(--border); }
-.inline-edit:focus { outline: none; border-color: var(--primary); }
-.inline-edit:disabled { color: var(--off); cursor: default; }
 /* 行入口 chevron */
 .chev { color: var(--faint); font-size: 14px; line-height: 1; flex: none; }
 /* 组 footer 说明(iOS Form footer 对位) */
 .section-foot { margin: 2px 0 0; font-size: 12px; color: var(--faint); }
-/* 居中红字删除行(iOS 删除组):hover 淡红底 + 圆角,面反馈优先于下划线 */
-.danger-row {
-  width: 100%; background: none; border: none; padding: 6px 8px; margin: 0 -8px; cursor: pointer;
-  font: inherit; color: var(--danger); text-align: center; border-radius: 6px;
-  transition: background-color .12s ease;
-}
-.danger-row:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 10%, transparent); }
-.danger-row:disabled { color: var(--off); cursor: default; text-decoration: none; }
 /* DNS 网络下发服务器只读行 */
 .dns-net-server { font-size: 13px; color: var(--text); }
-.link {
-  display: inline-flex; align-items: center; min-height: 28px;
-  background: none; border: none; padding: 2px 8px; margin: 0 -8px; text-align: left;
-  cursor: pointer; color: var(--text); width: fit-content; border-radius: 6px;
-  transition: background-color .12s ease;
-}
-.link:hover:not(.muted):not(:disabled) { background: var(--panel); }
-.link.muted, .link:disabled { color: var(--muted); cursor: default; }
-/* 可复制值(iOS CopyableValue 语义):文本与图标并排,点击整体复制,
-   图标 tertiary 色 hover 抬亮;占位值由组件隐藏图标并降为不可点 */
-.copyable {
-  display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px;
-  min-height: 28px; padding: 2px 0; background: none; border: none;
-  cursor: pointer; color: var(--text); text-align: right; max-width: 100%;
-}
-.copyable .mono { word-break: break-all; text-align: right; }
-.copyable .copyable-icon { color: var(--faint); flex: none; transition: color .12s ease; }
-.copyable:not(:disabled):hover .copyable-icon { color: var(--primary); }
-.copyable:disabled { cursor: default; }
-
-/* ---- 抽屉开合动画(Task 19;250ms;jsdom/测试环境不跑 transition,内容常在) ---- */
-.drawer-mask.fade { opacity: 0; transition: opacity .25s ease; }
-.drawer-mask.fade.in { opacity: 1; }
-.drawer.slide { transform: translateX(100%); transition: transform .25s ease, right .25s ease; }
-.drawer.slide.in { transform: translateX(0); }
-/* 关闭动画期(撤 in 后 250ms)遮罩/抽屉不可交互,防窗口内误触(如确认框双击) */
-.drawer-mask.fade:not(.in), .drawer.slide:not(.in) { pointer-events: none; }
-/* 二维码分享壳迁入抽屉后取消定宽,保留居中排版 */
-.drawer .qr-sheet { width: auto; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
@@ -578,107 +172,3 @@ html.has-bg body::before {
   background: var(--bg);
   opacity: 0.82;
 }
-
-/* ---- 主题色/背景选择弹层(iOS ThemeColorPickerSheet/BackgroundImagePickerSheet 对位) ---- */
-.accent-swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
-.accent-swatches button {
-  aspect-ratio: 1;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  padding: 0;
-  transition: transform .12s ease, box-shadow .12s ease;
-}
-.accent-swatches button:hover:not(.active) { transform: scale(1.1); box-shadow: 0 0 0 2px var(--border-h); }
-.accent-swatches button.active { border-color: var(--text); }
-.bg-thumb {
-  width: 100%;
-  height: 120px;
-  object-fit: cover;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  display: block;
-}
-
-/* ---- 添加表单(iOS JoinNetworkSheet/AddPlanetPage 对位) ---- */
-/* 网络 ID 输入(kv 行内,右对齐 mono 值位) */
-.id-input { width: 200px; text-align: right; }
-.planet-select { width: 190px; }
-.btn-block { width: 100%; margin-top: 10px; }
-/* 添加行星身份预览区:虚线占位卡,图标点击进选择器 + 行内名称 + 随机重掷 */
-.addplanet-identity {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 20px 14px;
-  margin-bottom: 8px;
-  border: 1px dashed var(--border-h);
-  border-radius: var(--radius);
-}
-.identity-name { text-align: center; width: 220px; }
-.url-kv .kv-val { flex: 1; }
-.url-input { width: 100%; min-width: 0; text-align: right; }
-.source-path { margin: 0; word-break: break-all; user-select: text; }
-.ready-mark { color: var(--ok); font-size: 12px; }
-
-/* ---- 摄像头扫码弹层 ---- */
-.qr-scan { width: 400px; }
-.qr-video {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  display: block;
-  background: #000;
-  border-radius: 6px;
-  object-fit: cover;
-}
-.qr-denied { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 20px 0; text-align: center; }
-
-/* ---- 首页底部工具带(方案 B):本机 / 命令 ---- */
-.band { margin-top: 26px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.band .shead { height: 32px; display: flex; align-items: center; gap: 10px; padding: 0 6px; margin-bottom: 10px; }
-.band .sname { font-size: 13px; font-weight: 500; color: var(--text); }
-.band .snote { font-size: 12px; color: var(--muted); }
-.band-card { display: flex; flex-direction: column; padding: 6px 16px; }
-.band-card .kv { min-height: 34px; }
-/* daemon 在线值:青绿泊位灯语义(灯亮 = 在线) */
-.v-ok { display: inline-flex; align-items: center; gap: 6px; }
-.v-ok.is-off { color: var(--muted); }
-.cmd-row { display: flex; align-items: center; gap: 12px; min-height: 34px; }
-.cmd-label { font-size: 12px; color: var(--muted); width: 64px; flex: none; }
-.cmd-text {
-  flex: 1; min-width: 0;
-  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px; line-height: 1; letter-spacing: .1px;
-  color: var(--text);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  user-select: text;
-}
-
-/* ---- 底部状态条(方案 B):33px hairline 分隔,mono 计数 ---- */
-.statusbar {
-  flex: none;
-  height: 33px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 24px;
-  border-top: 1px solid var(--border-soft);
-  background: var(--bg);
-  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
-  line-height: 1;
-  color: var(--muted);
-}
-.s-div { width: 1px; height: 12px; background: var(--border); flex: none; }
-
-/* ---- 行星选择 picker 值行展开列表(加入网络抽屉):当前项 ✓ primary ---- */
-.picker-pop {
-  display: flex; flex-direction: column; gap: 2px;
-  background: var(--panel-3); border: 1px solid var(--border-soft); border-radius: 10px;
-  padding: 6px; margin: 4px -6px 0;
-  max-height: 220px; overflow-y: auto;
-}
-.picker-pop .check { color: var(--primary); font-weight: 600; }
-/* ---- 主按钮与一键官方按钮之间的细分隔(添加行星抽屉) ---- */
-.or-sep { height: 1px; background: var(--border-soft); margin: 0 6px; }

@@ -14,12 +14,12 @@ import { Input } from './ui-x/Input';
 import { Switch } from './ui-x/Switch';
 import { serversToSlots, slotsToServers, slotsValid, type DnsSlots } from '../dns';
 
-/// styles.css .link 对译(本组件与 PlanetSettingsDialog 独占,迁完 .link 规则零引用):
+/// 基线 .link 对译(styles.css 已删,本组件与 PlanetSettingsDialog 独占):
 /// 卡内行内文字钮,负 margin 左撑 8px 对齐卡内 padding 缘,hover 抬 --panel 面底;
 /// muted/禁用转 --muted 灰(基线 .link.muted/.link:disabled 同款)
 const linkCls =
   '-mx-2 inline-flex min-h-7 w-fit cursor-pointer items-center rounded-[6px] border-none bg-transparent px-2 py-0.5 text-left transition-colors duration-[120ms] ease-[ease] focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1 enabled:hover:bg-[var(--panel)] disabled:cursor-default disabled:text-[var(--muted)]';
-/// styles.css .danger-row 对译(同上,迁完规则零引用):居中红字删除行,
+/// 基线 .danger-row 对译(styles.css 已删,同上):居中红字删除行,
 /// hover 淡红底(10% 混色)面反馈优先于下划线,禁用转 --off
 const dangerRowCls =
   '-mx-2 cursor-pointer rounded-[6px] border-none bg-transparent px-2 py-1.5 text-center text-[13px] text-[var(--danger)] transition-colors duration-[120ms] ease-[ease] focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1 enabled:hover:bg-[color:color-mix(in_srgb,var(--danger)_10%,transparent)] disabled:cursor-default disabled:text-[var(--off)]';

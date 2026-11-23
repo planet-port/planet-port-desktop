@@ -7,7 +7,7 @@ import { useToast } from './Toaster';
 
 type IdentityMode = 'shared' | 'independent';
 
-/// .kv 语义类 Tailwind 对译(与报告速查表同口径;出处 styles.css 待全量替换后删除)
+/// .kv 语义类 Tailwind 对译(与报告速查表同口径)
 const sectionCard = 'flex flex-col rounded-md border border-[color:var(--border)] bg-[var(--panel)] dark:bg-[#22252d] dark:border-[#2c3038] px-2 py-0.5';
 const kvButtonRow = 'flex w-full items-center justify-between gap-3 -mx-2 px-2 py-1.5 text-left text-[13px] cursor-pointer border-0 bg-transparent rounded-[6px] transition-colors duration-[120ms] ease-[ease] enabled:hover:bg-[var(--panel)]';
 const kvLabel = 'shrink-0 text-[var(--text)]';

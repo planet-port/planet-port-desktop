@@ -97,8 +97,8 @@ export default function Home({ onAddNetwork }: { onAddNetwork?: (planet?: string
                     p.status === 'running' ? 'bg-[var(--ok)]' : 'bg-[var(--off)]'
                   }`}
                 />
-                <span className="text-[13px] font-medium text-foreground">{p.name}</span>
-                <span className="whitespace-nowrap font-mono text-xs leading-none tracking-[0.1px] text-muted-foreground">
+                <span className="text-[13px] font-medium text-foreground" data-testid="home-planet-name">{p.name}</span>
+                <span className="whitespace-nowrap font-mono text-xs leading-none tracking-[0.1px] text-muted-foreground" data-testid="home-planet-status">
                   {t(`planet.status.${p.status}`)}
                   {p.transport ? ` · ${t(`transport.tcp.${p.transport.tcp}`)}` : ''}
                 </span>
@@ -126,6 +126,7 @@ export default function Home({ onAddNetwork }: { onAddNetwork?: (planet?: string
                 {p.enabled && (
                   <button
                     className="flex min-h-24 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-[var(--border-h)] bg-transparent px-3.5 py-3 font-medium text-muted-foreground transition-[border-color,background-color,color] duration-[120ms] ease-[ease] hover:border-primary hover:bg-[color:color-mix(in_srgb,var(--veil)_80%,transparent)] hover:text-foreground"
+                    data-testid="home-add-network"
                     onClick={() => onAddNetwork?.(p.id)}
                   >
                     <Plus size={18} strokeWidth={2} aria-hidden="true" className="text-primary" />

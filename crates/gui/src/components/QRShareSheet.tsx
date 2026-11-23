@@ -9,7 +9,7 @@ import { Button } from './ui-x/Button';
 /// 与移动端 QRShareSheet 行为一致。编码在 useMemo、渲染 toDataURL 异步逐张。
 /// 容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序——内部持有 open,onClose 只翻
 /// state 走退出动画,动画结束(onClosed)才回调 onDismiss 让父层卸载。
-/// 内容布局类对译 styles.css .qr-* 系(本组件独占,迁完规则零引用):
+/// 内容布局类对译基线 .qr-* 系(styles.css 已删,本组件独占):
 /// 居中排版 380px,图 260px pixelated,计数徽标挂图右下角
 const SPEEDS = [0.3, 0.5, 0.8, 1.2];
 

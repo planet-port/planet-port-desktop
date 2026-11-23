@@ -14,14 +14,14 @@ import { cn } from '@/lib/utils';
 /// toast.custom 自绘内容——jsx 型 toast 在 sonner 侧自动 data-styled=false,
 /// 原生壳样式(16px 内距/13px 字号/投影/图标)整体失效,条目文案层完全归
 /// 本层掌控。
-/// 视觉对译 styles.css .toast 系(233-244 行,待收尾批删除):面底 --panel /
+/// 视觉对译基线 .toast 系(styles.css 已删):面底 --panel /
 /// 1px --border 描边 / 6px 圆角 / --text 文字 / 8px 12px 内距 / 12px 字号 /
 /// 宽度上限 380px(sonner 默认把 ol 定宽 --width:356px 且 li 右锚 absolute,
 /// 内容 max-w 永不可达,故行内定 --width:380px 由容器直接承担)/ 文本可选;
 /// error 型 = danger 45% 混色边框 + danger 文字。
 /// kind('ok'/'error')以类名标在内容根元素上:测试锚点是「错误 toast 的文本
-/// 元素带 error 类」,styles.css 的 .toast 系自此零引用,该类仅作语义标记。
-/// 容器对译 .toasts:position bottom-right + offset 16px(右/下)、z-index 50
+/// 元素带 error 类」,基线 .toast 系已删,该类仅作语义标记。
+/// 容器对译基线 .toasts(styles.css 已删):position bottom-right + offset 16px(右/下)、z-index 50
 /// (行内样式压掉 sonner 内置 z 999999999)、expand 常开 + gap 8px 还原基线
 /// 「全部纵排常显」;条目行内 left/width:auto 压掉 sonner 窄窗(≤600px)的
 /// 全宽规则——桌面 minWidth 820 该分支实际不可达,纯预留(跨平台复用 webview
@@ -55,7 +55,7 @@ const toastContentClasses = cn(
 );
 
 const toastKindClasses: Record<ToastKind, string> = {
-  // ok = 基线默认态(styles.css 无 .toast.ok 规则,即 .toast 本身)
+  // ok = 基线默认态(基线无 .toast.ok 变体,即 .toast 本身)
   ok: '',
   // error = 基线 .toast.error:danger 45% srgb 混色边框 + danger 文字
   error:

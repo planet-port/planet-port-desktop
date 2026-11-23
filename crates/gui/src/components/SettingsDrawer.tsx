@@ -12,7 +12,7 @@ import { backgroundUrl } from '../background';
 import { setTheme, getTheme, type ThemeMode } from '../theme';
 import { switchLang } from '../i18n';
 
-/// .kv 语义类 Tailwind 对译(与报告速查表同口径;出处 styles.css 待全量替换后删除)
+/// .kv 语义类 Tailwind 对译(与报告速查表同口径)
 const sectionCard = 'flex flex-col rounded-md border border-[color:var(--border)] bg-[var(--panel)] dark:bg-[#22252d] dark:border-[#2c3038] px-2 py-0.5';
 const rowDivider = 'relative before:absolute before:top-0 before:left-4 before:right-0 before:border-t before:border-[color:var(--border-soft)] before:content-[""]';
 const kvRow = 'flex items-center justify-between gap-3 -mx-2 px-2 py-1.5 text-[13px]';
@@ -78,11 +78,11 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
         <IdentitySection />
         <h4 className={groupTitle}>{t('settings.language')}</h4>
         <section className={sectionCard}>
-          <ValueRow label={t('settings.language')} value={<span className={smallText}>{i18n.language === 'zh' ? '中文' : 'English'}</span>} onClick={() => setLayer('lang')} />
+          <ValueRow label={t('settings.language')} value={<span className={smallText}>{i18n.language === 'zh' ? '中文' : 'English'}</span>} onClick={() => setLayer('lang')} testId="settings-lang-row" />
         </section>
         <h4 className={groupTitle}>{t('settings.appearance')}</h4>
         <section className={sectionCard}>
-          <ValueRow label={t('settings.appearance')} value={<span className={smallText}>{t(`settings.theme.${theme}`)}</span>} onClick={() => setLayer('theme')} />
+          <ValueRow label={t('settings.appearance')} value={<span className={smallText}>{t(`settings.theme.${theme}`)}</span>} onClick={() => setLayer('theme')} testId="settings-appearance-row" />
           {/* 主题色行:当前色点 + chevron 进色板弹层(iOS 外观组首位行) */}
           <ValueRow
             divider

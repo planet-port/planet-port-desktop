@@ -15,14 +15,14 @@ import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
 import { animalFor, colorFor } from '../icons/planetIcon';
 import { planetPayloadContainer } from '../ztp/container';
 
-/// styles.css .link 对译(本组件与 NetworkDialog 独占,迁完 .link 规则零引用):
+/// 基线 .link 对译(styles.css 已删,本组件与 NetworkDialog 独占):
 /// 卡内行内文字钮,负 margin 左撑 8px,hover 抬 --panel 面底
 const linkCls =
   '-mx-2 inline-flex min-h-7 w-fit cursor-pointer items-center rounded-[6px] border-none bg-transparent px-2 py-0.5 text-left transition-colors duration-[120ms] ease-[ease] focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1 enabled:hover:bg-[var(--panel)] disabled:cursor-default disabled:text-[var(--muted)]';
-/// styles.css .danger-row 对译(同上,迁完规则零引用):居中红字删除行,hover 淡红底
+/// 基线 .danger-row 对译(styles.css 已删,同上):居中红字删除行,hover 淡红底
 const dangerRowCls =
   '-mx-2 cursor-pointer rounded-[6px] border-none bg-transparent px-2 py-1.5 text-center text-[13px] text-[var(--danger)] transition-colors duration-[120ms] ease-[ease] focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1 enabled:hover:bg-[color:color-mix(in_srgb,var(--danger)_10%,transparent)] disabled:cursor-default disabled:text-[var(--off)]';
-/// styles.css .inline-edit 对译(本组件独占,迁完规则零引用):行内编辑(行星名称)
+/// 基线 .inline-edit 对译(styles.css 已删,本组件独占):行内编辑(行星名称)
 /// 右对齐透明底,hover/focus 才显形
 const inlineEditCls =
   'min-w-40 cursor-text rounded-[6px] border border-transparent bg-transparent px-1.5 py-[3px] text-right text-foreground enabled:hover:border-border focus:border-primary focus:outline-none disabled:cursor-default disabled:text-[var(--off)]';

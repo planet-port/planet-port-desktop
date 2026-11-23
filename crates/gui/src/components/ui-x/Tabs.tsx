@@ -3,7 +3,7 @@ import { TabsList as TabsListPrimitive, TabsTrigger as TabsTriggerPrimitive } fr
 import { cn } from '@/lib/utils';
 
 /// 项目分段控件:包 shadcn 原件 ui/tabs.tsx(Radix Tabs,官方源码不动),在
-/// 封装层定格 styles.css .seg 全系(429-443 行,待全量替换后由收尾批删除):
+/// 封装层定格基线 .seg 全系(styles.css 保留的语义类):
 /// 整组一个圆角凹陷轨道(--bg 底 + 1px --border 边 + 7px 圆角 + 2px 内衬 +
 /// 2px 项间距),项 flex-1 平铺、5px 0 内边距、12px 正常字重字、5px 圆角;
 /// 非选中 muted 字,hover 提字色;选中浮起为面板块(--panel 底 + 0 0 0 1px

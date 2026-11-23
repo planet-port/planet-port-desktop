@@ -12,7 +12,7 @@ import { useToast } from './Toaster';
 import { Button } from './ui-x/Button';
 import { Input } from './ui-x/Input';
 
-/// .kv 语义类 Tailwind 对译(与报告速查表同口径;出处 styles.css 待全量替换后删除)
+/// .kv 语义类 Tailwind 对译(与报告速查表同口径)
 const sectionCard = 'flex flex-col rounded-md border border-[color:var(--border)] bg-[var(--panel)] dark:bg-[#22252d] dark:border-[#2c3038] px-2 py-0.5';
 const rowDivider = 'relative before:absolute before:top-0 before:left-4 before:right-0 before:border-t before:border-[color:var(--border-soft)] before:content-[""]';
 const kvRow = 'flex items-center justify-between gap-3 -mx-2 px-2 py-1.5 text-[13px]';

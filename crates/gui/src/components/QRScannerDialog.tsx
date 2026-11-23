@@ -22,8 +22,8 @@ export function extractHttpUrl(s: string): string | null {
 /// 容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序——内部持有 open,关闭先走退出
 /// 动画,动画结束(onClosed)才回调父层 onClose 卸载(摄像头随卸载停流);
 /// 扫码命中仍走父层直接卸载(识别成功即切场,无需退场动画)。
-/// 内容布局类对译 styles.css(.qr-scan 400px 定宽/.qr-video 黑底 4:3 object-cover/
-/// .qr-denied 竖排居中),本组件独占规则迁后零引用
+/// 内容布局类对译基线(.qr-scan 400px 定宽/.qr-video 黑底 4:3 object-cover/
+/// .qr-denied 竖排居中;styles.css 已删),本组件独占
 export default function QRScannerDialog({
   extract,
   onScanned,

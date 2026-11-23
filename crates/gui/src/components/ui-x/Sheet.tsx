@@ -9,8 +9,7 @@ import { cn } from '@/lib/utils';
 /// SheetPortal/SheetOverlay 组合虽可行,Content 仍须原语直构,链路割裂);
 /// 且 Radix Presence 只认 keyframes 动画、接管不了 transition 卸载时序,
 /// 两拍动画的卸载控制必须自持——故整层按原件同源原语在封装层重排。
-/// 对译 styles.css .drawer-mask/.drawer 全系(370-390、555-560 行,待全量
-/// 替换后由收尾批删除):
+/// 对译基线 .drawer-mask/.drawer 全系(styles.css 已删):
 /// 多层堆叠:--stack 反向序(最新层 0 贴右,底层逐层 right +44px 内推露左缘,
 /// 被上层遮罩压暗);--layer 挂载序管 z-index(遮罩 30+layer、抽屉 31+layer,
 /// 后挂居上)。兄弟抽屉增删由 MutationObserver 监听 body childList 重排,

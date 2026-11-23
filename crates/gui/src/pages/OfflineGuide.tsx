@@ -51,9 +51,9 @@ export default function OfflineGuide({ installed }: { installed: boolean }) {
   );
 
   if (!auto || manifest === null)
-    return <div className="max-w-[720px] flex-1 overflow-y-auto">{manual}</div>;
+    return <div className="max-w-[720px] flex-1 overflow-y-auto" data-testid="offline-guide">{manual}</div>;
   return (
-    <div className="max-w-[720px] flex-1 overflow-y-auto">
+    <div className="max-w-[720px] flex-1 overflow-y-auto" data-testid="offline-guide">
       <SetupWizard manifest={manifest} installed={installed} sudo={sudo} />
       <details className="mt-2.5">
         <summary className="cursor-pointer text-muted-foreground">{t('guide.manualTitle')}</summary>
