@@ -349,7 +349,7 @@ select.input { cursor: pointer; }
   font-weight: 500;
 }
 .netcard.add > svg { color: var(--primary); }
-.netcard.add:hover { border-color: var(--primary); color: var(--text); background: var(--veil); }
+.netcard.add:hover { border-color: var(--primary); color: var(--text); background: color-mix(in srgb, var(--veil) 80%, transparent); }
 /* 紧凑开关:胶囊轨道(34×20)+ 圆滑块,开启 = 主色(Linear toggle 形态);
    28px 高点击区(background-clip 把轨道画进内容盒) */
 .switch {
