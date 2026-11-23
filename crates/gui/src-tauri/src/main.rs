@@ -24,6 +24,12 @@ pub struct GuiState {
 
 pub type SharedState = Mutex<GuiState>;
 
+/// 构建时间(build.rs 注入;dev 增量编译沿用上次,打包环境必新鲜)
+#[tauri::command]
+fn build_time() -> String {
+    env!("PP_BUILD_TIME").to_string()
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -85,7 +91,9 @@ fn main() {
             commands::identity_mode_set,
             commands::write_file_bytes,
             commands::background_set,
-            commands::background_clear
+            commands::background_clear,
+            commands::add_official_planet,
+            build_time
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

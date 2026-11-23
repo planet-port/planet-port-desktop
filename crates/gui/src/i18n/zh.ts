@@ -9,7 +9,7 @@ export default {
   },
   icon: { title: '选择图标', graphic: '图形', color: '底色', randomColor: '随机底色' },
   settings: {
-    title: '设置', language: '语言', appearance: '外观', about: '关于',
+    title: '设置', language: '语言', appearance: '外观', about: '关于', buildTime: '构建时间',
     theme: { light: '浅色', dark: '深色', system: '跟随系统' },
     accent: '主题色', accentCustom: '自定义', accentDefault: '恢复默认',
     background: '背景', bgPick: '选择图片', bgClear: '清除背景',
@@ -22,6 +22,8 @@ export default {
     mode: { shared: '共享身份', independent: '独立身份' },
     modeShared: '共享身份：所有行星使用同一节点',
     modeIndependent: '独立身份：每行星各自节点',
+    modeSwitch: '切换身份模式',
+    modeSwitchConfirm: '切换到「{{mode}}」后行星的节点地址将改变，可能需要在各网络重新获得授权。确定切换？',
     modeSwitched: '已切换为{{mode}}',
     modeBlocked: '有 {{count}} 个行星运行中，停止全部行星后才能切换',
   },
@@ -60,7 +62,8 @@ export default {
   addplanet: {
     title: '添加行星服务器', name: '名称', namePlaceholder: '行星名称',
     source: '行星文件', chooseFile: '选择行星文件', urlPlaceholder: 'https://example.com/planet.planet',
-    randomIcon: '换个随机图标', action: '添加行星服务器', imported: '已导入',
+    randomIcon: '换个随机图标', action: '添加行星服务器',
+    official: '添加官方行星服务器', imported: '已导入',
     scanImport: '扫码导入',
   },
   planet: {

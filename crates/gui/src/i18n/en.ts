@@ -9,7 +9,7 @@ export default {
   },
   icon: { title: 'Choose Icon', graphic: 'Graphic', color: 'Color', randomColor: 'Random color' },
   settings: {
-    title: 'Settings', language: 'Language', appearance: 'Appearance', about: 'About',
+    title: 'Settings', language: 'Language', appearance: 'Appearance', about: 'About', buildTime: 'Build time',
     theme: { light: 'Light', dark: 'Dark', system: 'System' },
     accent: 'Accent color', accentCustom: 'Custom', accentDefault: 'Reset to default',
     background: 'Background', bgPick: 'Choose image', bgClear: 'Clear background',
@@ -22,6 +22,8 @@ export default {
     mode: { shared: 'Shared', independent: 'Independent' },
     modeShared: 'Shared: one identity for all planets',
     modeIndependent: 'Independent: per-planet identity',
+    modeSwitch: 'Switch identity mode',
+    modeSwitchConfirm: 'Switching to {{mode}} changes node addresses; networks may require re-authorization. Continue?',
     modeSwitched: 'Switched to {{mode}}',
     modeBlocked: '{{count}} planet(s) running; stop all before switching',
   },
@@ -58,7 +60,7 @@ export default {
   addplanet: {
     title: 'Add Planet', name: 'Name', namePlaceholder: 'Planet name',
     source: 'Planet file', chooseFile: 'Choose planet file', urlPlaceholder: 'https://example.com/planet.planet',
-    randomIcon: 'Random icon', action: 'Add Planet', imported: 'Imported',
+    randomIcon: 'Random icon', action: 'Add Planet', official: 'Add official planet server', imported: 'Imported',
     scanImport: 'Scan to import',
   },
   planet: {

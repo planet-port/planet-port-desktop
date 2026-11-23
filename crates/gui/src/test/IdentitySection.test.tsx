@@ -35,23 +35,25 @@ function renderSection() {
 }
 
 describe('IdentitySection', () => {
-  it('shared 态 switch 未开启,foot 显示共享模式说明', async () => {
+  it('shared 态值行显示「共享」,foot 显示共享模式说明', async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === 'identity_get' ? Promise.resolve(identityIdle) : Promise.resolve(null));
     renderSection();
     expect(await screen.findByText(/所有行星使用同一节点/)).toBeInTheDocument();
-    expect(screen.getByTestId('id-mode').querySelector('.switch')).not.toHaveClass('on');
+    expect(screen.getByTestId('id-mode').querySelector('.small')).toHaveTextContent('共享');
+    // 交互形态回归保护:身份切换须显式确认,不得回到行内 switch
+    expect(screen.getByTestId('id-mode').querySelector('.switch')).toBeNull();
   });
 
-  it('independent 态 switch 开启,foot 显示独立模式说明', async () => {
+  it('independent 态值行显示「独立」,foot 显示独立模式说明', async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === 'identity_get' ? Promise.resolve(identityIndependent) : Promise.resolve(null));
     renderSection();
     expect(await screen.findByText(/每行星各自节点/)).toBeInTheDocument();
-    expect(screen.getByTestId('id-mode').querySelector('.switch')).toHaveClass('on');
+    expect(screen.getByTestId('id-mode').querySelector('.small')).toHaveTextContent('独立');
   });
 
-  it('点击整行直接切换(无确认弹窗),成功后 toast+invalidate', async () => {
+  it('点击值行弹确认弹窗,取消不切换,确认后 set+toast+invalidate', async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === 'identity_get') return Promise.resolve(identityIdle);
       if (cmd === 'identity_mode_set') return Promise.resolve({ result: 'ok', mode: 'independent' });
@@ -60,6 +62,13 @@ describe('IdentitySection', () => {
     const { invalidateSpy } = renderSection();
     await screen.findByText(/所有行星使用同一节点/);
     fireEvent.click(screen.getByTestId('id-mode'));
+    // 弹窗明示重新授权后果,未确认前不触发切换
+    expect(await screen.findByText(/重新获得授权/)).toBeInTheDocument();
+    expect(invokeMock.mock.calls.map(c => c[0])).not.toContain('identity_mode_set');
+    fireEvent.click(screen.getByText('取消'));
+    expect(invokeMock.mock.calls.map(c => c[0])).not.toContain('identity_mode_set');
+    fireEvent.click(screen.getByTestId('id-mode'));
+    fireEvent.click(await screen.findByText('确定'));
     expect(await screen.findByText('已切换为独立身份')).toBeInTheDocument();
     const setCall = invokeMock.mock.calls.find(c => c[0] === 'identity_mode_set');
     expect(setCall?.[1]).toEqual({ mode: 'independent' });

@@ -389,6 +389,7 @@ select.input { cursor: pointer; }
   background: var(--panel-2); border-left: 1px solid var(--border);
   padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
   box-shadow: -8px 0 24px rgba(0,0,0,0.12);
+  transition: right .25s ease; /* 多层抽屉时底层被内推(--stack 变化)平滑滑动 */
 }
 .drawer header { display: flex; align-items: center; justify-content: space-between; padding-right: 30px; }
 /* 抽屉右上角关闭按钮(壳统一渲染):常显面底+描边(空态即可识别为按钮),hover 提亮 */
@@ -566,7 +567,7 @@ button.kv:hover .chev { color: var(--muted); }
 /* ---- 抽屉开合动画(Task 19;250ms;jsdom/测试环境不跑 transition,内容常在) ---- */
 .drawer-mask.fade { opacity: 0; transition: opacity .25s ease; }
 .drawer-mask.fade.in { opacity: 1; }
-.drawer.slide { transform: translateX(100%); transition: transform .25s ease; }
+.drawer.slide { transform: translateX(100%); transition: transform .25s ease, right .25s ease; }
 .drawer.slide.in { transform: translateX(0); }
 /* 关闭动画期(撤 in 后 250ms)遮罩/抽屉不可交互,防窗口内误触(如确认框双击) */
 .drawer-mask.fade:not(.in), .drawer.slide:not(.in) { pointer-events: none; }
@@ -683,3 +684,14 @@ html.has-bg body::before {
   color: var(--muted);
 }
 .s-div { width: 1px; height: 12px; background: var(--border); flex: none; }
+
+/* ---- 行星选择 picker 值行展开列表(加入网络抽屉):当前项 ✓ primary ---- */
+.picker-pop {
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--panel-3); border: 1px solid var(--border-soft); border-radius: 10px;
+  padding: 6px; margin: 4px -6px 0;
+  max-height: 220px; overflow-y: auto;
+}
+.picker-pop .check { color: var(--primary); font-weight: 600; }
+/* ---- 主按钮与一键官方按钮之间的细分隔(添加行星抽屉) ---- */
+.or-sep { height: 1px; background: var(--border-soft); margin: 0 6px; }

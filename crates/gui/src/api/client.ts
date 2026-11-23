@@ -21,6 +21,9 @@ export const api = {
   planets: () => cmd<{ planets: PlanetStatus[] }>('get_planets'),
   addPlanet: (source: string, name?: string, icon?: string, color?: string) =>
     cmd('add_planet', { source, name: name ?? null, icon: icon ?? null, color: color ?? null }),
+  /// 一键添加官方行星(Rust 内置官方 world 写盘后走常规 add,daemon 自动标 Official)
+  addOfficialPlanet: (icon: string, color: string) => cmd('add_official_planet', { icon, color }),
+  buildTime: () => cmd<string>('build_time'),
   removePlanet: (id: string) => cmd('remove_planet', { id }),
   enablePlanet: (id: string) => cmd('enable_planet', { id }),
   disablePlanet: (id: string) => cmd('disable_planet', { id }),

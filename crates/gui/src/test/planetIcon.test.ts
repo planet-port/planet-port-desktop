@@ -39,8 +39,12 @@ describe('行星图标体系(跨端契约)', () => {
     expect(PALETTE[23]).toBe('#334155');
   });
 
-  it('ANIMAL_SVGS:92 key 全部映射到资产 url', () => {
-    expect(Object.keys(ANIMAL_SVGS).length).toBe(92);
+  it('ANIMAL_SVGS:92 动物全部映射到资产 url,zerotier 品牌特判不入 ANIMALS', () => {
     for (const k of ANIMALS) expect(ANIMAL_SVGS[k]).toBeTruthy();
+    // zerotier 是官方行星品牌图标:animalFor 特判直返,不入 ANIMALS(表长参与
+    // djb2 取模,追加会漂移全部回退图标),资产由 animals/ 目录 glob 收集
+    expect(ANIMAL_SVGS.zerotier).toBeTruthy();
+    expect(ANIMALS).not.toContain('zerotier');
+    expect(animalFor('zerotier', 'whatever')).toBe('zerotier');
   });
 });

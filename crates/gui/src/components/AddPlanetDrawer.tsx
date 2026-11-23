@@ -45,6 +45,22 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
       toast.error(`${ge?.message ?? String(e)}${cand}`);
     },
   });
+  /// 一键官方行星:Rust 内置官方 world,无需来源表单;专用图标+品牌黑底
+  const official = useMutation({
+    mutationFn: () => api.addOfficialPlanet('zerotier', '#161c24'),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['status'] });
+      void qc.invalidateQueries({ queryKey: ['planets'] });
+      void qc.invalidateQueries({ queryKey: ['networks'] });
+      toast.ok(t('addplanet.imported'));
+      close();
+    },
+    onError: e => {
+      const ge = asError(e);
+      const cand = ge?.candidates?.length ? `\n${ge.candidates.join(', ')}` : '';
+      toast.error(`${ge?.message ?? String(e)}${cand}`);
+    },
+  });
 
   const rollIdentity = () => {
     setAnimal(randomAnimal());
@@ -112,6 +128,11 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
         </section>
         <button className="btn primary btn-block" disabled={!canAdd} onClick={() => add.mutate()}>
           {t('addplanet.action')}
+        </button>
+        {/* 主流程(自定义来源)与官方一键添加二选一,细分割隔开 */}
+        <div className="or-sep" aria-hidden="true" />
+        <button className="btn btn-block" data-testid="add-official-planet" disabled={official.isPending} onClick={() => official.mutate()}>
+          {t('addplanet.official')}
         </button>
       </DrawerShell>
       {/* 图标选择/扫码弹层与添加抽屉平级(DrawerShell 经 portal 挂 body):后挂者居上 */}

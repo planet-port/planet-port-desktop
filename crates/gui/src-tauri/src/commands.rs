@@ -188,3 +188,26 @@ fn clear_background_dir(dir: &std::path::Path) {
         }
     }
 }
+
+/// ZeroTier 官方 planet 二进制(570B):与官方客户端内置默认 world 逐字节
+/// 一致,提取自 vendor 的 ZeroTier 源码 node/Topology.cpp 的 ZT_DEFAULT_WORLD
+const OFFICIAL_WORLD: &[u8] = include_bytes!("../assets/official-planet.bin");
+
+/// 一键添加官方行星:内置官方 world 写入 appData 后走常规 add_planet;
+/// worldId=149604618 由 daemon 识别自动标记 Official。icon/color 由前端
+/// 传入(zerotier 专用图标 + 品牌黑),名称缺省 ZeroTier
+#[tauri::command]
+pub fn add_official_planet(
+    app: tauri::AppHandle,
+    icon: Option<String>,
+    color: Option<String>,
+) -> Result<Value, GuiError> {
+    let dir = app.path().app_data_dir()
+        .map_err(|e| GuiError::Usage { message: format!("app_data_dir: {e}") })?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| GuiError::Usage { message: format!("mkdir {}: {e}", dir.display()) })?;
+    let path = dir.join("official-planet.bin");
+    std::fs::write(&path, OFFICIAL_WORLD)
+        .map_err(|e| GuiError::Usage { message: format!("write {}: {e}", path.display()) })?;
+    add_planet(path.to_string_lossy().into_owned(), Some("ZeroTier".into()), icon, color)
+}

@@ -25,6 +25,7 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   const close = () => setOpen(false);
   const [layer, setLayer] = useState<'none' | 'accent' | 'background' | 'lang' | 'theme'>('none');
   const [version, setVersion] = useState('');
+  const [buildTime, setBuildTime] = useState('');
   /// theme 本地镜像:setTheme 只写 DOM/localStorage 不触发渲染,须同步 state 高亮当前项
   const [theme, setThemeState] = useState<ThemeMode>(getTheme());
   const status = useQuery({ queryKey: ['status'], queryFn: api.status });
@@ -33,6 +34,9 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!version) void getVersion().then(setVersion).catch(() => setVersion('-'));
   }, [version]);
+  useEffect(() => {
+    if (!buildTime) void api.buildTime().then(setBuildTime).catch(() => setBuildTime('-'));
+  }, [buildTime]);
   return (
     <>
       <DrawerShell open={open} onClose={close} onClosed={onClose} testId="settings-drawer">
@@ -94,6 +98,7 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
         <section className="drawer-section">
           <div className="kv"><span>planet-port</span><span className="mono">{version || '-'}</span></div>
           <div className="kv"><span>ZeroTier Core</span><span className="mono">{coreVersion ?? '-'}</span></div>
+          <div className="kv"><span>{t('settings.buildTime')}</span><span className="mono">{buildTime || '-'}</span></div>
         </section>
       </DrawerShell>
       {/* 语言/外观/主题色/背景弹层与设置抽屉平级(DrawerShell 经 portal 挂 body):后挂者居上 */}

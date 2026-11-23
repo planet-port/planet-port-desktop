@@ -37,6 +37,9 @@ export function djb2(s: string): number {
 
 /// 动物 key:有效自定义值永久生效,否则按名称哈希回退(名称不变图标不变)
 export function animalFor(icon: string | null | undefined, name: string): string {
+  // 官方行星专用图标(animals/zerotier.svg):不入 ANIMALS——表长参与
+  // djb2 取模,追加会漂移既有行星的回退动物,破坏与移动端的一致契约
+  if (icon === 'zerotier') return icon;
   if (icon && (ANIMALS as readonly string[]).includes(icon)) return icon;
   return ANIMALS[djb2(name) % ANIMALS.length]!;
 }

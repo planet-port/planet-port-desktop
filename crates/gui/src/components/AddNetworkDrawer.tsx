@@ -29,6 +29,7 @@ export default function AddNetworkDrawer({ defaultPlanet, onClose }: { defaultPl
   const [dnsMode, setDnsMode] = useState('none');
   const [slots, setSlots] = useState<DnsSlots>(emptySlots());
   const [showScanner, setShowScanner] = useState(false);
+  const [planetOpen, setPlanetOpen] = useState(false);
 
   const status = useQuery({ queryKey: ['status'], queryFn: api.status });
   const planets = status.data?.planets ?? [];
@@ -87,13 +88,37 @@ export default function AddNetworkDrawer({ defaultPlanet, onClose }: { defaultPl
           {nwid.trim() !== '' && !idValid && <p className="field-error">{t('join.idInvalid')}</p>}
         </section>
         <section className="detail-section">
-          <div className="kv">
+          {/* 行星选择(iOS picker 值行):label + 当前值 + ›,点开下方选项列表 */}
+          <button className="kv" data-testid="planet-picker" onClick={() => setPlanetOpen(v => !v)}>
             <span>{t('join.planet')}</span>
-            <select className="input planet-select" value={planet} onChange={e => setPlanet(e.target.value)}>
-              <option value="">{t('join.defaultPlanet')}</option>
-              {planets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
+            <span className="kv-val">
+              <span className="small">{planets.find(p => p.id === planet)?.name ?? t('join.defaultPlanet')}</span>
+              <span className="chev" aria-hidden="true">›</span>
+            </span>
+          </button>
+          {planetOpen && (
+            <div className="picker-pop" data-testid="planet-pop">
+              <button
+                className="kv"
+                data-testid="planet-opt-default"
+                onClick={() => { setPlanet(''); setPlanetOpen(false); }}
+              >
+                <span>{t('join.defaultPlanet')}</span>
+                {planet === '' && <span className="check" aria-hidden="true">✓</span>}
+              </button>
+              {planets.map(p => (
+                <button
+                  className="kv"
+                  key={p.id}
+                  data-testid={`planet-opt-${p.id}`}
+                  onClick={() => { setPlanet(p.id); setPlanetOpen(false); }}
+                >
+                  <span>{p.name}</span>
+                  {planet === p.id && <span className="check" aria-hidden="true">✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
         </section>
         <section className="detail-section">
           <div className="kv">

@@ -88,7 +88,7 @@ export default function Home({ onAddNetwork }: { onAddNetwork?: (planet?: string
           return (
             <section key={p.id} className={`pgroup ${p.enabled ? '' : 'disabled'}`}>
               <header className="pgroup-head">
-                <PlanetIconView icon={p.icon} color={p.color} name={p.name} id={p.id} size={16} />
+                <PlanetIconView icon={p.icon} color={p.color} name={p.name} id={p.id} size={22} />
                 <span className={`dot ${p.status === 'running' ? 'on' : 'off'}`} />
                 <span className="pgroup-name">{p.name}</span>
                 <span className="pgroup-meta">
