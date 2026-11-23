@@ -1,47 +1,21 @@
 #!/usr/bin/env python3
-"""生成 GUI 图标：应用占位图标（实心圆，视觉 polish 后续版本再做）与
-托盘两态品牌图标（源图 icons/brand-shape.png，纯黑形状+透明底）。
-占位圆用 stdlib（zlib/struct）可重复执行；托盘图需 Pillow 做 resize。"""
-import struct, zlib, os
+"""生成托盘两色四态图标(需 Pillow)。
 
-def png(path, size, rgb, alpha=255):
-    cx = cy = (size - 1) / 2
-    r_out = size * 0.46
-    raw = bytearray()   # bytearray += 均摊 O(1)，bytes += 逐像素拼接在大尺寸下是 O(n²)
-    for y in range(size):
-        raw += b"\x00"
-        for x in range(size):
-            d = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
-            if d <= r_out:
-                raw += bytes(rgb) + bytes([alpha])
-            else:
-                raw += b"\x00\x00\x00\x00"
-    def chunk(tag, data):
-        c = tag + data
-        return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c))
-    ihdr = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
-    out = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as f:
-        f.write(out)
-    print("wrote", path)
+口径(用户指定):mac/linux 托盘恒用白色单色形状,win 恒用彩色 logo,
+均取 256 源图;每色两态:online 实心 / offline 按 alpha 45% 淡化区分。
+裁掉形状外围透明像素,源图尺度各留 12px 边距保证饱满,再缩到目标尺寸。
+应用图标(dock/安装器/快捷方式)不走本脚本,由 `tauri icon <彩色 1024 源图>` 生成。"""
+import os
 
-def tray(path, size, alpha_scale):
-    """从品牌 shape 源图导出托盘态：白色形状+透明底(非模板,菜单栏恒定白色,
-    用户指定口径)；裁掉形状外围透明像素,源图尺度各留 12px 边距保证饱满；
-    离线态按 alpha_scale 淡化区分。"""
+def tray(path, size, alpha_scale, src_name):
     from PIL import Image
     here = os.path.dirname(os.path.abspath(__file__))
-    src = os.path.join(here, "..", "crates", "gui", "src-tauri", "icons", "brand-shape.png")
+    src = os.path.join(here, "..", "crates", "gui", "src-tauri", "icons", src_name)
     base = Image.open(src).convert("RGBA")
     x0, y0, x1, y1 = base.getchannel("A").getbbox()
     pad = 12
     box = (max(0, x0 - pad), max(0, y0 - pad), min(base.width, x1 + pad), min(base.height, y1 + pad))
-    crop = base.crop(box)
-    # 形状填白:alpha 作遮罩,RGB 全白
-    white = Image.new("RGBA", crop.size, (255, 255, 255, 0))
-    white.paste((255, 255, 255, 255), (0, 0), crop.getchannel("A"))
-    im = white.resize((size, size), Image.LANCZOS)
+    im = base.crop(box).resize((size, size), Image.LANCZOS)
     if alpha_scale < 1:
         a = im.getchannel("A").point(lambda v: int(v * alpha_scale))
         im.putalpha(a)
@@ -49,7 +23,7 @@ def tray(path, size, alpha_scale):
     im.save(path)
     print("wrote", path)
 
-root = os.path.join(os.path.dirname(__file__), "..", "crates", "gui")
-png(os.path.join(root, "app-icon.png"), 1024, (63, 81, 181))                        # 应用图标占位：靛蓝实心圆
-tray(os.path.join(root, "src-tauri", "icons", "tray-online.png"), 512, 1.0)         # 托盘在线：实心形状
-tray(os.path.join(root, "src-tauri", "icons", "tray-offline.png"), 512, 0.45)       # 托盘离线：淡化形状
+icons = os.path.join(os.path.dirname(__file__), "..", "crates", "gui", "src-tauri", "icons")
+for tone in ("light", "color"):
+    tray(os.path.join(icons, f"tray-{tone}-online.png"), 256, 1.0, f"shape-{tone}.png" if tone == "light" else "logo-color.png")
+    tray(os.path.join(icons, f"tray-{tone}-offline.png"), 256, 0.45, f"shape-{tone}.png" if tone == "light" else "logo-color.png")

@@ -5,11 +5,17 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager};
 
-/// 品牌 shape 图标由 scripts/make-icons.py 从 icons/brand-shape.png 导出:
-/// 白色形状+透明底(裁掉外围透明像素,源图尺度留 12px 边距);
-/// 离线态为同形状淡化(alpha 45%)区分
-const ICON_ONLINE: &[u8] = include_bytes!("../icons/tray-online.png");
-const ICON_OFFLINE: &[u8] = include_bytes!("../icons/tray-offline.png");
+/// 托盘两色四态图标,scripts/make-icons.py 从 256 源图导出:
+/// mac/linux 恒用白色单色形状、win 恒用彩色 logo(用户指定口径,不随系统
+/// 外观切换);每色两态:online 实心 / offline 同形状淡化(alpha 45%)
+#[cfg(target_os = "windows")]
+const ICON_ONLINE: &[u8] = include_bytes!("../icons/tray-color-online.png");
+#[cfg(target_os = "windows")]
+const ICON_OFFLINE: &[u8] = include_bytes!("../icons/tray-color-offline.png");
+#[cfg(not(target_os = "windows"))]
+const ICON_ONLINE: &[u8] = include_bytes!("../icons/tray-light-online.png");
+#[cfg(not(target_os = "windows"))]
+const ICON_OFFLINE: &[u8] = include_bytes!("../icons/tray-light-offline.png");
 
 /// 托盘菜单文案(Rust 侧两份,与前端 i18n 键语义一致;set_lang 切换后重建菜单)。
 /// lang 由调用方在持锁期间一次性取出传入——避免 tr 内部二次 lock 同一把 Mutex 死锁
@@ -25,8 +31,8 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let menu = build_menu(app)?;
     TrayIconBuilder::with_id("main")
         .icon(tauri::image::Image::from_bytes(ICON_OFFLINE)?)
-        // 非模板白色形状(用户指定恒定白;模板模式会被系统按菜单栏
-        // 深浅渲染成黑色,浅色菜单栏下不是白色)
+        // 非模板:mac 恒白形状不随菜单栏深浅反色(用户指定口径);win 彩色
+        // logo 模板模式只对单色有意义
         .icon_as_template(false)
         .tooltip("planet-port")
         .menu(&menu)
