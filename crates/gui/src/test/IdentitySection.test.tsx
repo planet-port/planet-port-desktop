@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import IdentitySection from '../components/IdentitySection';
 import { ToastProvider } from '../components/Toaster';
@@ -40,9 +40,11 @@ describe('IdentitySection', () => {
       cmd === 'identity_get' ? Promise.resolve(identityIdle) : Promise.resolve(null));
     renderSection();
     expect(await screen.findByText(/所有行星使用同一节点/)).toBeInTheDocument();
-    expect(screen.getByTestId('id-mode').querySelector('.small')).toHaveTextContent('共享');
+    // 值行右侧为弱化值(基线 .small 对译后的 Tailwind 形态);基线用子串匹配
+    // (toHaveTextContent),这里以正则保持同口径,断言锚定行内文本
+    expect(within(screen.getByTestId('id-mode')).getByText(/共享身份/)).toBeInTheDocument();
     // 交互形态回归保护:身份切换须显式确认,不得回到行内 switch
-    expect(screen.getByTestId('id-mode').querySelector('.switch')).toBeNull();
+    expect(screen.getByTestId('id-mode').querySelector('[data-slot="switch"]')).toBeNull();
   });
 
   it('independent 态值行显示「独立」,foot 显示独立模式说明', async () => {
@@ -50,7 +52,7 @@ describe('IdentitySection', () => {
       cmd === 'identity_get' ? Promise.resolve(identityIndependent) : Promise.resolve(null));
     renderSection();
     expect(await screen.findByText(/每行星各自节点/)).toBeInTheDocument();
-    expect(screen.getByTestId('id-mode').querySelector('.small')).toHaveTextContent('独立');
+    expect(within(screen.getByTestId('id-mode')).getByText(/独立身份/)).toBeInTheDocument();
   });
 
   it('点击值行弹确认弹窗,取消不切换,确认后 set+toast+invalidate', async () => {

@@ -3,6 +3,11 @@ import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vite
 import DrawerShell from '../components/DrawerShell';
 import { initTestI18n } from './i18n';
 
+/// 抽屉壳 DOM 锚点(Radix Dialog 原语 + ui-x/Sheet 封装层):
+/// 遮罩 data-slot=sheet-overlay、抽屉 aside[data-slot=sheet-content]
+const mask = () => document.querySelector('[data-slot="sheet-overlay"]');
+const surface = () => document.querySelector('[data-slot="sheet-content"]');
+
 beforeAll(async () => {
   await initTestI18n('zh');
 });
@@ -16,8 +21,29 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+/// Radix 关闭走「pointerdown 捕获 → click → 延迟派发 pointerDownOutside」
+/// 链路(deferPointerDownOutside),遮罩点击须三步走:按下、点击、推进 0ms 定时。
+/// 交互前先推进 16ms:进入帧内 Radix 受控 open(entered)尚未翻转,关闭链路
+/// 全部不可达;真实浏览器该窗口内 content pointer-events:none 不可点,窗口对齐
+function enterThen(fn: () => void) {
+  act(() => {
+    vi.advanceTimersByTime(16);
+  });
+  fn();
+}
+
+function clickMask() {
+  enterThen(() => {
+    fireEvent.pointerDown(mask()!);
+    fireEvent.click(mask()!);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+  });
+}
+
 describe('DrawerShell', () => {
-  it('open=true 立即挂载内容,16ms 后加 in 类触发滑入;遮罩/抽屉均挂 body(portal)', () => {
+  it('open=true 立即挂载内容,16ms 后 data-state 翻 open 触发滑入;遮罩/抽屉均挂 body(portal)', () => {
     render(
       <DrawerShell open onClose={() => {}} testId="shell">
         <p>抽屉内容</p>
@@ -25,13 +51,16 @@ describe('DrawerShell', () => {
     );
     expect(screen.getByTestId('shell')).toBeInTheDocument();
     expect(screen.getByText('抽屉内容')).toBeInTheDocument();
-    expect(screen.getByTestId('shell')).not.toHaveClass('in');
+    // 挂载即入树但仍处于 closed 态(全量右移),双帧后翻 open 触发过渡
+    expect(screen.getByTestId('shell')).toHaveAttribute('data-state', 'closed');
     act(() => {
       vi.advanceTimersByTime(16);
     });
-    expect(screen.getByTestId('shell')).toHaveClass('in');
+    expect(screen.getByTestId('shell')).toHaveAttribute('data-state', 'open');
     expect(screen.getByTestId('shell').closest('body')).not.toBeNull();
-    expect(document.querySelector('.drawer-mask')).not.toBeNull();
+    expect(mask()).not.toBeNull();
+    // Radix modal 语义:抽屉以 role=dialog 呈现
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   it('open=false 推进 250ms 后卸载(关闭动画期内容保留)', () => {
@@ -46,7 +75,8 @@ describe('DrawerShell', () => {
       </DrawerShell>,
     );
     expect(screen.getByTestId('shell')).toBeInTheDocument();
-    expect(screen.getByTestId('shell')).not.toHaveClass('in');
+    // open 撤销即翻 closed(滑出),但 forceMount 下内容在动画期保持挂载
+    expect(screen.getByTestId('shell')).toHaveAttribute('data-state', 'closed');
     act(() => {
       vi.advanceTimersByTime(249);
     });
@@ -55,7 +85,7 @@ describe('DrawerShell', () => {
       vi.advanceTimersByTime(1);
     });
     expect(screen.queryByTestId('shell')).not.toBeInTheDocument();
-    expect(document.querySelector('.drawer-mask')).toBeNull();
+    expect(mask()).toBeNull();
   });
 
   it('onClosed 在 250ms 卸载时回调一次(open=true 全程不触发)', () => {
@@ -118,7 +148,7 @@ describe('DrawerShell', () => {
       </DrawerShell>,
     );
     expect(container).toBeEmptyDOMElement();
-    expect(document.querySelector('.drawer-mask')).toBeNull();
+    expect(mask()).toBeNull();
   });
 
   it('点遮罩触发 onClose(onClose 由壳内事件直触发,卸载与否由 open 控制)', () => {
@@ -128,13 +158,26 @@ describe('DrawerShell', () => {
         <p>抽屉内容</p>
       </DrawerShell>,
     );
-    fireEvent.click(document.querySelector('.drawer-mask')!);
+    clickMask();
     expect(onClose).toHaveBeenCalledTimes(1);
     // open 未翻转时不自行卸载
     act(() => {
       vi.advanceTimersByTime(300);
     });
     expect(screen.getByTestId('shell')).toBeInTheDocument();
+  });
+
+  it('Esc 触发 onClose(Radix dismissable 语义,基线新增的可访问性能力)', () => {
+    const onClose = vi.fn();
+    render(
+      <DrawerShell open onClose={onClose} testId="shell">
+        <p>抽屉内容</p>
+      </DrawerShell>,
+    );
+    enterThen(() => {
+      fireEvent.keyDown(surface()!, { key: 'Escape' });
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('右上角统一渲染关闭按钮,点击触发 onClose', () => {
@@ -144,7 +187,9 @@ describe('DrawerShell', () => {
         <p>抽屉内容</p>
       </DrawerShell>,
     );
-    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    enterThen(() => {
+      fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

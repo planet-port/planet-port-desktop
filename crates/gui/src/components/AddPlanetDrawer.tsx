@@ -9,6 +9,18 @@ import IconPicker from './IconPicker';
 import PlanetIconView from './PlanetIconView';
 import QRScannerDialog, { extractHttpUrl } from './QRScannerDialog';
 import { useToast } from './Toaster';
+import { Button } from './ui-x/Button';
+import { Input } from './ui-x/Input';
+
+/// .kv 语义类 Tailwind 对译(与报告速查表同口径;出处 styles.css 待全量替换后删除)
+const sectionCard = 'flex flex-col rounded-md border border-[color:var(--border)] bg-[var(--panel)] dark:bg-[#22252d] dark:border-[#2c3038] px-2 py-0.5';
+const rowDivider = 'relative before:absolute before:top-0 before:left-4 before:right-0 before:border-t before:border-[color:var(--border-soft)] before:content-[""]';
+const kvRow = 'flex items-center justify-between gap-3 -mx-2 px-2 py-1.5 text-[13px]';
+const kvButtonRow = `${kvRow} w-full cursor-pointer border-0 bg-transparent text-left rounded-[6px] transition-colors duration-[120ms] ease-[ease] enabled:hover:bg-[var(--panel)]`;
+const kvLabel = 'shrink-0 text-[var(--text)]';
+const kvVal = 'inline-flex min-w-0 items-center justify-end gap-1.5';
+const chev = 'shrink-0 text-sm leading-none text-[var(--faint)]';
+const groupTitle = 'mt-0.5 -mb-1.5 mr-2 text-xs font-medium text-[var(--muted)]';
 
 /// 添加行星抽屉(布局同 iOS AddPlanetPage/Form):身份预览区(虚线占位卡:
 /// 图标点击进选择器 + 行内名称 + 随机重掷)+ 来源三通道(文件行/扫码导入行/
@@ -77,43 +89,43 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
   return (
     <>
       <DrawerShell open={open} onClose={close} onClosed={onClose} testId="add-planet-drawer">
-        <header>
-          <h3>{t('addplanet.title')}</h3>
+        <header className="flex items-center justify-between pr-[30px]">
+          <h3 className="m-0 text-sm font-medium">{t('addplanet.title')}</h3>
         </header>
         {/* 身份预览区(虚线占位卡):图标/名称/随机三件套,"尚未创建"的占位形态 */}
-        <section className="addplanet-identity">
+        <section className="mb-2 flex flex-col items-center gap-3 rounded-md border border-dashed border-[color:var(--border-h)] px-3.5 py-5">
           <button className="plain" aria-label={t('icon.title')} onClick={() => setShowPicker(true)}>
             <PlanetIconView icon={animal} color={color} name={name || animal} id={animal} size={56} />
           </button>
-          <input
-            className="input identity-name"
+          <Input
+            className="w-[220px] text-center"
             placeholder={t('addplanet.namePlaceholder')}
             value={name}
             aria-label={t('addplanet.name')}
             onChange={e => setName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && canAdd && add.mutate()}
           />
-          <button className="btn icon" aria-label={t('addplanet.randomIcon')} title={t('addplanet.randomIcon')} onClick={rollIdentity}>↻</button>
+          <Button variant="icon" aria-label={t('addplanet.randomIcon')} title={t('addplanet.randomIcon')} onClick={rollIdentity}>↻</Button>
         </section>
-        <h4 className="group-title">{t('addplanet.source')}</h4>
-        <section className="detail-section">
-          <button className="kv" onClick={() => void pickFile()}>
-            <span>{t('addplanet.chooseFile')}</span>
+        <h4 className={groupTitle}>{t('addplanet.source')}</h4>
+        <section className={sectionCard}>
+          <button className={kvButtonRow} onClick={() => void pickFile()}>
+            <span className={kvLabel}>{t('addplanet.chooseFile')}</span>
             {source && !/^https?:\/\//.test(source) ? (
-              <span className="small ready-mark">✓</span>
+              <span className="text-xs text-[var(--ok)]">✓</span>
             ) : (
-              <span className="chev" aria-hidden="true">›</span>
+              <span className={chev} aria-hidden="true">›</span>
             )}
           </button>
-          <button className="kv" onClick={() => setShowScanner(true)}>
-            <span>{t('addplanet.scanImport')}</span>
-            <span className="chev" aria-hidden="true">›</span>
+          <button className={`${kvButtonRow} ${rowDivider}`} onClick={() => setShowScanner(true)}>
+            <span className={kvLabel}>{t('addplanet.scanImport')}</span>
+            <span className={chev} aria-hidden="true">›</span>
           </button>
-          <div className="kv url-kv">
-            <span>URL</span>
-            <span className="kv-val">
-              <input
-                className="input mono url-input"
+          <div className={`${kvRow} ${rowDivider}`}>
+            <span className={kvLabel}>URL</span>
+            <span className={`${kvVal} flex-1`}>
+              <Input
+                className="w-full min-w-0 text-right font-mono"
                 placeholder={t('addplanet.urlPlaceholder')}
                 value={url}
                 onChange={e => setUrl(e.target.value)}
@@ -121,19 +133,19 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
                   if (e.key === 'Enter' && url.trim()) setSource(url.trim());
                 }}
               />
-              <button className="btn sm" disabled={!url.trim()} onClick={() => setSource(url.trim())}>{t('common.import')}</button>
+              <Button size="sm" disabled={!url.trim()} onClick={() => setSource(url.trim())}>{t('common.import')}</Button>
             </span>
           </div>
-          {source && <p className="small mono source-path">{source}</p>}
+          {source && <p className={`${rowDivider} m-0 select-text break-all text-xs font-mono text-[var(--muted)]`}>{source}</p>}
         </section>
-        <button className="btn primary btn-block" disabled={!canAdd} onClick={() => add.mutate()}>
+        <Button variant="primary" block className="mt-2.5" disabled={!canAdd} onClick={() => add.mutate()}>
           {t('addplanet.action')}
-        </button>
+        </Button>
         {/* 主流程(自定义来源)与官方一键添加二选一,细分割隔开 */}
-        <div className="or-sep" aria-hidden="true" />
-        <button className="btn btn-block" data-testid="add-official-planet" disabled={official.isPending} onClick={() => official.mutate()}>
+        <div className="mx-1.5 h-px bg-[color:var(--border-soft)]" aria-hidden="true" />
+        <Button block className="mt-2.5" data-testid="add-official-planet" disabled={official.isPending} onClick={() => official.mutate()}>
           {t('addplanet.official')}
-        </button>
+        </Button>
       </DrawerShell>
       {/* 图标选择/扫码弹层与添加抽屉平级(DrawerShell 经 portal 挂 body):后挂者居上 */}
       {showPicker && (

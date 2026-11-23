@@ -61,7 +61,8 @@ describe('AddNetworkDrawer', () => {
   it('custom DNS 空槽禁用提交;填入合法值后 join+setNetwork', async () => {
     renderDrawer();
     fireEvent.change(await screen.findByPlaceholderText('16 位十六进制'), { target: { value: 'abcdef0123456789' } });
-    fireEvent.click(screen.getByText('自定义'));
+    // Radix TabsTrigger 走 mousedown 激活(button=0 且非 ctrl),click 不换段
+    fireEvent.mouseDown(screen.getByText('自定义'));
     const join = screen.getByText('加入');
     expect(join).toBeDisabled();
     fireEvent.change(screen.getByPlaceholderText('IPv4 DNS 1'), { target: { value: '10.0.0.1' } });

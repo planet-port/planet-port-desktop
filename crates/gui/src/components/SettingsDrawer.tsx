@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getVersion } from '@tauri-apps/api/app';
@@ -12,11 +12,43 @@ import { backgroundUrl } from '../background';
 import { setTheme, getTheme, type ThemeMode } from '../theme';
 import { switchLang } from '../i18n';
 
+/// .kv 语义类 Tailwind 对译(与报告速查表同口径;出处 styles.css 待全量替换后删除)
+const sectionCard = 'flex flex-col rounded-md border border-[color:var(--border)] bg-[var(--panel)] dark:bg-[#22252d] dark:border-[#2c3038] px-2 py-0.5';
+const rowDivider = 'relative before:absolute before:top-0 before:left-4 before:right-0 before:border-t before:border-[color:var(--border-soft)] before:content-[""]';
+const kvRow = 'flex items-center justify-between gap-3 -mx-2 px-2 py-1.5 text-[13px]';
+const kvButtonRow = `${kvRow} w-full cursor-pointer border-0 bg-transparent text-left rounded-[6px] transition-colors duration-[120ms] ease-[ease] enabled:hover:bg-[var(--panel)]`;
+const kvLabel = 'shrink-0 text-[var(--text)]';
+const kvVal = 'inline-flex min-w-0 items-center justify-end gap-1.5';
+const chev = 'shrink-0 text-sm leading-none text-[var(--faint)]';
+const smallText = 'text-xs text-[var(--muted)]';
+const groupTitle = 'mt-0.5 -mb-1.5 mr-2 text-xs font-medium text-[var(--muted)]';
+const monoValue = 'font-mono break-all text-right';
+
+/// 值行(label + 当前值 + ›)通用骨架:进下级勾选页的行与展示行共用
+function ValueRow({
+  label, value, onClick, testId, divider,
+}: {
+  label: string;
+  value: ReactNode;
+  onClick?: () => void;
+  testId?: string;
+  divider?: boolean;
+}) {
+  return (
+    <button className={divider ? `${kvButtonRow} ${rowDivider}` : kvButtonRow} data-testid={testId} onClick={onClick}>
+      <span className={kvLabel}>{label}</span>
+      <span className={kvVal}>
+        {value}
+        <span className={chev} aria-hidden="true">›</span>
+      </span>
+    </button>
+  );
+}
+
 /// 设置抽屉(布局参照 iOS PrefsView,即时生效无保存按钮):身份/语言/外观
-/// (模式+主题色行+背景行)/关于(版本+Core 版本)/高级(行星管理;节点表入口
-/// 已移至行星设置「诊断」)。选项组件参照 iOS 设置:值行(右侧当前值+›)
-/// 进下级勾选页,不再用行内 seg。iOS 的 IPv6/多连接数/按需连接为 VPN 层
-/// 设置,mac daemon 无对应不做。
+/// (模式+主题色行+背景行)/关于(版本+Core 版本)。选项组件参照 iOS 设置:
+/// 值行(右侧当前值+›)进下级勾选页,不再用行内 seg。iOS 的 IPv6/多连接数/
+/// 按需连接为 VPN 层设置,mac daemon 无对应不做。
 /// 瞬时型弹层:由 App 条件渲染挂载,内部持有 open,onClose 只翻 state 走
 /// 滑出动画,动画结束(DrawerShell onClosed)才回调父层 onClose 卸载
 export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
@@ -40,65 +72,48 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   return (
     <>
       <DrawerShell open={open} onClose={close} onClosed={onClose} testId="settings-drawer">
-        <header>
-          <h3>{t('settings.title')}</h3>
+        <header className="flex items-center justify-between pr-[30px]">
+          <h3 className="m-0 text-sm font-medium">{t('settings.title')}</h3>
         </header>
         <IdentitySection />
-        <h4 className="group-title">{t('settings.language')}</h4>
-        <section className="drawer-section">
-          <button className="kv" onClick={() => setLayer('lang')}>
-            <span>{t('settings.language')}</span>
-            <span className="kv-val">
-              <span className="small">{i18n.language === 'zh' ? '中文' : 'English'}</span>
-              <span className="chev" aria-hidden="true">›</span>
-            </span>
-          </button>
+        <h4 className={groupTitle}>{t('settings.language')}</h4>
+        <section className={sectionCard}>
+          <ValueRow label={t('settings.language')} value={<span className={smallText}>{i18n.language === 'zh' ? '中文' : 'English'}</span>} onClick={() => setLayer('lang')} />
         </section>
-        <h4 className="group-title">{t('settings.appearance')}</h4>
-        <section className="drawer-section">
-          <button className="kv" onClick={() => setLayer('theme')}>
-            <span>{t('settings.appearance')}</span>
-            <span className="kv-val">
-              <span className="small">{t(`settings.theme.${theme}`)}</span>
-              <span className="chev" aria-hidden="true">›</span>
-            </span>
-          </button>
+        <h4 className={groupTitle}>{t('settings.appearance')}</h4>
+        <section className={sectionCard}>
+          <ValueRow label={t('settings.appearance')} value={<span className={smallText}>{t(`settings.theme.${theme}`)}</span>} onClick={() => setLayer('theme')} />
           {/* 主题色行:当前色点 + chevron 进色板弹层(iOS 外观组首位行) */}
-          <button className="kv" onClick={() => setLayer('accent')}>
-            <span>{t('settings.accent')}</span>
-            <span className="kv-val">
+          <ValueRow
+            divider
+            label={t('settings.accent')}
+            value={
               <span
                 aria-hidden="true"
-                style={{
-                  display: 'inline-block',
-                  width: 16,
-                  height: 16,
-                  borderRadius: '50%',
-                  background: 'var(--primary)',
-                  border: '1px solid var(--border)',
-                }}
+                className="inline-block size-4 rounded-full border border-[color:var(--border)] bg-[var(--primary)]"
               />
-              <span className="chev" aria-hidden="true">›</span>
-            </span>
-          </button>
+            }
+            onClick={() => setLayer('accent')}
+          />
           {/* 背景行:缩略图/未设置 + chevron 进选图弹层 */}
-          <button className="kv" onClick={() => setLayer('background')}>
-            <span>{t('settings.background')}</span>
-            <span className="kv-val">
-              {backgroundUrl() ? (
-                <img src={backgroundUrl()!} alt="" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
+          <ValueRow
+            divider
+            label={t('settings.background')}
+            value={
+              backgroundUrl() ? (
+                <img src={backgroundUrl()!} alt="" className="size-7 rounded-[6px] border border-[color:var(--border)] object-cover" />
               ) : (
-                <span className="small">{t('common.notSet')}</span>
-              )}
-              <span className="chev" aria-hidden="true">›</span>
-            </span>
-          </button>
+                <span className={smallText}>{t('common.notSet')}</span>
+              )
+            }
+            onClick={() => setLayer('background')}
+          />
         </section>
-        <h4 className="group-title">{t('settings.about')}</h4>
-        <section className="drawer-section">
-          <div className="kv"><span>planet-port</span><span className="mono">{version || '-'}</span></div>
-          <div className="kv"><span>ZeroTier Core</span><span className="mono">{coreVersion ?? '-'}</span></div>
-          <div className="kv"><span>{t('settings.buildTime')}</span><span className="mono">{buildTime || '-'}</span></div>
+        <h4 className={groupTitle}>{t('settings.about')}</h4>
+        <section className={sectionCard}>
+          <div className={kvRow}><span className={kvLabel}>planet-port</span><span className={monoValue}>{version || '-'}</span></div>
+          <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>ZeroTier Core</span><span className={monoValue}>{coreVersion ?? '-'}</span></div>
+          <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>{t('settings.buildTime')}</span><span className={monoValue}>{buildTime || '-'}</span></div>
         </section>
       </DrawerShell>
       {/* 语言/外观/主题色/背景弹层与设置抽屉平级(DrawerShell 经 portal 挂 body):后挂者居上 */}

@@ -9,6 +9,9 @@ const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn<(cmd: string) => Pr
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn().mockResolvedValue('0.4.1') }));
 
+/// 抽屉壳 DOM 锚点(Radix Dialog 原语 + ui-x/Sheet 封装层)
+const mask = () => document.querySelector('[data-slot="sheet-overlay"]');
+
 /// matchMedia mock(theme 三态 apply 依赖 system 深色探测;jsdom 未实现,同 theme.test.ts 范式)
 function mockMatchMedia(dark: boolean) {
   vi.stubGlobal('matchMedia', (q: string) => ({
@@ -62,19 +65,30 @@ describe('SettingsDrawer', () => {
     expect(screen.getByTestId('settings-drawer')).toBeInTheDocument();
   });
 
-  it('关闭走滑出动画:撤 in 后内容保留,250ms 后整树卸载且 .drawer 不在文档', () => {
+  it('关闭走滑出动画:撤 open 后内容保留,250ms 后整树卸载且抽屉不在文档', () => {
     // jsdom 不跑 transition,关闭卸载由 250ms 定时承载,fake timers 精确推进
     vi.useFakeTimers();
     try {
       renderDrawer();
-      fireEvent.click(document.querySelector('.drawer-mask')!);
+      // 先推进 16ms 进入帧:entered 翻 open;Radix 受控门控下交互须在进入帧后
+      // (真实浏览器该窗口内 content pointer-events:none 不可点)
+      act(() => {
+        vi.advanceTimersByTime(16);
+      });
+      expect(screen.getByTestId('settings-drawer')).toHaveAttribute('data-state', 'open');
+      // Radix 关闭链路:pointerdown → click → 延迟派发 pointerDownOutside
+      fireEvent.pointerDown(mask()!);
+      fireEvent.click(mask()!);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
       expect(screen.getByTestId('settings-drawer')).toBeInTheDocument();
-      expect(screen.getByTestId('settings-drawer')).not.toHaveClass('in');
+      expect(screen.getByTestId('settings-drawer')).toHaveAttribute('data-state', 'closed');
       act(() => {
         vi.advanceTimersByTime(250);
       });
       // DrawerShell 经 portal 挂 body,断言面向整个文档
-      expect(document.querySelector('.drawer')).not.toBeInTheDocument();
+      expect(document.querySelector('[data-slot="sheet-content"]')).not.toBeInTheDocument();
       expect(screen.queryByTestId('settings-drawer')).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
@@ -96,12 +110,26 @@ describe('SettingsDrawer', () => {
     try {
       const onClose = vi.fn();
       renderDrawer(onClose);
-      fireEvent.click(document.querySelector('.drawer-mask')!);
+      // 进入帧后交互(见上一用例注释):16ms 前 Radix 受控 open 未翻转,关闭不可达
+      act(() => {
+        vi.advanceTimersByTime(16);
+      });
+      fireEvent.pointerDown(mask()!);
+      fireEvent.click(mask()!);
+      // 延迟派发未发生,父层回调尚未触发
+      expect(onClose).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      // 派发完成 → 组件自持 open 翻 false,父层回调仍等滑出结束
       expect(onClose).not.toHaveBeenCalled();
       act(() => {
         vi.advanceTimersByTime(250);
       });
+      // 滑出动画走完才回调父层,且全程只回调一次(不走 249/1 边界切口:
+      // 卸载定时器调度点与推进窗口重合会让边界判定随 ±1ms 漂移)
       expect(onClose).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId('settings-drawer')).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
@@ -111,8 +139,9 @@ describe('SettingsDrawer', () => {
     renderDrawer();
     fireEvent.click(screen.getByRole('button', { name: /^语言/ }));
     fireEvent.click(screen.getByTestId('lang-en'));
-    expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    // 语言弹层开启时设置抽屉被 Radix 标记 aria-hidden,role 查询会漏;走文本断言
+    expect(screen.getByText('Settings')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('lang-zh')); // 还原
-    expect(screen.getByRole('heading', { name: '设置' })).toBeInTheDocument();
+    expect(screen.getByText('设置')).toBeInTheDocument();
   });
 });
