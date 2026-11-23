@@ -5,7 +5,9 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
 
-/// 占位图标由 scripts/make-icons.py 生成(圆环风格)
+/// 品牌 shape 图标由 scripts/make-icons.py 从 icons/brand-shape.png 导出:
+/// 纯黑形状+透明底 + icon_as_template,macOS 按菜单栏深浅自动着色;
+/// 离线态为同形状淡化(alpha 45%)区分
 const ICON_ONLINE: &[u8] = include_bytes!("../icons/tray-online.png");
 const ICON_OFFLINE: &[u8] = include_bytes!("../icons/tray-offline.png");
 
@@ -23,6 +25,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let menu = build_menu(app)?;
     TrayIconBuilder::with_id("main")
         .icon(tauri::image::Image::from_bytes(ICON_OFFLINE)?)
+        // 模板图:macOS 以 alpha 为遮罩按菜单栏深浅自动黑/白渲染
+        // (非模板纯黑图在深色菜单栏会隐形);Windows/Linux 上此标志为 no-op
+        .icon_as_template(true)
         .tooltip("planet-port")
         .menu(&menu)
         .show_menu_on_left_click(false)
