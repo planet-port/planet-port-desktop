@@ -334,7 +334,8 @@ select.input { cursor: pointer; }
 .netcard .addr.is-blank { opacity: .45; cursor: default; }
 .netcard .addr.is-blank:hover .copyable-icon { color: var(--faint); }
 .netcard .badge { margin-top: 2px; }
-/* 空卡(添加网络入口):虚线边框占位卡,hover 主色描边 */
+/* 空卡(添加网络入口):虚线边框占位卡;主色加号锚点+字重 500 让入口可发现,
+   虚线与灰字保持占位语义(不与实卡抢视觉),hover 主色描边 */
 .netcard.add {
   display: flex;
   flex-direction: column;
@@ -345,8 +346,10 @@ select.input { cursor: pointer; }
   background: none;
   border: 1px dashed var(--border-h);
   color: var(--muted);
+  font-weight: 500;
 }
-.netcard.add:hover { border-color: var(--primary); color: var(--text); background: none; }
+.netcard.add > svg { color: var(--primary); }
+.netcard.add:hover { border-color: var(--primary); color: var(--text); background: var(--veil); }
 /* 紧凑开关:胶囊轨道(34×20)+ 圆滑块,开启 = 主色(Linear toggle 形态);
    28px 高点击区(background-clip 把轨道画进内容盒) */
 .switch {

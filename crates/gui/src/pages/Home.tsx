@@ -105,7 +105,8 @@ export default function Home({ onAddNetwork }: { onAddNetwork?: (planet?: string
                   <GearIcon />
                 </button>
               </header>
-              {mine.length === 0 && <div className="empty small">{t('home.noNetworks')}</div>}
+              {/* 空分组文字提示默认不显示:无网络时添加卡即唯一内容,入口即引导 */}
+              {false && mine.length === 0 && <div className="empty small">{t('home.noNetworks')}</div>}
               <div className="netcards">
                 {mine.map(r => (
                   <NetworkCard key={`${r.planet}/${r.nwid}`} row={r} pending={toggling === `${r.planet}/${r.nwid}`} onOpen={setEditing} onToggle={onToggle} />
