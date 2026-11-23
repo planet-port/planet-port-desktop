@@ -412,9 +412,12 @@ select.input { cursor: pointer; }
 [data-theme='dark'] .drawer-section, [data-theme='dark'] .detail-section {
   background: #22252d; border-color: #2c3038;
 }
-.drawer-section h4, .detail-section h4 {
-  margin: 0; font-size: 12px; color: var(--muted); font-weight: 500;
-  padding: 8px 8px 7px;
+/* 分组标题 = 卡外裸文字(iOS/macOS 设置形态):不进卡片,悬于卡上方;
+   drawer 纵向 gap 12px 下,负 margin 使标题贴近卡片(净距 6px)、
+   与上一组拉开(14px) */
+.group-title {
+  margin: 2px 8px -6px 0;
+  font-size: 12px; color: var(--muted); font-weight: 500;
 }
 .drawer-section > * + *, .detail-section > * + * { border-top: 1px solid var(--border-soft); }
 /* 分段控件:整组一个圆角凹陷轨道(底色比所在卡再深一档,浅色下不与卡面同色),

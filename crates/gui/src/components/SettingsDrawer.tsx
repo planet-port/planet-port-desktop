@@ -39,15 +39,15 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
           <h3>{t('settings.title')}</h3>
         </header>
         <IdentitySection />
+        <h4 className="group-title">{t('settings.language')}</h4>
         <section className="drawer-section">
-          <h4>{t('settings.language')}</h4>
           <div className="seg">
             <button data-testid="lang-zh" className={i18n.language === 'zh' ? 'active' : ''} onClick={() => switchLang('zh')}>中文</button>
             <button data-testid="lang-en" className={i18n.language === 'en' ? 'active' : ''} onClick={() => switchLang('en')}>English</button>
           </div>
         </section>
+        <h4 className="group-title">{t('settings.appearance')}</h4>
         <section className="drawer-section">
-          <h4>{t('settings.appearance')}</h4>
           <div className="seg">
             {(['light', 'dark', 'system'] as ThemeMode[]).map(m => (
               <button
@@ -94,13 +94,13 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
             </span>
           </button>
         </section>
+        <h4 className="group-title">{t('settings.about')}</h4>
         <section className="drawer-section">
-          <h4>{t('settings.about')}</h4>
           <div className="kv"><span>planet-port</span><span className="mono">{version || '-'}</span></div>
           <div className="kv"><span>ZeroTier Core</span><span className="mono">{coreVersion ?? '-'}</span></div>
         </section>
+        <h4 className="group-title">{t('settings.advanced')}</h4>
         <section className="drawer-section">
-          <h4>{t('settings.advanced')}</h4>
           <button className="btn" onClick={() => setLayer('planets')}>{t('settings.planetManager')}</button>
         </section>
       </DrawerShell>

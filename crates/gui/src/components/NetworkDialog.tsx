@@ -131,8 +131,8 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
           </div>
           <div className="kv"><span>{t('networks.mtu')}</span><span className="mono">{row.mtu || '-'}</span></div>
         </section>
+        <h4 className="group-title">{t('networks.addrs')}</h4>
         <section className="detail-section">
-          <h4>{t('networks.addrs')}</h4>
           {row.assignedAddrs.length === 0 ? (
             <div className="kv"><span>{t('networks.addrLabel', { index: 1 })}</span><span className="mono">-</span></div>
           ) : (
@@ -144,8 +144,8 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
             ))
           )}
         </section>
+        <h4 className="group-title">{t('networks.routes')}</h4>
         <section className="detail-section">
-          <h4>{t('networks.routes')}</h4>
           {row.managedRoutes.length === 0 ? (
             <div className="kv"><span>{t('networks.routeLabel', { index: 1 })}</span><span className="mono">-</span></div>
           ) : (
@@ -164,8 +164,8 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
             ))
           )}
         </section>
+        <h4 className="group-title">DNS</h4>
         <section className="detail-section">
-          <h4>DNS</h4>
           <div className="seg">
             {(['none', 'network', 'custom'] as const).map(m => (
               <button key={m} className={dnsMode === m ? 'active' : ''} disabled={disabled} onClick={() => setMode(m)}>{t(`dns.mode.${m}`)}</button>

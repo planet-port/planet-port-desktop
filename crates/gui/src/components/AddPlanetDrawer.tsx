@@ -79,8 +79,8 @@ export default function AddPlanetDrawer({ onClose }: { onClose: () => void }) {
           />
           <button className="btn icon" aria-label={t('addplanet.randomIcon')} title={t('addplanet.randomIcon')} onClick={rollIdentity}>↻</button>
         </section>
+        <h4 className="group-title">{t('addplanet.source')}</h4>
         <section className="detail-section">
-          <h4>{t('addplanet.source')}</h4>
           <button className="kv" onClick={() => void pickFile()}>
             <span>{t('addplanet.chooseFile')}</span>
             {source && !/^https?:\/\//.test(source) ? (

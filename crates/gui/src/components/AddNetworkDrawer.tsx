@@ -107,8 +107,8 @@ export default function AddNetworkDrawer({ defaultPlanet, onClose }: { defaultPl
           </div>
           <p className="section-foot">{t('join.routeViaFooter')}</p>
         </section>
+        <h4 className="group-title">DNS</h4>
         <section className="detail-section">
-          <h4>DNS</h4>
           <div className="seg">
             {(['none', 'network', 'custom'] as const).map(m => (
               <button key={m} className={dnsMode === m ? 'active' : ''} onClick={() => setDnsMode(m)}>{t(`dns.mode.${m}`)}</button>

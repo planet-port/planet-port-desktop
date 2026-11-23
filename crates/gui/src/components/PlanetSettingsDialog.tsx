@@ -176,8 +176,8 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
             </div>
           )}
         </section>
+        <h4 className="group-title">{t('planet.diagnostics')}</h4>
         <section className="detail-section">
-          <h4>{t('planet.diagnostics')}</h4>
           <button className="kv" onClick={() => setShowPeers(true)}>
             <span>{t('peers.title')}</span>
             <span className="chev" aria-hidden="true">›</span>

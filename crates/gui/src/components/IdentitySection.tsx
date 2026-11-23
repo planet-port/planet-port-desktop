@@ -69,8 +69,9 @@ export default function IdentitySection() {
   };
 
   return (
-    <section className="drawer-section">
-      <h4>{t('identity.section')}</h4>
+    <>
+      <h4 className="group-title">{t('identity.section')}</h4>
+      <section className="drawer-section">
       {q.data && (
         <>
           <div data-testid="id-mode">
@@ -136,6 +137,7 @@ export default function IdentitySection() {
         }}
         onCancel={() => setPendingMode(null)}
       />
-    </section>
+      </section>
+    </>
   );
 }
