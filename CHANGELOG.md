@@ -42,6 +42,8 @@
 - **gui：**app 图标加工为 macOS squircle 规范
 - **gui：**抽屉打开时自定义背景消失
 - **gui：**自定义背景承载层从 body 迁至 html 修复 Select 展开背景丢失
+- **ci：**gui-e2e 依赖安装补 crates/gui 目录
+- **ci：**GUI 包标记 dist=false 排除出 cargo-dist 构建规划
 ### 文档
 
 - **readme：**Termux 支持态由待定改为不计划支持
