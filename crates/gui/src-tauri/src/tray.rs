@@ -131,7 +131,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
     let mut ro_n = 0usize;
     // 网络按行星分组一级铺开:行星标题行([名],二级 = 行星基本信息只读),
-    // 下接该行星网络行(彩色状态点图标,二级 = 网络基本信息只读),组尾加入网络…
+    // 下接该行星网络行(彩色状态点图标,二级 = 网络基本信息只读),组尾分隔线
     for p in &planets {
         let pid = s(p, "id");
         let running = s(p, "status") == "running";
@@ -291,31 +291,16 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             )?)?;
             menu.append(&net)?;
         }
-        // 加入网络(带行星维度,打开主窗口聚焦输入框)
-        menu.append(&MenuItem::with_id(
-            app,
-            format!("join|{pid}"),
-            tr(&lang, "加入网络…", "Join network…"),
-            true,
-            None::<&str>,
-        )?)?;
         menu.append(&PredefinedMenuItem::separator(app)?)?;
     }
+    // 底部一组:打开主窗口 + 退出;添加类操作(加入网络/行星)回主窗口做
     menu.append(&MenuItem::with_id(
         app,
         "open",
-        tr(&lang, "主窗口", "Open window"),
+        tr(&lang, "打开主窗口", "Open main window"),
         true,
         None::<&str>,
     )?)?;
-    menu.append(&MenuItem::with_id(
-        app,
-        "addplanet",
-        tr(&lang, "加入行星", "Add planet"),
-        true,
-        None::<&str>,
-    )?)?;
-    menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(
         app,
         "quit",
@@ -387,22 +372,6 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
         "copy" => {
             use tauri_plugin_clipboard_manager::ClipboardExt;
             let _ = app.clipboard().write_text(parts[1..].join("|"));
-        }
-        "join" => {
-            // 带行星维度:加入网络抽屉预选该行星(parts = ["join", planet])
-            let planet = parts.get(1).map(|p| p.to_string());
-            let _ = app.emit(
-                "navigate",
-                serde_json::json!({ "to": "home", "focusJoin": true, "planet": planet }),
-            );
-            show_main(app);
-        }
-        "addplanet" => {
-            let _ = app.emit(
-                "navigate",
-                serde_json::json!({ "to": "home", "addPlanet": true }),
-            );
-            show_main(app);
         }
         "open" => show_main(app),
         "quit" => app.exit(0),
