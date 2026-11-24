@@ -44,6 +44,7 @@
 - **gui：**自定义背景承载层从 body 迁至 html 修复 Select 展开背景丢失
 - **ci：**gui-e2e 依赖安装补 crates/gui 目录
 - **ci：**GUI 包标记 dist=false 排除出 cargo-dist 构建规划
+- **ci：**dist 配置启用 precise-builds 精确构建
 ### 文档
 
 - **readme：**Termux 支持态由待定改为不计划支持
