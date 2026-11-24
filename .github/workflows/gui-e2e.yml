@@ -47,7 +47,7 @@ jobs:
         shell: bash
 
       - name: Install JS deps
-        run: pnpm install --frozen-lockfile
+        run: pnpm --dir crates/gui install --frozen-lockfile
 
       # linux:webview 需要显示服务;webkit2gtk 系统库由 GUI 构建依赖携带
       - name: Setup xvfb (linux)
