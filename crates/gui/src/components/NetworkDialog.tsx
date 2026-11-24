@@ -7,9 +7,9 @@ import { api, asError } from '../api/client';
 import type { NetworkEntry } from '../api/types';
 import ConfirmDialog from './ConfirmDialog';
 import CopyableValue from './CopyableValue';
+import DrawerShell from './DrawerShell';
 import QRShareSheet from './QRShareSheet';
 import { useToast } from './Toaster';
-import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
 import { Input } from './ui-x/Input';
 import { Switch } from './ui-x/Switch';
 import { serversToSlots, slotsToServers, slotsValid, type DnsSlots } from '../dns';
@@ -122,11 +122,13 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
 
   return (
     <>
-      {/* 详情弹层容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序不变——内部持有
-          open,onClose 只翻 state 走退出动画,动画结束(onClosed)才回调父层清理 */}
-      <Dialog open={open} onOpenChange={o => { if (!o) close(); }} onClosed={onClose}>
-        <DialogContent testId="network-detail" closeLabel={t('common.close')} className="gap-3">
-          <DialogTitle>{t('networks.detailTitle', { name: row.name ?? row.nwid })}</DialogTitle>
+      {/* 详情弹层统一右侧抽屉(DrawerShell,2026-11-24 口径):瞬时型时序不变——
+          内部持有 open,onClose 只翻 state 走退出动画,动画结束(onClosed)才回调
+          父层清理 */}
+      <DrawerShell open={open} onClose={close} onClosed={onClose} testId="network-detail">
+          <header className="flex items-center justify-between pr-[30px]">
+            <h3 className="m-0 text-sm font-medium truncate">{t('networks.detailTitle', { name: row.name ?? row.nwid })}</h3>
+          </header>
           <section className="detail-section">
           <div className="kv">
             <span>{t('networks.id')}</span>
@@ -220,8 +222,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
         <section className="detail-section">
           <button className={dangerRowCls} onClick={() => setConfirmDel(true)}>{t('networks.deleteNetwork')}</button>
         </section>
-        </DialogContent>
-      </Dialog>
+      </DrawerShell>
       {/* QRShareSheet/确认框与详情弹层平级(均经 portal 挂 body):
           点二维码遮罩只收二维码,不冒泡关闭详情 */}
       {showQR && (

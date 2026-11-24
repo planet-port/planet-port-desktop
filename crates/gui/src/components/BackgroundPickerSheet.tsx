@@ -4,13 +4,13 @@ import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import { api, asError } from '../api/client';
 import { backgroundUrl, getBackground, setBackground } from '../background';
 import { useToast } from './Toaster';
-import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
+import DrawerShell from './DrawerShell';
 import { Button } from './ui-x/Button';
 
 /// 背景图选择弹层(iOS BackgroundImagePickerSheet 对位):预览当前背景,
-/// 选图(复制进 appData 后即刻生效)/清除。遮罩点击/Esc 关闭,无右上角关闭钮
-/// (基线 overlay 形态)。容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序——
-/// 内部持有 open,关闭走退出动画后再回调父层卸载。
+/// 选图(复制进 appData 后即刻生效)/清除。遮罩点击/Esc 关闭。容器统一右侧
+/// 抽屉(DrawerShell,2026-11-24 口径):瞬时型时序——内部持有 open,关闭走
+/// 退出动画后再回调父层卸载。
 /// 缩略图样式对译基线 .bg-thumb(styles.css 已删,本组件独占):
 /// 全宽 120px 高 cover 裁切 + 1px 边 6px 圆角
 export default function BackgroundPickerSheet({ onClose }: { onClose: () => void }) {
@@ -51,9 +51,10 @@ export default function BackgroundPickerSheet({ onClose }: { onClose: () => void
     }
   };
   return (
-    <Dialog open={open} onOpenChange={o => { if (!o) close(); }} onClosed={onClose}>
-      <DialogContent>
-        <DialogTitle>{t('settings.background')}</DialogTitle>
+    <DrawerShell open={open} onClose={close} onClosed={onClose}>
+      <header className="flex items-center justify-between pr-[30px]">
+        <h3 className="m-0 text-sm font-medium">{t('settings.background')}</h3>
+      </header>
         {url ? (
           <img
             className="block h-[120px] w-full rounded-[6px] border border-border object-cover"
@@ -70,7 +71,6 @@ export default function BackgroundPickerSheet({ onClose }: { onClose: () => void
           <span className="flex-1" />
           <Button variant="primary" disabled={busy} onClick={() => void choose()}>{t('settings.bgPick')}</Button>
         </div>
-      </DialogContent>
-    </Dialog>
+    </DrawerShell>
   );
 }

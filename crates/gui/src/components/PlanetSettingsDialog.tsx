@@ -6,12 +6,12 @@ import { api, asError } from '../api/client';
 import type { PlanetStatus } from '../api/types';
 import ConfirmDialog from './ConfirmDialog';
 import CopyableValue from './CopyableValue';
+import DrawerShell from './DrawerShell';
 import IconPicker from './IconPicker';
 import PeersDialog from './PeersDialog';
 import PlanetIconView from './PlanetIconView';
 import QRShareSheet from './QRShareSheet';
 import { useToast } from './Toaster';
-import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
 import { animalFor, colorFor } from '../icons/planetIcon';
 import { planetPayloadContainer } from '../ztp/container';
 
@@ -139,10 +139,11 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
   const d = detail.data;
   return (
     <>
-      {/* 设置弹层容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序不变 */}
-      <Dialog open={open} onOpenChange={o => { if (!o) close(); }} onClosed={onClose}>
-        <DialogContent testId="planet-settings" closeLabel={t('common.close')} className="gap-3">
-          <DialogTitle>{t('planet.settingsTitle', { name: planet.name })}</DialogTitle>
+      {/* 设置弹层统一右侧抽屉(DrawerShell,2026-11-24 口径):瞬时型时序不变 */}
+      <DrawerShell open={open} onClose={close} onClosed={onClose} testId="planet-settings">
+          <header className="flex items-center justify-between pr-[30px]">
+            <h3 className="m-0 text-sm font-medium">{t('planet.settingsTitle', { name: planet.name })}</h3>
+          </header>
           <section className="detail-section">
           <div className="kv">
             <span>{t('addplanet.name')}</span>
@@ -204,8 +205,7 @@ export default function PlanetSettingsDialog({ planet, onClose, onDone }: {
             <button className={dangerRowCls} onClick={() => setConfirmDel(true)}>{t('common.delete')}</button>
           </section>
         )}
-        </DialogContent>
-      </Dialog>
+      </DrawerShell>
       {/* 图标选择/节点表/确认框/二维码与设置弹层平级(均经 portal 挂 body):
           后挂者居上(DOM 序) */}
       {showPicker && (

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import QueryError from './QueryError';
-import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
+import DrawerShell from './DrawerShell';
 
 /// 基线 .table 系对译(styles.css 已删,本组件独占):卡式表格,th 灰字
 /// --bg 底、行间 hairline 分隔、末行无分隔、--radius 圆角裁切
@@ -15,10 +15,10 @@ const tdCls = 'border-b border-[var(--border-soft)] px-3 py-2.5 text-left';
 const badgeCls =
   'inline-flex items-center rounded-full border px-[9px] py-[3px] font-mono text-xs leading-none';
 
-/// 节点表弹层:行星设置「诊断」按行星过滤打开(隐藏 planet 列)。纯展示弹层
-/// 无操作按钮,遮罩点击关闭。
+/// 节点表抽屉:行星设置「诊断」按行星过滤打开(隐藏 planet 列)。纯展示抽屉
+/// 无操作按钮,遮罩点击关闭。容器统一右侧抽屉(DrawerShell,2026-11-24 口径)。
 /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走退出动画,动画结束
-/// (ui-x/Dialog onClosed)才回调父层 onClose 清理(父层条件渲染才卸载)
+/// (DrawerShell onClosed)才回调父层 onClose 清理(父层条件渲染才卸载)
 export default function PeersDialog({ planet, onClose }: { planet?: string; onClose: () => void }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(true);
@@ -30,10 +30,12 @@ export default function PeersDialog({ planet, onClose }: { planet?: string; onCl
   });
   const rows = q.data?.peers ?? [];
   return (
-    <Dialog open={open} onOpenChange={o => { if (!o) close(); }} onClosed={onClose}>
-      {/* 六列表格弹层走宽档(.dialog-wide = min(760px, 100vw-40px)) */}
-      <DialogContent testId="peers-dialog" closeLabel={t('common.close')} wide>
-        <DialogTitle>{t('peers.title')}</DialogTitle>
+    <DrawerShell open={open} onClose={close} onClosed={onClose} testId="peers-dialog">
+      <header className="flex items-center justify-between pr-[30px]">
+        <h3 className="m-0 text-sm font-medium">{t('peers.title')}</h3>
+      </header>
+      {/* 六列表格定宽撑开抽屉(对齐原宽档 760px 语义,窄窗留 40px 边) */}
+      <div className="w-[min(720px,calc(100vw-80px))]">
         {rows.length > 0 && (
           <table className="w-full overflow-hidden rounded-[var(--radius)] border border-border border-collapse bg-[var(--panel)]">
             <thead>
@@ -75,7 +77,7 @@ export default function PeersDialog({ planet, onClose }: { planet?: string; onCl
         ) : (
           rows.length === 0 && <div className="py-12 text-center text-[var(--muted)]">{t('peers.empty')}</div>
         )}
-      </DialogContent>
-    </Dialog>
+      </div>
+    </DrawerShell>
   );
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ANIMALS, ANIMAL_SVGS, PALETTE, randomColorHex } from '../icons/planetIcon';
 import PlanetIconView from './PlanetIconView';
-import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
+import DrawerShell from './DrawerShell';
 import { Button } from './ui-x/Button';
 
 /// 基线 .icon-grid 系对译(styles.css 已删,本组件独占):92 宫格 8 列,
@@ -16,24 +16,25 @@ const colorBtnCls =
 
 /// 图标选择器(iOS IconPickerSheet 对齐):图形 92 宫格 + 底色 24 预设/随机。
 /// 确认语义为「完成」回传当前选择;取消不回传。
-/// 容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序——内部持有 open,取消先走退出
-/// 动画,动画结束(onClosed)才回调父层卸载;「完成」先回传选择再关。
-/// 选中态用 aria-pressed 表达(原 .active 类随结构类一并 Tailwind 化)。
+/// 容器统一右侧抽屉(DrawerShell,2026-11-24 口径):瞬时型时序——内部持有
+/// open,取消先走退出动画,动画结束(onClosed)才回调父层卸载;「完成」先回传
+/// 选择再关。选中态用 aria-pressed 表达(原 .active 类随结构类一并 Tailwind 化)。
 export default function IconPicker({ animal, color, onSelect, onClose }: {
   animal: string; color: string; onSelect: (animal: string, color: string) => void; onClose: () => void;
 }) {
   const { t } = useTranslation();
   /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走退出动画,动画结束
-  /// (ui-x/Dialog onClosed)才回调父层 onClose 清理(父层条件渲染才卸载)
+  /// (DrawerShell onClosed)才回调父层 onClose 清理(父层条件渲染才卸载)
   const [open, setOpen] = useState(true);
   const close = () => setOpen(false);
   const [tab, setTab] = useState<'graphic' | 'color'>('graphic');
   const [a, setA] = useState(animal);
   const [c, setC] = useState(color);
   return (
-    <Dialog open={open} onOpenChange={o => { if (!o) close(); }} onClosed={onClose}>
-      <DialogContent closeLabel={t('common.close')}>
-        <DialogTitle>{t('icon.title')}</DialogTitle>
+    <DrawerShell open={open} onClose={close} onClosed={onClose}>
+      <header className="flex items-center justify-between pr-[30px]">
+        <h3 className="m-0 text-sm font-medium">{t('icon.title')}</h3>
+      </header>
         <div className="seg">
           <button className={tab === 'graphic' ? 'active' : ''} onClick={() => setTab('graphic')}>{t('icon.graphic')}</button>
           <button className={tab === 'color' ? 'active' : ''} onClick={() => setTab('color')}>{t('icon.color')}</button>
@@ -74,7 +75,6 @@ export default function IconPicker({ animal, color, onSelect, onClose }: {
           <Button onClick={close}>{t('common.cancel')}</Button>
           <Button variant="primary" onClick={() => { onSelect(a, c); close(); }}>{t('common.done')}</Button>
         </div>
-      </DialogContent>
-    </Dialog>
+    </DrawerShell>
   );
 }

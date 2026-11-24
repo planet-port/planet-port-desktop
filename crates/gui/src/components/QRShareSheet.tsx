@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as QRCode from 'qrcode';
 import { encodeFrames, QRTooLargeError } from '../ztp/frames';
-import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
+import DrawerShell from './DrawerShell';
 import { Button } from './ui-x/Button';
 
-/// 二维码分享弹层:单帧静态直出保存按钮;多帧轮播(速度四档+手动切换),
+/// 二维码分享抽屉:单帧静态直出保存按钮;多帧轮播(速度四档+手动切换),
 /// 与移动端 QRShareSheet 行为一致。编码在 useMemo、渲染 toDataURL 异步逐张。
-/// 容器迁 shadcn Dialog(ui-x/Dialog):瞬时型时序——内部持有 open,onClose 只翻
-/// state 走退出动画,动画结束(onClosed)才回调 onDismiss 让父层卸载。
-/// 内容布局类对译基线 .qr-* 系(styles.css 已删,本组件独占):
+/// 容器统一右侧抽屉(DrawerShell,2026-11-24 口径):瞬时型时序——内部持有
+/// open,onClose 只翻 state 走退出动画,动画结束(onClosed)才回调 onDismiss
+/// 让父层卸载。内容布局类对译基线 .qr-* 系(styles.css 已删,本组件独占):
 /// 居中排版 380px,图 260px pixelated,计数徽标挂图右下角
 const SPEEDS = [0.3, 0.5, 0.8, 1.2];
 
@@ -28,7 +28,7 @@ export default function QRShareSheet({
 }) {
   const { t } = useTranslation();
   /// 瞬时型弹层:内部持有 open,onClose 只翻 state 走退出动画,动画结束
-  /// (ui-x/Dialog onClosed)才回调 onDismiss 让父层卸载
+  /// (DrawerShell onClosed)才回调 onDismiss 让父层卸载
   const [open, setOpen] = useState(true);
   const close = () => setOpen(false);
   const frames = useMemo(() => {
@@ -72,9 +72,10 @@ export default function QRShareSheet({
   }, [manual, speed, frames, urls.length]);
 
   return (
-    <Dialog open={open} onOpenChange={o => { if (!o) close(); }} onClosed={onDismiss}>
-      <DialogContent closeLabel={t('common.close')}>
-        <DialogTitle>{title}</DialogTitle>
+    <DrawerShell open={open} onClose={close} onClosed={onDismiss}>
+      <header className="flex items-center justify-between pr-[30px]">
+        <h3 className="m-0 text-sm font-medium">{title}</h3>
+      </header>
         <div className="w-[380px] text-center">
           {subtitle && <p className="small">{subtitle}</p>}
           {frames === null ? (
@@ -119,7 +120,6 @@ export default function QRShareSheet({
             </>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+    </DrawerShell>
   );
 }
