@@ -20,6 +20,10 @@ serde_json = "1"
 [workspace.metadata.dist]
 cargo-dist-version = "0.34.0"
 allow-dirty = ["ci"]                # release.yml 含手工 token 替换，跳过 CI 再生成比对
+# 精确构建(-p planet-port)替代默认 --workspace 全量编译:gui 包在 Linux
+# 容器不可编译(无 webkit2gtk/glib),dist=false 只影响产物规划不影响编译集,
+# 全量模式必挂(v0.5.0-beta.1 两轮实测;cargo-dist#1117 官方解法)
+precise-builds = true
 ci = "github"
 installers = ["homebrew"]
 publish-jobs = ["homebrew"]
