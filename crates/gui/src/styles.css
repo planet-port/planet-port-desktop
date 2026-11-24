@@ -157,14 +157,19 @@ button.kv:hover .chev { color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
-/* ---- 背景图(设置→外观→背景):铺满窗口,--bg 半透明蒙层保证前景可读 ---- */
-html.has-bg body {
+/* ---- 背景图(设置→外观→背景):铺满窗口,--bg 半透明蒙层保证前景可读 ----
+   承载层挂 html 而非 body:radix Select/Dialog(modal) 的 RemoveScroll 会给
+   body 注入 class/inline 样式,WKWebView 下 body 样式重算会使 body 上承载的
+   背景层整体失效(Select 下拉展开即触发,真机 2026-11-24 证实);html 不被
+   RemoveScroll 触碰,html::before 固定蒙层在 canvas 背景之上、正常流内容之下,
+   层叠关系与挂 body 时一致 */
+html.has-bg {
   background-image: var(--bg-image);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
 }
-html.has-bg body::before {
+html.has-bg::before {
   content: '';
   position: fixed;
   inset: 0;
@@ -172,3 +177,5 @@ html.has-bg body::before {
   background: var(--bg);
   opacity: 0.82;
 }
+/* body 底色让位:不透明 var(--bg) 会盖住 html 层的背景图与蒙层 */
+html.has-bg body { background: transparent; }
