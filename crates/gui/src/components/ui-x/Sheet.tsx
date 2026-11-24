@@ -21,9 +21,14 @@ import { cn } from '@/lib/utils';
 /// =closed 平滑滑出),250ms(jsdom 无 transition,定时兜底)后卸载并回调
 /// onClosed。onClosed 在真正卸载那一刻回调——瞬时型弹层由父层条件渲染控制
 /// 卸载,父层只能凭它清理状态,否则 onClose 一触发组件即被卸载,滑出被砍。
-/// Radix 侧保留 portal、focus trap、Esc、遮罩点击关闭(经 onOpenChange 收敛
-/// 到 onClose);开启焦点经 onOpenAutoFocus preventDefault 归还调用方(基线
-/// 由表单 autoFocus 定焦点,否则 Radix 默认抢焦到壳内关闭钮)。关闭动画期
+/// Radix 侧保留 portal、Esc 与 outside-press 关闭(均经 onOpenChange 收敛
+/// 到 onClose);modal={false} 与 ui-x/Dialog 同口径:窗口视口本就固定,滚动
+/// 锁/焦点圈定无意义,且 modal 默认值会触发 react-remove-scroll 给 body 注入
+/// data-scroll-locked 锁定样式——WKWebView(真机 2026-11-24 证实)下 has-bg
+/// 自定义背景随 drawer 打开整体消失;modal=false 下 Radix 不挂 Overlay,
+/// 遮罩自渲染(纯视觉层,点击关闭由 Content 的 DismissableLayer 承担)。
+/// 开启焦点经 onOpenAutoFocus preventDefault 归还调用方(基线由表单
+/// autoFocus 定焦点,否则 Radix 默认抢焦到壳内关闭钮)。关闭动画期
 /// (data-state=closed)遮罩/抽屉 pointer-events:none,防窗口内误触;16ms
 /// 进入帧内 Radix 受控 open 未翻转,关闭钮/Esc 天然不可达,与浏览器可点窗口
 /// 一致。forceMount 挂在 Portal 上透传 Overlay/Content:退出动画期间元素保持
@@ -120,9 +125,13 @@ export function Sheet({
       onOpenChange={next => {
         if (!next) onClose();
       }}
+      modal={false}
     >
       <SheetPrimitive.Portal forceMount>
-        <SheetPrimitive.Overlay
+        {/* 遮罩自渲染:modal=false 下 Radix 不挂 Overlay。点击关闭仍走
+            Content 的 DismissableLayer outside-press(onOpenChange 收敛到
+            onClose),与 Content 内交互互不干扰 */}
+        <div
           data-slot="sheet-overlay"
           className={sheetOverlayClasses}
           style={{ '--layer': layer } as CSSProperties}
