@@ -2,11 +2,15 @@ import { useTranslation } from 'react-i18next';
 import type { NetworkEntry } from '../api/types';
 import CopyableValue from './CopyableValue';
 import { Switch } from './ui-x/Switch';
+import { pickDisplayAddr } from '../lib/addr';
 
 /// 网络卡片(方案C卡片网格,弱透明卡面+泊位灯):信息区点击进设置弹层,卡头开关
-/// 切换禁用/启用(OK↔DISABLED,占位行=join)。泊位灯=网络级状态(在线青光/DISABLED 灰/冲突黄),
-/// 禁用卡整体降透明度。pending 期开关换 spinner 并整卡禁点(防抖动)。
+/// 切换禁用/启用(OK↔DISABLED,占位行=join)。泊位灯=网络级状态(在线青光/
+/// 连接中青光呼吸/断开灰/冲突黄),连接中(REQUESTING_CONFIGURATION,enable
+/// 后未获配置阶段)整卡不降透明、开关位 spinner(2026-11-24 口径:连接中
+/// 不得再呈断开灰态)。pending 期开关换 spinner 并整卡禁点(防抖动)。
 /// IP 行为可复制值(小号图标);状态文字不展示,灯已承载。
+/// IP 只显示一个(IPv4 优先),复制与显示一致(2026-11-24 口径)。
 /// 旧 .netcard 系规则对译:veil 卡面 + hairline 边 + --radius 圆角,hover 抬
 /// --panel-2 底亮边;泊位灯 8px 方灯(ok=青光带 4px glow);值行 mono 12px 省略;
 /// IP 占位降透明;冲突徽章 34% 状态色边;spinner 0.8s 转(keyframes 由
@@ -24,12 +28,14 @@ export default function NetworkCard({
 }) {
   const { t } = useTranslation();
   const on = row.status === 'OK';
+  /// 连接努力中(enable 后未拿到配置的中间态):青光呼吸 + 开关位 spinner
+  const connecting = row.status === 'REQUESTING_CONFIGURATION';
   return (
     <section
       data-testid="network-card"
       className={`flex flex-col gap-2 rounded-md border border-[var(--border)] bg-[var(--veil)] px-3.5 py-3 transition-[border-color,background-color] duration-[120ms] ease-[ease] hover:border-[var(--border-h)] hover:bg-secondary ${
         pending ? 'cursor-default opacity-70' : 'cursor-pointer'
-      } ${on ? '' : 'opacity-55'}`}
+      } ${on || connecting ? '' : 'opacity-55'}`}
       onClick={() => !pending && onOpen(row)}
     >
       <header className="flex items-center gap-2.5">
@@ -39,7 +45,9 @@ export default function NetworkCard({
               ? 'bg-[var(--warn)]'
               : on
                 ? 'bg-[var(--lamp)] shadow-[0_0_4px_var(--lamp)]'
-                : 'bg-[var(--off)]'
+                : connecting
+                  ? 'animate-pulse bg-[var(--lamp)]'
+                  : 'bg-[var(--off)]'
           }`}
           aria-hidden="true"
         />
@@ -50,7 +58,7 @@ export default function NetworkCard({
         >
           {row.name ?? row.nwid}
         </span>
-        {pending ? (
+        {pending || connecting ? (
           <span
             className="inline-block h-4 w-4 flex-none animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--primary)] [animation-duration:0.8s]"
             aria-label="pending"
@@ -70,7 +78,7 @@ export default function NetworkCard({
           className={`max-w-full font-mono text-xs leading-none tracking-[0.1px] [&>span]:truncate ${
             row.assignedAddrs.length === 0 ? 'cursor-default opacity-45' : ''
           }`}
-          text={row.assignedAddrs.join(', ') || '-'}
+          text={pickDisplayAddr(row.assignedAddrs) || '-'}
         />
         {row.conflict && (
           <span

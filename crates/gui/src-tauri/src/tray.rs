@@ -249,12 +249,14 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 )?;
             }
             // IP 在接口之后,可点击复制(复制纯地址);多地址逐条一行,
-            // 首行带 "IP: " 前缀,后续行裸地址
-            let addrs: Vec<&str> = n
+            // 首行带 "IP: " 前缀,后续行裸地址;IPv4 优先排序
+            // (判据与前端 lib/addr.ts 一致:含 . 无 : 为 v4,稳定排序保持段内原序)
+            let mut addrs: Vec<&str> = n
                 .get("assignedAddrs")
                 .and_then(|x| x.as_array())
                 .map(|v| v.iter().filter_map(|i| i.as_str()).collect())
                 .unwrap_or_default();
+            addrs.sort_by_key(|a| !(a.contains('.') && !a.contains(':')));
             for (i, a) in addrs.iter().enumerate() {
                 net.append(&MenuItem::with_id(
                     app,

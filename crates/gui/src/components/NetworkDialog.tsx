@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogTitle } from './ui-x/Dialog';
 import { Input } from './ui-x/Input';
 import { Switch } from './ui-x/Switch';
 import { serversToSlots, slotsToServers, slotsValid, type DnsSlots } from '../dns';
+import { sortAddrsPreferV4 } from '../lib/addr';
 
 /// 基线 .link 对译(styles.css 已删,本组件与 PlanetSettingsDialog 独占):
 /// 卡内行内文字钮,负 margin 左撑 8px 对齐卡内 padding 缘,hover 抬 --panel 面底;
@@ -30,7 +31,8 @@ function formatMac(mac: string): string {
 }
 
 /// 网络详情(布局同 iOS NetworkDetailView,全部即时生效无保存按钮):
-/// 基础信息行(ID 行点击复制+二维码入口/MAC 可复制) + 分配地址逐行可复制 +
+/// 基础信息行(ID 行点击复制+二维码入口/MAC 可复制) + 分配地址逐行可复制
+/// (IPv4 优先排序,2026-11-24 口径) +
 /// 托管路由(target↔via 点击切换,直连不可切) + DNS(模式即点即生效,custom 槽
 /// 失焦且合法时自动应用,network 模式只读展示下发服务器) + routeVia 开关 +
 /// 居中红字删除(=leave)。广播/桥接两行不做(daemon NetworkEntry 未暴露)
@@ -150,7 +152,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
           {row.assignedAddrs.length === 0 ? (
             <div className="kv"><span>{t('networks.addrLabel', { index: 1 })}</span><span className="mono">-</span></div>
           ) : (
-            row.assignedAddrs.map((a, i) => (
+            sortAddrsPreferV4(row.assignedAddrs).map((a, i) => (
               <div className="kv" key={a}>
                 <span>{t('networks.addrLabel', { index: i + 1 })}</span>
                 <CopyableValue text={a} />
