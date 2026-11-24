@@ -87,7 +87,11 @@ export default function Home({ onAddNetwork }: { onAddNetwork?: (planet?: string
         <div className="py-12 text-center text-muted-foreground">{t('home.emptyNoPlanet')}</div>
       ) : (
         planets.map(p => {
-          const mine = rows.filter(r => r.planet === p.id);
+          /// 卡片序:纯按名称(name 缺失回退 nwid,与卡片显示口径一致),
+          /// 断开/连接状态不参与排序(2026-11-24 口径)
+          const mine = rows
+            .filter(r => r.planet === p.id)
+            .sort((a, b) => (a.name ?? a.nwid).localeCompare(b.name ?? b.nwid));
           return (
             <section key={p.id} className={`mb-[18px] ${p.enabled ? '' : 'opacity-55'}`}>
               <header className="mb-2.5 flex h-8 items-center gap-2.5 px-1.5">
