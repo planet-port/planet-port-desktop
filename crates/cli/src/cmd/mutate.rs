@@ -120,7 +120,7 @@ pub fn set(
 ) -> Result<(), CliError> {
     if values.is_empty() {
         return Err(CliError::Usage(
-            "set requires at least one key=value (routeViaZeroTier, dnsMode, customDns)".into(),
+            "set requires at least one key=value (routeViaZeroTier, dnsMode, customDns, alias)".into(),
         ));
     }
     let mut body = serde_json::Map::new();
@@ -149,13 +149,17 @@ pub fn set(
                 let list: Vec<String> = val.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
                 body.insert(k.into(), json!(list));
             }
+            // 空串即清除(daemon 侧 trim 后转 None)
+            "alias" => {
+                body.insert(k.into(), json!(val.trim()));
+            }
             _ => {
                 return Err(match legacy_key_hint(k) {
                     Some(h) => CliError::Usage(format!(
-                        "unknown key \"{k}\"; ZeroTier's {k} ≈ \"{h}\" here; valid: routeViaZeroTier, dnsMode, customDns"
+                        "unknown key \"{k}\"; ZeroTier's {k} ≈ \"{h}\" here; valid: routeViaZeroTier, dnsMode, customDns, alias"
                     )),
                     None => CliError::Usage(format!(
-                        "unknown key \"{k}\"; valid: routeViaZeroTier, dnsMode, customDns"
+                        "unknown key \"{k}\"; valid: routeViaZeroTier, dnsMode, customDns, alias"
                     )),
                 });
             }
@@ -163,6 +167,29 @@ pub fn set(
     }
     let resp = client.post_json(&endpoints::network_set(nwid, planet.as_deref()), &Value::Object(body))?;
     ok(client, "set", planet, json, &resp);
+    Ok(())
+}
+
+/// `alias <nwid|name> [name]`:设/清网络显示别名(优先于控制器名展示;
+/// 与 `set <nwid> alias=...` 同一 daemon 通道)。缺省或空名 = 清除,
+/// 回落控制器名。定位同 get:合法 nwid 直用,否则按当前显示名解析
+pub fn alias(
+    client: &Client,
+    nwid: &str,
+    name: &Option<String>,
+    planet: &Option<String>,
+    json: bool,
+) -> Result<(), CliError> {
+    let pid = resolve_single(client, planet)?;
+    let hit = find_network(client, nwid, &pid)?;
+    // trim 后空串即清除(daemon 转 None)
+    let alias = name.as_deref().map(str::trim).unwrap_or("");
+    let body = json!({ "alias": alias });
+    let resp = client.post_json(
+        &endpoints::network_set(&hit.nwid, planet.as_deref()),
+        &body,
+    )?;
+    ok(client, "alias", planet, json, &resp);
     Ok(())
 }
 

@@ -265,6 +265,8 @@ fn default_net_local() -> NetLocal {
         route_via_zero_tier: true,
         dns_mode: "none".into(),
         custom_dns: Vec::new(),
+        cached_name: None,
+        alias: None,
     }
 }
 
@@ -321,7 +323,11 @@ fn to_network_entry(
     NetworkEntry {
         planet: planet_id.to_string(),
         nwid: format!("{:016x}", cfg.nwid),
-        name: if cfg.name.is_empty() { None } else { Some(cfg.name.clone()) },
+        // 显示优先级:别名(用户设) > netconf 名 > 缓存名(无名过渡兜底),
+        // 融合进 name 单字段下发,各端(卡片/托盘/CLI 定位)零改动生效
+        name: nl.alias.clone().or_else(|| {
+            if cfg.name.is_empty() { nl.cached_name.clone() } else { Some(cfg.name.clone()) }
+        }),
         status: runtime::status_name(&cfg.status).into(),
         conflict,
         kind: if cfg.is_private { "PRIVATE" } else { "PUBLIC" }.into(),
@@ -431,7 +437,13 @@ fn disabled_entries(pid: &str, entry: &RegistryEntry) -> Vec<NetworkEntry> {
             NetworkEntry {
                 planet: pid.to_string(),
                 nwid: k.to_string(),
-                name: nd.name.clone(),
+                // 显示优先级:别名 > 禁用快照名(stopped 态禁用无快照)> 缓存
+                name: nd
+                    .local
+                    .alias
+                    .clone()
+                    .or(nd.name.clone())
+                    .or(nd.local.cached_name.clone()),
                 status: "DISABLED".into(),
                 conflict: None,
                 kind: "—".into(),
@@ -454,7 +466,8 @@ fn placeholder_entry(pid: &str, nwid: &str, nl: &NetLocal) -> NetworkEntry {
     NetworkEntry {
         planet: pid.to_string(),
         nwid: nwid.to_string(),
-        name: None,
+        // 显示优先级:别名 > 缓存名(从未收到过 netconf 则均 None → nwid)
+        name: nl.alias.clone().or(nl.cached_name.clone()),
         status: "STOPPED".into(),
         conflict: None,
         kind: "—".into(),
@@ -1008,6 +1021,19 @@ pub async fn net_set(
             }
         }
         nl.custom_dns = out;
+    }
+    // 别名:字符串 trim 后空串 = 清除(None);显示优先于控制器名/缓存名
+    if let Some(v) = body.get("alias") {
+        let Some(s) = v.as_str() else {
+            return Err(err(
+                StatusCode::BAD_REQUEST,
+                "badRequest",
+                "alias must be a string",
+                None,
+            ));
+        };
+        let s = s.trim();
+        nl.alias = if s.is_empty() { None } else { Some(s.to_string()) };
     }
     // 写持久层 + 运行时镜像;生效 = 下一轮 ConfigUpdate(见模块注释)
     let key = format!("{nwid_u:016x}");

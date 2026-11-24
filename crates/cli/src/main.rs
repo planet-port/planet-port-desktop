@@ -68,8 +68,10 @@ enum Command {
     Disable { nwid: String },
     /// Share a network: QR code in terminal + copy network id to clipboard
     Share { nwid: String },
-    /// Set client-side config: routeViaZeroTier / dnsMode / customDns
+    /// Set client-side config: routeViaZeroTier / dnsMode / customDns / alias
     Set { nwid: String, values: Vec<String> },
+    /// Set or clear a network's display alias (overrides controller name; omit <name> to clear)
+    Alias { nwid: String, name: Option<String> },
     /// Get one config value of a joined network (script-friendly)
     Get { nwid: String, key: String },
     /// List moons
@@ -215,6 +217,7 @@ fn planet_need(cmd: &Command) -> PlanetNeed {
         | Command::Share { .. }
         | Command::Set { .. }
         | Command::Get { .. }
+        | Command::Alias { .. }
         | Command::Networkinfo { .. }
         | Command::Orbit { .. }
         | Command::Deorbit { .. }
@@ -292,6 +295,7 @@ fn dispatch(
         Command::Disable { nwid } => cmd::mutate::disable(client, nwid, planet_flag, json),
         Command::Share { nwid } => cmd::share::share(client, nwid, planet_flag, json),
         Command::Set { nwid, values } => cmd::mutate::set(client, nwid, values, planet_flag, json),
+        Command::Alias { nwid, name } => cmd::mutate::alias(client, nwid, name, planet_flag, json),
         Command::Get { nwid, key } => cmd::mutate::get(client, nwid, key, planet_flag, json),
         Command::Orbit { moon_id, seed } => cmd::mutate::orbit(client, moon_id, seed, planet_flag, json),
         Command::Deorbit { moon_id } => cmd::mutate::deorbit(client, moon_id, planet_flag, json),

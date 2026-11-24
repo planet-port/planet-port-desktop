@@ -83,6 +83,15 @@ pub struct NetLocal {
     /// "none" | "network" | "custom"
     pub dns_mode: String,
     pub custom_dns: Vec<String>,
+    /// 网络名缓存:netconf 到名即更新(远端改名跟随),条目删除(leave)
+    /// 随本结构清除;STOPPED/DISABLED/netconf 无名时兜底展示,避免
+    /// 名称回退成 nwid(2026-11-24 口径)
+    #[serde(default)]
+    pub cached_name: Option<String>,
+    /// 用户自定义别名(显示优先于控制器名/缓存名;CLI set/alias 命令
+    /// 维护)。随本结构迁移(disable/enable 保留)、leave 清除
+    #[serde(default)]
+    pub alias: Option<String>,
 }
 
 /// 禁用网络的记忆条目(disable 时自 net_local 迁入,enable/join 迁回):

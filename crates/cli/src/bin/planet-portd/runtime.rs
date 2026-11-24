@@ -129,6 +129,8 @@ impl NodeSink for DaemonSink {
                 );
             }
             NetConfigOp::Up | NetConfigOp::ConfigUpdate => {
+                // netconf 到名即缓存(空名跳过;远端改名跟随)
+                self.cache_net_name(nwid, &cfg.name);
                 // routeViaZeroTier=false:仅存地址不装路由(清空 managed routes 再 apply)
                 let route_via = lock(&self.net_local)
                     .get(&nwid)
@@ -287,6 +289,57 @@ impl DaemonSink {
                 e.ifaces = names;
                 if let Err(err) = reg.save(&app.config_dir) {
                     eprintln!("[runtime] registry 写盘失败: {err}");
+                }
+            })
+            .await;
+        });
+        drop(handle);
+    }
+
+    /// netconf 网络名落缓存:镜像即刻更新,registry 异步落盘(锁与 IO 全在
+    /// 任务内,同 sync_iface_registry 的 sink 红线);同名跳过,netconf 反复
+    /// ConfigUpdate 不反复落盘。远端改名即覆盖(缓存跟随网络端),条目
+    /// 删除(leave)随 NetLocal 清除——STOPPED/DISABLED 兜底展示的依据
+    fn cache_net_name(&self, nwid: u64, name: &str) {
+        if name.is_empty() {
+            return;
+        }
+        {
+            let mut nl = lock(&self.net_local);
+            // 镜像无此网络:netconf 先于 NetLocal 建立到达(理论不可达,
+            // join 建条目后才可能有 netconf),防御跳过
+            let Some(n) = nl.get_mut(&nwid) else { return };
+            if n.cached_name.as_deref() == Some(name) {
+                return;
+            }
+            n.cached_name = Some(name.to_string());
+        }
+        let app = self.app.clone();
+        let pid = self.planet_id.clone();
+        let nwid_hex = format!("{nwid:016x}");
+        let name = name.to_string();
+        let handle = self.rt.spawn(async move {
+            let _ = tokio::task::spawn_blocking(move || {
+                let mut reg = app
+                    .registry
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) else {
+                    return;
+                };
+                if e
+                    .net_local
+                    .get(&nwid_hex)
+                    .and_then(|n| n.cached_name.as_deref())
+                    == Some(name.as_str())
+                {
+                    return;
+                }
+                if let Some(n) = e.net_local.get_mut(&nwid_hex) {
+                    n.cached_name = Some(name);
+                    if let Err(err) = reg.save(&app.config_dir) {
+                        eprintln!("[runtime] registry 写盘失败: {err}");
+                    }
                 }
             })
             .await;

@@ -34,7 +34,8 @@ pub enum PlanetCmd {
     List,
     /// Show planet details
     Show { id: String },
-    /// Rename a planet
+    /// Rename (set alias) a planet
+    #[command(alias = "alias")]
     Rename { id: String, new_name: String },
     /// Set/clear TCP fallback relay (official tcp-proxy deployment)
     SetRelay {

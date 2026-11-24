@@ -28,6 +28,8 @@
 | `join`(不带 planet) | exit=2,候选列表 | `error 409: multiple running planets` + official/company 候选,exit=2 | 通过 |
 | `join --planet company` | 200 join OK | 首次 join 新 nwid 为 `200 join OK`;重复 join 幂等成功(`{"result":"ok","idempotent":true}`) | 通过(daemon 侧需新版二进制重启后回归) |
 | `set ... routeViaZeroTier=1 dnsMode=custom customDns=...` | 200 set OK;`-j` 复查生效 | `200 set OK`;复查 `routeViaZeroTier:true`、`dnsMode:"custom"` | 通过 |
+| `set ... alias=别名` | 200 set OK;listnetworks NAME 列显示别名 | 别名即时生效(优先控制器名);`alias=` 空值清除后回落控制器名/缓存名 | 待回归(2026-11-24 新增) |
+| `alias <nwid> 新名` / `alias <nwid>`(清除) | 200 alias OK / 清除回落 | 设/清与 `set alias=` 同通道;按显示名定位亦可用 | 待回归(2026-11-24 新增) |
 | `set ... bogus=1` | exit=2 | `error: unknown key "bogus"; valid: ...`,exit=2 | 通过 |
 | `orbit` / `deorbit` / `moon import` | 200/201 OK;listmoons 复查 | orbit/deorbit `200 ... OK`,moon import `201`;listmoons 增删一致 | 通过 |
 | `dump --planet official` | 单 planet 文本 | 输出 networks/peers/events 概要;不带 `--planet` 时报候选 | 通过 |

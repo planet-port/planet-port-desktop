@@ -67,6 +67,7 @@ RELAY 显示 TCP 兜底 relay **配置态**(`planet set-relay` 所设完整地�
 ### listnetworks — 按行星分组的网络列表 ❇
 
 覆盖**全部登记行星**(不只在线的);多 managed IP 在 MANAGED-IPS 列内逐行堆叠;
+NAME 列为融合显示名:**alias > 控制器名(netconf/缓存)> nwid**(见 alias 命令);
 停止/禁用行星下的网络以 STOPPED 占位行展示(名称/MAC 等动态字段为 —);
 已禁用(disable)的网络以 **DISABLED 占位行**保留可见(name 用禁用时快照,
 动态字段 `—`)——禁用网络是用户资产,不从列表消失;组内排序
@@ -247,6 +248,18 @@ gozi25(3530253632) 200 set OK
 (DISABLED)网络报 404 `networkNotFound`(一期不做「禁用期间预改配置」,
 先 enable 再改)。
 
+### alias — 网络显示别名 ▣(格式同上)
+
+```
+gozi25(3530253632) 200 alias OK
+```
+
+`alias <nwid|name> [name]`:设/清网络显示别名,与 `set <nwid> alias=...`
+同一通道。别名即时生效,展示优先级 **alias > 控制器名(netconf/缓存)>
+nwid**,各端(卡片/托盘/CLI 按名定位)一致;控制器名不受影响,清除即回落。
+缺省或空名 = 清除。生命周期随网络本地配置:disable/enable 保留,leave 清除。
+`-j`:同 set 真实响应体。
+
 ### get — 读单个配置值(脚本友好)❇
 
 字符串裸输出,数组/对象紧凑 JSON:
@@ -400,6 +413,8 @@ transport 行格式:`udp/<主口>`(启用副口时追加 `+<副口>`)+ ` tcp=<di
 ```
 gozi25(3530253632) 200 rename OK
 ```
+
+`planet alias` 为等价别名入口(行星 name 即别名语义)。
 
 ### planet set-relay — 设置/清除 TCP 兜底 relay ◇
 
