@@ -2,10 +2,151 @@
 
 所有显著变更均记录于此。版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## v0.5.0-beta.1（2026-11-24）
+### CI
+
+- GUI 安装包并入 tag 发版矩阵
+- **gui：**macOS runner 更新为 macos-15 并交叉编译 Intel dmg
+### 修复
+
+- **release：**占位 echo 的变量与全角句号隔离防 bash 3.2 吞字
+- **docs：**统一 tcp-proxy 命名并修正 install/compatibility 过时引用
+- **gui：**修正 tauri beforeBuildCommand 的工作目录假设
+- **gui：**心跳每 tick 常态广播在线状态
+- **gui：**确认对话框换原生组件并区分查询错误与空态
+- **gui：**托盘动作移出主线程并同步初始语言
+- **gui：**离线引导换 api contents 通道并清理前端杂项
+- **install：**install.ps1 补 UTF-8 BOM 修复 PS5.1 解析失败
+- set-relay 对运行中 planet 即时热生效
+- **cli：**修复软链建立的悬空风险与迁移静默失败
+- **gui：**安装完成等待 daemon 上线加超时兜底
+- **build：**resources 目录缺失致构建崩与 NSIS 口径清理
+- **ci：**gui-e2e 补 pnpm 版本与缓存锁路径
+- **gui：**修正平台 triple 断言在 Linux 上的判据错误
+- **gui：**IPv6 校验收紧压缩态边缘与组数上限
+- **gui：**行星详情信封解包修正
+- **gui：**弹层与 toast 层级提升至抽屉遮罩之上
+- **gui：**瞬时型弹层补齐关闭滑出动画并封堵动画期交互
+- **daemon：**disable 幂等重入补做核心脱离
+- **cli：**noPlanetRunning 提示改用 planet add 新命令字样
+- **cli：**planetRestoreFailed 提示改用 planet enable 新命令字样
+- **gui：**禁用控件视觉态与开关并发槽位清理
+- **daemon：**enable 幂等重入在停机行星上补拉起
+- **gui：**修复 Overlay 标题栏重合与拖动失效并全平台置空标题
+- **gui：**红绿灯与顶栏内容垂直居中对齐
+- **gui：**分享按钮加竖线分隔并并行化导出弹窗
+- **gui：**托盘图标改白并裁边;抽屉层叠反转、去重复关闭钮、宽度自适应
+- **tray：**菜单内容未变时跳过重建,修托盘菜单几秒后自动消失
+- **gui：**锁死视口级滚动,标题栏与状态栏恒定在位
+- **gui：**switch 轨道弃用 background-clip 技巧,圆角标称即视觉
+- **gui：**app 图标加工为 macOS squircle 规范
+- **gui：**抽屉打开时自定义背景消失
+- **gui：**自定义背景承载层从 body 迁至 html 修复 Select 展开背景丢失
+### 文档
+
+- **readme：**Termux 支持态由待定改为不计划支持
+- **readme：**移除指向未入库的 superpowers 设计文档死链
+- CLI 回归清单与 stdout 规范重命名为现行基准名
+- README 对齐 v0.4 实现现状
+- COMMANDS.md 补齐 identity、set-relay 等命令面至 v0.4
+- 修正 set-relay 括注口径与期望状态表述
+- 回归清单与 stdout 规范更新至 v0.4 命令面
+- 移除三份历史一次性报告
+- 补齐派生规则口径残留并修正升级路径表述
+- 命令按网络/行星/应用三组重组并收录新命令
+### 新增
+
+- **gui：**Tauri 2 工程脚手架与构建链
+- **gui：**daemon REST 薄客户端与 command 透传层
+- **gui：**前端基座——类型契约/invoke 层/Toast/i18n/离线引导
+- **gui：**3s 心跳探活与在线状态事件
+- **gui：**概览页 planet 卡片与通道摘要
+- **gui：**节点页 peers 表格
+- **gui：**网络页——加入/离开/设置与 planet 过滤
+- **gui：**planet 页——导入/切换/禁用/删除
+- **gui：**托盘常驻与快速操作
+- **gui：**Tauri 2 桌面 GUI v0.1 并入
+- **cli：**Linux 安装改为统一目录+软链形态
+- **gui：**新增首启初始化命令面(资源清单/staging/提权安装)
+- **gui：**首启向导支持内嵌资源自动安装与一键升级
+- **gui：**主题三态切换（浅色/深色/跟随系统）
+- **gui：**应用 logo 与全套平台图标
+- **gui：**ZTP 容器与 Base45/CRC32 编码原语
+- **gui：**ZTP 二维码分帧管线(deflate+Base45+CRC32+等宽分片)
+- **gui：**二维码分享弹层(单帧静态/多帧轮播/过大降级)
+- **gui：**扩展 Tauri command——planet 导出/身份查询与导入/写盘
+- **gui：**单页首页布局重构
+- **gui：**网络设置弹层分享区(复制 ID + 网络二维码)
+- **gui：**行星分享——导出 .planet 文件与 ZTP 容器二维码
+- **gui：**右侧设置抽屉——身份/语言/外观/关于/高级
+- **gui：**行星图标体系(92 动物+24 底色+djb2 跨端回退)
+- **gui：**顶栏三按钮与添加网络/添加行星抽屉
+- **gui：**网络详情演进为移动端参数面
+- **gui：**行星设置对话框对齐移动端参数面
+- **gui：**macOS 应用图标按平台特性重制为 squircle
+- **gui：**身份模式 GUI 管理与导入模式去硬编码
+- **gui：**行星分组头前置行星图标
+- **daemon：**registry 增加网络禁用记忆区
+- **daemon：**网络禁用端点
+- **cli：**顶层网络启用/禁用命令与禁用态提示
+- **daemon：**网络启用端点与 join 自动恢复
+- **cli：**add/remove 迁入 planet 子命令
+- **daemon：**leave 清理禁用记忆并放宽运行要求
+- **cli：**网络分享命令输出二维码并复制 ID
+- **gui：**网络卡片开关切换为禁用/启用语义
+- **cli：**version 输出增加 zerotier-core 版本与构建时间
+- **gui：**视觉系统改造为 Linear 学派暗色密度
+- **gui：**网络列表改为方案C卡片网格并移除视图切换
+- **gui：**详情与设置界面 iOS 化并支持主题色与背景图自定义
+- **gui：**标题栏改方案 C 布局并新增底部状态条
+- **gui：**抽屉统一右上角关闭按钮与 360 宽度,多层抽屉层叠显示
+- **gui：**托盘图标换品牌 shape 并启用 macOS 模板渲染
+- **gui：**托盘菜单网络一级铺开并左键直开;设置页 iOS 化
+- **tray：**关窗后隐藏 Dock 图标,应用退居托盘
+- **tray：**菜单二级补启停动作与网络信息复制
+- **gui：**身份切换确认弹窗与抽屉交互打磨批次
+- **gui：**去除行星空分组文字提示并增强添加网络入口卡
+- **gui：**更新全套应用图标与托盘两色四态图标
+- **gui：**托盘菜单多 IP 逐行显示
+- **gui：**IP 显示统一 IPv4 优先与网络卡片连接中状态
+- **gui：**配置界面统一右侧抽屉并保留多层层叠
+- **gui：**网络卡片按名称排序且不受连接状态影响
+- **net：**网络显示别名与名称本地缓存
+- **gui：**托盘菜单移除添加类入口并归并底部组
+### 构建
+
+- GUI 免安装组包脚本与 gui job 产物链改造
+- **gui：**引入 Tailwind v4 并映射现有主题变量为语义 token
+- **gui：**shadcn 原件拉取通道与全量原件入库
+### 样式
+
+- **gui：**补齐可交互组件的 hover/focus 识别度
+- **gui：**抽屉内容分组卡片化提升静止态识别度
+- **gui：**分组标题移出卡片为卡外裸文字
+- **gui：**添加网络卡 hover 底色改为 80% 透明度
+- **gui：**switch 轨道圆角定为轨道高一半(10px)
+- **gui：**加入网络抽屉行星选择置首并内嵌扫码钮
+### 测试
+
+- **gui：**补 GUI 逻辑层单测与三平台 CI
+- **gui：**增加 tauri-driver + WebdriverIO E2E 基建
+- **gui：**E2E 增加向导降级形态断言
+- **gui：**E2E 重写在线用例并增补新交互冒烟
+### 重构
+
+- **gui：**全部弹窗统一为右侧抽屉并增加开合动画
+- **settings：**精简设置为四区,身份模式改 switch 即切
+- **gui：**switch 迁移 shadcn 原语经封装层替换三处业务
+- **gui：**Button/Input/Label 封装层——shadcn 原语的项目语义壳
+- **gui：**弹层容器迁移 shadcn Dialog/AlertDialog
+- **gui：**抽屉与选择器迁移 shadcn Sheet/Select/Tabs
+- **gui：**页面与业务组件全面 Tailwind 化
+- **gui：**toast 系统迁移 sonner
+- **gui：**styles.css 收敛与死件清理
+- **gui：**托盘菜单图标收敛为仅网络行状态点
 ## v0.4.0（2026-11-12）
 ### 修复
 
-- **ci：**补回 release.sh 可执行位
 - **zt-core：**Windows 副口换绑句柄身份错位与两处告警语义
 - **zt-core：**TCP 隧道写超时与控制路径非阻塞防节点冻结
 - **daemon：**PATCH 校验前置防部分应用并收紧 relay 类型检查
@@ -18,8 +159,6 @@
 - tcp-proxy 部署指引
 ### 新增
 
-- **ci：**新增网页发版工作流
-- **release：**接入 git-cliff 自动发版并统一网页发版
 - **scripts：**新增 zerotier-one 官方服务启停脚本
 - **zt-core：**通道层纯逻辑(伪TLS线协议/选路决策/副口绑定)
 - **zt-core：**副端口通道——离线换绑撞活流对齐官方
@@ -35,6 +174,14 @@
 ### 构建
 
 - **scripts：**tcp-proxy 编译脚本(macOS 本地 + zig 交叉 Linux)
+## v0.4.0-beta.1（2026-11-09）
+### 修复
+
+- **ci：**补回 release.sh 可执行位
+### 新增
+
+- **ci：**新增网页发版工作流
+- **release：**接入 git-cliff 自动发版并统一网页发版
 ## v0.3.5（2026-11-07）
 ### 修复
 
