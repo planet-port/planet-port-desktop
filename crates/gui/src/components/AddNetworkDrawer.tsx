@@ -36,10 +36,10 @@ const fieldError = 'm-0 text-xs text-[var(--danger)]';
 /// Radix Select 空 value 非法:「默认行星」选项走哨兵值映射回 ''
 const DEFAULT_PLANET = '__default__';
 
-/// 添加网络抽屉(布局同 iOS JoinNetworkSheet):网络 ID 组(输入框尾部扫码
-/// 按钮,识别二维码中的 16hex 回填)+ 行星选择(桌面多行星并发特有,iOS 单
-/// 隧道无此字段)+ routeVia 开关 + DNS 三段四槽。daemon join 不收路由/DNS
-/// 参数,非默认值经 setNetwork 随后补投
+/// 添加网络抽屉(布局同 iOS JoinNetworkSheet):行星选择(桌面多行星并发
+/// 特有,iOS 单隧道无此字段,置首)→ 网络 ID 组(输入框右端内嵌扫码钮,
+/// 识别二维码中的 16hex 回填)+ routeVia 开关 + DNS 三段四槽。daemon join
+/// 不收路由/DNS 参数,非默认值经 setNetwork 随后补投
 export default function AddNetworkDrawer({ defaultPlanet, onClose }: { defaultPlanet?: string; onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -94,25 +94,6 @@ export default function AddNetworkDrawer({ defaultPlanet, onClose }: { defaultPl
           <h3 className="m-0 text-sm font-medium">{t('join.title')}</h3>
         </header>
         <section className={sectionCard}>
-          <div className={kvRow}>
-            <span className={kvLabel}>{t('networks.id')}</span>
-            <span className={kvVal}>
-              <Input
-                className="w-[200px] text-right font-mono"
-                autoFocus
-                placeholder={t('join.idPlaceholder')}
-                value={nwid}
-                onChange={e => setNwid(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && idValid && dnsOk && !join.isPending && join.mutate()}
-              />
-              <button className="plain" aria-label={t('join.scan')} title={t('join.scan')} onClick={() => setShowScanner(true)}>
-                <QrCode size={14} aria-hidden="true" />
-              </button>
-            </span>
-          </div>
-          {nwid.trim() !== '' && !idValid && <p className={`${fieldError} ${rowDivider}`}>{t('join.idInvalid')}</p>}
-        </section>
-        <section className={sectionCard}>
           {/* 行星选择(iOS picker 值行):label + 当前值 + ›,点开浮层勾选列表 */}
           <Select
             value={planet || DEFAULT_PLANET}
@@ -135,6 +116,31 @@ export default function AddNetworkDrawer({ defaultPlanet, onClose }: { defaultPl
               ))}
             </SelectContent>
           </Select>
+        </section>
+        <section className={sectionCard}>
+          <div className={kvRow}>
+            <span className={kvLabel}>{t('networks.id')}</span>
+            {/* 扫码钮叠加输入框右端:pr 让位图标,绝对定位右对齐内嵌 */}
+            <span className={`${kvVal} relative`}>
+              <Input
+                className="w-[200px] pr-7 text-right font-mono"
+                autoFocus
+                placeholder={t('join.idPlaceholder')}
+                value={nwid}
+                onChange={e => setNwid(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && idValid && dnsOk && !join.isPending && join.mutate()}
+              />
+              <button
+                className="plain absolute right-1.5 top-1/2 -translate-y-1/2"
+                aria-label={t('join.scan')}
+                title={t('join.scan')}
+                onClick={() => setShowScanner(true)}
+              >
+                <QrCode size={14} aria-hidden="true" />
+              </button>
+            </span>
+          </div>
+          {nwid.trim() !== '' && !idValid && <p className={`${fieldError} ${rowDivider}`}>{t('join.idInvalid')}</p>}
         </section>
         <section className={sectionCard}>
           <div className={kvRow}>
