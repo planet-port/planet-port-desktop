@@ -6,6 +6,12 @@ license.workspace = true
 repository.workspace = true
 description = "planet-port 桌面 GUI（Tauri 薄客户端）"
 
+# GUI 不经 cargo-dist 直构:构建链是 pnpm tauri build(前端产物 + bundle),
+# Linux 容器无 webkit2gtk/glib 系统库必挂;dist 按工作区全 dist-able 包规划,
+# v0.4.0 后 gui 入区即被卷入(2026-11-24 v0.5.0-beta.1 实测),显式排除
+[package.metadata.dist]
+dist = false
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
