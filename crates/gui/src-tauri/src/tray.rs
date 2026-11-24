@@ -1,7 +1,7 @@
 use crate::commands;
 use crate::SharedState;
 use serde_json::Value;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{Menu, MenuItem, NativeIcon, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -130,16 +130,16 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     };
     let menu = Menu::new(app)?;
     let mut ro_n = 0usize;
-    // 网络按行星分组一级铺开:行星标题行(── 🪐 名 ──,二级 = 行星基本信息只读),
-    // 下接该行星网络行(状态点 emoji,二级 = 网络基本信息只读),组尾 + 加入网络…
+    // 网络按行星分组一级铺开:行星标题行([名],二级 = 行星基本信息只读),
+    // 下接该行星网络行(彩色状态点图标,二级 = 网络基本信息只读),组尾加入网络…
     for p in &planets {
         let pid = s(p, "id");
         let running = s(p, "status") == "running";
-        // 行星标题行:二级 = 基本信息(只读) + 切换到此行星(动作)
+        // 行星标题行:二级 = 基本信息(只读) + 启停(动作)
         let info = Submenu::with_id(
             app,
             format!("grp|{pid}"),
-            format!("── 🪐 {} ──────", s(p, "name")),
+            format!("[ {} ]", s(p, "name")),
             true,
         )?;
         ro(
@@ -200,24 +200,26 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             None::<&str>,
         )?)?;
         menu.append(&info)?;
-        // 网络行:二级 = 基本信息(只读) + 离开网络(动作);状态点同前端
-        // NetworkCard:conflict 橙/OK 绿/其余白
+        // 网络行:二级 = 基本信息(只读) + 离开网络(动作);状态点图标口径同前端
+        // NetworkCard:conflict 黄/OK 绿/其余灰(emoji 点的模板图标替代,自动深浅色)
         for n in networks.iter().filter(|n| s(n, "planet") == pid) {
             let dot = if !s(n, "conflict").is_empty() {
-                "🟠"
+                NativeIcon::StatusPartiallyAvailable
             } else if s(n, "status") == "OK" {
-                "🟢"
+                NativeIcon::StatusAvailable
             } else {
-                "⚪️"
+                NativeIcon::StatusNone
             };
             let name = n.get("name").and_then(|x| x.as_str()).unwrap_or("");
             let nwid = s(n, "nwid");
-            let label = if name.is_empty() {
-                format!("{dot} {nwid}")
-            } else {
-                format!("{dot} {name}")
-            };
-            let net = Submenu::with_id(app, format!("ngrp|{pid}|{nwid}"), label, true)?;
+            let label = if name.is_empty() { nwid.clone() } else { name.to_string() };
+            let net = Submenu::with_id_and_native_icon(
+                app,
+                format!("ngrp|{pid}|{nwid}"),
+                label,
+                true,
+                Some(dot),
+            )?;
             // 网络ID:首项,可点击复制(id 即复制内容)
             net.append(&MenuItem::with_id(app, format!("copy|{nwid}"), nwid.clone(), true, None::<&str>)?)?;
             if !s(n, "conflict").is_empty() {
@@ -225,7 +227,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                     app,
                     &net,
                     &mut ro_n,
-                    format!("⚠ {}: {}", tr(&lang, "冲突", "Conflict"), s(n, "conflict")),
+                    format!("{}: {}", tr(&lang, "冲突", "Conflict"), s(n, "conflict")),
                 )?;
             }
             ro(
@@ -293,7 +295,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         menu.append(&MenuItem::with_id(
             app,
             format!("join|{pid}"),
-            tr(&lang, "+ 加入网络…", "+ Join network…"),
+            tr(&lang, "加入网络…", "Join network…"),
             true,
             None::<&str>,
         )?)?;
@@ -309,10 +311,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     menu.append(&MenuItem::with_id(
         app,
         "addplanet",
-        tr(&lang, "+ 加入行星", "+ Add planet"),
+        tr(&lang, "加入行星", "Add planet"),
         true,
         None::<&str>,
     )?)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(
         app,
         "quit",
