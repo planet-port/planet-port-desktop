@@ -56,21 +56,34 @@ fi
 
 # 发正式版且上个组件 tag 是 beta 时忽略 beta 基线（与单版本时期同因：
 # 以 beta 为基线会漏 beta 段落、纯 chore 时误中止）
+IGNORE_BETA_ARGS=()
 if [ "$MODE" != beta ] && [[ "$LATEST" == *-beta.* ]]; then
-    LATEST_TAG="$(git tag --list "${PKG}/v*" | grep -v -- '-beta\.' | sort -V | tail -1)"
+    # 首个组件版直接以 beta 起步时无非 beta tag 可选，grep 无选中行会
+    # 以 pipefail 中止整个脚本，|| true 放行空结果走下方 v0.5.0 回落
+    LATEST_TAG="$(git tag --list "${PKG}/v*" | grep -v -- '-beta\.' | sort -V | tail -1 || true)"
     if [ -n "$LATEST_TAG" ]; then
         LATEST="${LATEST_TAG#${PKG}/v}"
         RANGE="${LATEST_TAG}..HEAD"
     else
         LATEST="0.5.0"; RANGE="v0.5.0..HEAD"
     fi
+    # 回落后的区间覆盖 beta 期提交，cliff 会在界内 beta tag 处分段：
+    # awk 只改首段标题使 beta 期提交进不了发布说明，且该段会被整段前插
+    # 成重复段。忽略 beta tag 让界内提交并入同一段；正常路径基线即最新
+    # tag，界内不会再有本组件 tag，无需此参数
+    IGNORE_BETA_ARGS=(--ignore-tags "${PKG}/v[0-9].*-beta\.[0-9]+")
 fi
 
 # ── 版本推导（内置；scope 归属表见 usage 区注释与 KNOWN_SCOPES）──
 LEVEL="" BAD="" HIT=0
 while IFS= read -r subj; do
     [ -n "$subj" ] || continue
-    type="${subj%%(*}"; type="${type%%:*}"
+    # breaking 只认冒号前 type token 尾部的 !（fix!: / feat(x)!:），
+    # subject 正文含 ! 不算；! 先归一掉再入 case，否则 feat!: 这类
+    # 无 scope 破坏提交会因 type 不匹配被静默吞掉
+    type="${subj%%:*}"
+    breaking=0; [[ "$type" == *'!' ]] && { breaking=1; type="${type%!}"; }
+    type="${type%%(*}"
     scope=""; [[ "$subj" == *"("*")"* ]] && { scope="${subj#*(}"; scope="${scope%%)*}"; }
     case "$type" in
         feat|fix|perf|revert)
@@ -85,7 +98,6 @@ while IFS= read -r subj; do
             fi
             if has_token "$scope" "$SCOPES"; then
                 HIT=1
-                breaking=0; [[ "$subj" == *"!"* ]] && breaking=1
                 if [ "$breaking" = 1 ]; then NEWL=major
                 elif [ "$type" = feat ]; then
                     [ "${NEWL:-}" != major ] && NEWL=minor
@@ -142,7 +154,8 @@ DATE=$(date "+%Y-%m-%d")
 SEC_FILE="CHANGELOG-${COMP}.md"
 NEW_FILE="${SEC_FILE}.new"
 rm -f "$NEW_FILE"
-git-cliff --config "cliff/${COMP}.toml" --tag-pattern "${PKG}/v[0-9].*" "$RANGE" > "$NEW_FILE"
+# 空数组展开用 + 形式，兼容 macOS bash 3.2 在 set -u 下的行为
+git-cliff --config "cliff/${COMP}.toml" ${IGNORE_BETA_ARGS[@]+"${IGNORE_BETA_ARGS[@]}"} --tag-pattern "${PKG}/v[0-9].*" "$RANGE" > "$NEW_FILE"
 # 段标题统一改写为与本次 tag 同名（Release 工作流按 `## <tag>（` 提取发布说明）
 awk -v new="## ${TAG}（${DATE}）" '
     !done && $0 ~ /^## / { $0 = new; done = 1 }
@@ -174,6 +187,7 @@ if [ "$COMP" = gui ]; then
     NEXT="$NEXT" perl -0777 -pi -e 's/"version": "[^"]*"/"version": "$ENV{NEXT}"/m' \
         crates/gui/src-tauri/tauri.conf.json crates/gui/package.json
     grep -q "\"version\": \"$NEXT\"" crates/gui/src-tauri/tauri.conf.json || { echo "错误：tauri.conf.json 同步失败" >&2; exit 1; }
+    grep -q "\"version\": \"$NEXT\"" crates/gui/package.json || { echo "错误：package.json 同步失败" >&2; exit 1; }
 fi
 cargo update -w
 
