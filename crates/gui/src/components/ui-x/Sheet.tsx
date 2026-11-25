@@ -128,15 +128,29 @@ export function Sheet({
       modal={false}
     >
       <SheetPrimitive.Portal forceMount>
-        {/* 遮罩自渲染:modal=false 下 Radix 不挂 Overlay。点击关闭仍走
-            Content 的 DismissableLayer outside-press(onOpenChange 收敛到
-            onClose),与 Content 内交互互不干扰 */}
+        {/* 遮罩自渲染:modal=false 下 Radix 不挂 Overlay。关闭走 onClick 直达
+            本层 onClose——outside-press 通道已在 Content 侧按多层规则拦截,
+            遮罩点击须自带关闭;层叠时最新层遮罩 z 最高,点击即关最顶层 */}
         <div
           data-slot="sheet-overlay"
           className={sheetOverlayClasses}
           style={{ '--layer': layer } as CSSProperties}
+          onClick={onClose}
         />
-        <SheetPrimitive.Content asChild onOpenAutoFocus={e => e.preventDefault()}>
+        <SheetPrimitive.Content
+          asChild
+          onOpenAutoFocus={e => e.preventDefault()}
+          onInteractOutside={e => {
+            // 多层堆叠的逐层关闭:交互落在任何抽屉(含其他层)或遮罩上都不算
+            // 本层的 outside——Radix 非 modal 层各自独立判定 outside,不拦的话
+            // 关内层时外层一并 dismiss(2026-11-25 用户实测:关二维码连详情
+            // 一起关)。本层遮罩的点击同样在此拦下,其关闭由遮罩 onClick 承担
+            const target = e.target as Element | null;
+            if (target?.closest('aside[data-slot="sheet-content"], div[data-slot="sheet-overlay"]')) {
+              e.preventDefault();
+            }
+          }}
+        >
           <aside
             ref={setEl}
             data-slot="sheet-content"
