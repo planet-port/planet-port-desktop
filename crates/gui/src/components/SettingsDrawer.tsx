@@ -1,13 +1,16 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { getVersion } from '@tauri-apps/api/app';
 import { api } from '../api/client';
+import type { EmbeddedManifest } from '../api/types';
 import BackgroundPickerSheet from './BackgroundPickerSheet';
 import CheckListSheet from './CheckListSheet';
 import IdentitySection from './IdentitySection';
 import DrawerShell from './DrawerShell';
 import ThemeColorSheet from './ThemeColorSheet';
+import { useToast } from './Toaster';
 import { backgroundUrl } from '../background';
 import { setTheme, getTheme, type ThemeMode } from '../theme';
 import { switchLang } from '../i18n';
@@ -45,6 +48,80 @@ function ValueRow({
   );
 }
 
+/// 安装失败 reason → i18n key(与 SetupWizard 同表;其余 reject 串走 failGeneric)
+const INSTALL_FAIL_KEY: Record<string, string> = {
+  'install-exit-nonzero': 'guide.failExit',
+  'daemon-timeout': 'guide.failTimeout',
+};
+
+/// daemon 安装行(关于组):bundle 内嵌资源时显示,一键安装/重装;无资源
+/// (dev/未组包)不渲染。安装走离线引导 SetupWizard 同款事件流(install-
+/// progress/done/failed)与 Rust in-flight 位,两入口不会并发提权。在线重装
+/// 会重启 daemon:主界面可能短暂切到离线引导页,daemon 上线后心跳自动恢复
+function DaemonInstallRow({ installed }: { installed: boolean }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [manifest, setManifest] = useState<EmbeddedManifest | null>(null);
+  const [phase, setPhase] = useState<'idle' | 'installing' | 'failed'>('idle');
+
+  useEffect(() => {
+    void api.embeddedManifest().then(setManifest).catch(() => {});
+    const unsubs = [
+      listen('install-progress', () => setPhase('installing')),
+      // done 时 daemon 端口已通(bootstrap 已 wait_port),心跳 ≤3s 恢复在线;
+      // 若界面此刻已切离线引导页,本组件随之卸载,反馈由引导页接管
+      listen('install-done', () => {
+        setPhase('idle');
+        toast.ok(t('settings.installDone'));
+      }),
+      listen<string>('install-failed', e => {
+        const key = INSTALL_FAIL_KEY[String(e.payload)];
+        setPhase('failed');
+        toast.error(key ? t(key) : t('guide.failGeneric'));
+      }),
+    ].map(p => p.then(f => f));
+    // 每个 unlisten 必须真正执行,否则重复挂载后监听泄漏
+    return () => {
+      for (const u of unsubs) void u.then(f => f());
+    };
+  }, [toast, t]);
+
+  if (!manifest) return null;
+  const startInstall = () => {
+    setPhase('installing');
+    api
+      .startInstall()
+      .catch((e: unknown) => {
+        const msg = String(e);
+        // 后端已有安装在跑:保持 installing,等事件回报结果
+        if (msg.includes('already in progress')) return;
+        // 提权前失败(缺资源/拷贝 staging)走 invoke rejection,事件不会来
+        setPhase('failed');
+        toast.error(t('guide.failGeneric'));
+      });
+  };
+  return (
+    <ValueRow
+      divider
+      testId="settings-install-daemon"
+      label={installed ? t('settings.reinstallDaemon') : t('settings.installDaemon')}
+      value={
+        phase === 'installing' ? (
+          <span
+            className="inline-block size-3.5 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--primary)] [animation-duration:0.8s]"
+            aria-label="installing"
+          />
+        ) : phase === 'failed' ? (
+          <span className={smallText}>{t('guide.retry')}</span>
+        ) : (
+          <span className={smallText}>{manifest.version}</span>
+        )
+      }
+      onClick={phase === 'installing' ? undefined : startInstall}
+    />
+  );
+}
+
 /// 设置抽屉(布局参照 iOS PrefsView,即时生效无保存按钮):身份/语言/外观
 /// (模式+主题色行+背景行)/关于(版本+Core 版本)。选项组件参照 iOS 设置:
 /// 值行(右侧当前值+›)进下级勾选页,不再用行内 seg。iOS 的 IPv6/多连接数/
@@ -63,6 +140,11 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   const status = useQuery({ queryKey: ['status'], queryFn: api.status });
   /// Core 版本取自任一有值的行星(同 daemon 单 core)
   const coreVersion = status.data?.planets.find(p => p.coreVersion)?.coreVersion ?? null;
+  /// daemon 服务安装态:决定安装行文案(安装/重装);读取失败按已装处理
+  const [daemonInstalled, setDaemonInstalled] = useState(true);
+  useEffect(() => {
+    void api.daemonState().then(s => setDaemonInstalled(s.installed)).catch(() => {});
+  }, []);
   useEffect(() => {
     if (!version) void getVersion().then(setVersion).catch(() => setVersion('-'));
   }, [version]);
@@ -114,6 +196,7 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
           <div className={kvRow}><span className={kvLabel}>planet-port</span><span className={monoValue}>{version || '-'}</span></div>
           <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>ZeroTier Core</span><span className={monoValue}>{coreVersion ?? '-'}</span></div>
           <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>{t('settings.buildTime')}</span><span className={monoValue}>{buildTime || '-'}</span></div>
+          <DaemonInstallRow installed={daemonInstalled} />
         </section>
       </DrawerShell>
       {/* 语言/外观/主题色/背景弹层与设置抽屉平级(DrawerShell 经 portal 挂 body):后挂者居上 */}

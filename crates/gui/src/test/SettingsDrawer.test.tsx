@@ -8,6 +8,10 @@ import { initTestI18n } from './i18n';
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn<(cmd: string) => Promise<unknown>>() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn().mockResolvedValue('0.4.1') }));
+// daemon 安装行挂了 Tauri 事件监听:jsdom 无 IPC,返回空退订的 no-op mock
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(() => Promise.resolve(() => {})),
+}));
 
 /// 抽屉壳 DOM 锚点(Radix Dialog 原语 + ui-x/Sheet 封装层)
 const mask = () => document.querySelector('[data-slot="sheet-overlay"]');
