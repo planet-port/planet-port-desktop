@@ -1,6 +1,6 @@
 [package]
 name = "planet-portd"
-version = "0.5.1-beta.1"
+version = "0.5.1-beta.2-dev"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

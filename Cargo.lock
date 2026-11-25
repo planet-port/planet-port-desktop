@@ -3467,7 +3467,7 @@ dependencies = [
 
 [[package]]
 name = "planet-portd"
-version = "0.5.1-beta.1"
+version = "0.5.1-beta.2-dev"
 dependencies = [
  "axum",
  "chrono",
