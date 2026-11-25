@@ -1,3 +1,6 @@
+> **历史档案**：本文件止于 v0.5.0（单版本时期）。此后各组件独立记录：
+> daemon/cli/gui 见 `CHANGELOG-daemon.md` / `CHANGELOG-cli.md` / `CHANGELOG-gui.md`。
+
 # 更新日志
 
 所有显著变更均记录于此。版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。

@@ -1,134 +1,201 @@
 #!/usr/bin/env bash
-# 发版脚本：git-cliff 计算版本 → 生成 CHANGELOG → 同步 Cargo.toml/Cargo.lock → 提交并打 tag。
-# 用法：./scripts/release.sh [beta]   （beta：发布 vX.Y.Z-beta.N 验证版）
-# tag 推送后由 cargo-dist 的 Release 工作流接管构建与发布。
+# 组件化发版：./scripts/release.sh <daemon|cli|gui> [beta] [--dry-run]
+#   推导该组件下一版本(scope 归属表内置；cliff 的 no_increment_regex 仅作用
+#   于 type、scope 过滤无法参与 bump，故推导不走 git-cliff)→ 渲染 CHANGELOG-<comp>.md
+#   → bump crate 版本(gui 三源同步)→ 提交 + 斜杠 tag → dev 占位。
+#   --dry-run 只读演练：打印基线/提交清单/推导结果，不动任何文件。
+# tag 推送后由 cargo-dist 的 Release 工作流接管(斜杠 tag 原生绑定单 package)。
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-command -v git-cliff >/dev/null 2>&1 || {
-    echo "错误：未安装 git-cliff，请先执行 brew install git-cliff" >&2
-    exit 1
-}
-command -v cargo >/dev/null 2>&1 || {
-    echo "错误：未安装 Rust 工具链（cargo update 需要它）" >&2
-    exit 1
-}
+usage() { echo "用法：$0 <daemon|cli|gui> [beta] [--dry-run]" >&2; exit 1; }
 
-MODE="${1:-}"
-case "$MODE" in
-    "" | beta) ;;
-    *) echo "错误：用法 $0 [beta]" >&2; exit 1 ;;
+COMP="${1:-}"; shift || usage
+case "$COMP" in daemon|cli|gui) ;; *) usage ;; esac
+MODE="" DRY=0
+for a in "$@"; do
+    case "$a" in
+        beta) MODE=beta ;;
+        --dry-run) DRY=1 ;;
+        *) usage ;;
+    esac
+done
+
+command -v git-cliff >/dev/null 2>&1 || { echo "错误：未安装 git-cliff（brew install git-cliff）" >&2; exit 1; }
+command -v cargo  >/dev/null 2>&1 || { echo "错误：未安装 Rust 工具链" >&2; exit 1; }
+
+# ── 组件元数据 ─────────────────────────────────────────────
+case "$COMP" in
+    daemon) PKG="planet-portd";    CRATE="crates/daemon/Cargo.toml";          SCOPES="daemon zt-core zt-sys api" ;;
+    cli)    PKG="planet-port";     CRATE="crates/cli/Cargo.toml";             SCOPES="cli zt-core zt-sys api" ;;
+    gui)    PKG="planet-port-gui"; CRATE="crates/gui/src-tauri/Cargo.toml";   SCOPES="gui tray net settings api" ;;
 esac
+KNOWN_SCOPES="gui tray net settings cli daemon zt-core zt-sys api"
+# 工程类 scope 不归属任何组件，fix 之不触发 bump 也不入日志（与 cliff
+# 渲染层的 fix(工程 scope) skip 同源，否则两侧判定割裂：cliff 放行的
+# 提交在推导侧报错，或推导侧放行的提交 cliff 不入日志）
+ENGINEERING_SCOPES="ci docs build test release deps"
 
-# 已跟踪文件必须无改动，避免把无关改动卷进发版提交（未跟踪文件不阻塞）
+# scope 归属须整词精确相等：grep -w 的词界不含 '-'，'core' 会误中 'zt-core'
+has_token() { case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
 git diff --quiet && git diff --cached --quiet || {
-    echo "错误：已跟踪文件有未提交改动，请先提交或暂存" >&2
-    exit 1
+    echo "错误：已跟踪文件有未提交改动，请先提交或暂存" >&2; exit 1;
 }
 
-# 无新提交时 git-cliff 会原样返回当前版本，防重复发版
-LATEST=$(git describe --tags --abbrev=0 | tr -d '[:space:]' | sed 's/^v//')
-
-# 发正式版且上个 tag 是 beta 时，忽略该版本的 beta tag 推导版本与生成日志：
-# 否则 cliff 以 beta.N 为基线——beta 后仅有 chore 提交时直接中止，
-# 有 feat/fix 时推出的段落只含 beta.N 之后的提交，正式版发布说明会丢失 beta 内容
-IGNORE_FLAGS=()
-case "$MODE/$LATEST" in
-    /*-beta.*) IGNORE_FLAGS=(--ignore-tags "v${LATEST%%-*}-beta.*") ;;
-esac
-
-# 从上次 tag 之后的 Conventional Commits 推导下一版本
-# （空数组展开需用 + 形式，兼容 macOS 自带 bash 3.2 在 set -u 下的行为）
-RAW=$(git-cliff ${IGNORE_FLAGS[@]+"${IGNORE_FLAGS[@]}"} --bumped-version | tr -d '[:space:]')
-case "$RAW" in
-    v*.*) ;;
-    *) echo "错误：无法计算下一版本（自上次 tag 后可能没有新提交）" >&2; exit 1 ;;
-esac
-
-# 推导结果与当前版本相同时给出指引而非裸中止
-if [ "$RAW" = "v$LATEST" ]; then
-    if [ "$MODE" = beta ]; then
-        echo "错误：自 v${LATEST} 后没有新提交，无法递增 beta 序号" >&2
-    else
-        echo "错误：当前已是最新版本 v${LATEST}，自该版本后没有 feat/fix 等可触发版本变动的提交，无需发正式版；如需发布验证版请执行 $0 beta" >&2
-    fi
-    exit 1
+# ── 基线：本组件最新斜杠 tag；迁移首版回落 v0.5.0 ──────────
+LATEST_TAG="$(git tag --list "${PKG}/v*" | sort -V | tail -1)"
+if [ -n "$LATEST_TAG" ]; then
+    LATEST="${LATEST_TAG#${PKG}/v}"
+    RANGE="${LATEST_TAG}..HEAD"
+else
+    LATEST="0.5.0"
+    RANGE="v0.5.0..HEAD"
 fi
 
-# beta 号一律基于正式版本号推导：cliff 在上个 tag 为 beta 时会返回 beta 版本，
-# 直接在其上追加会产出 v0.3.6-beta.2-beta.1 这类畸形号
-BASE=${RAW%%-*}
-BASE=${BASE#v}
-NEXT="$BASE"
+# 发正式版且上个组件 tag 是 beta 时忽略 beta 基线（与单版本时期同因：
+# 以 beta 为基线会漏 beta 段落、纯 chore 时误中止）
+if [ "$MODE" != beta ] && [[ "$LATEST" == *-beta.* ]]; then
+    LATEST_TAG="$(git tag --list "${PKG}/v*" | grep -v -- '-beta\.' | sort -V | tail -1)"
+    if [ -n "$LATEST_TAG" ]; then
+        LATEST="${LATEST_TAG#${PKG}/v}"
+        RANGE="${LATEST_TAG}..HEAD"
+    else
+        LATEST="0.5.0"; RANGE="v0.5.0..HEAD"
+    fi
+fi
 
-# beta 模式：追加递增的 -beta.N（N 取同名 beta tag 的最大序号 +1）
+# ── 版本推导（内置；scope 归属表见 usage 区注释与 KNOWN_SCOPES）──
+LEVEL="" BAD="" HIT=0
+while IFS= read -r subj; do
+    [ -n "$subj" ] || continue
+    type="${subj%%(*}"; type="${type%%:*}"
+    scope=""; [[ "$subj" == *"("*")"* ]] && { scope="${subj#*(}"; scope="${scope%%)*}"; }
+    case "$type" in
+        feat|fix|perf|revert)
+            if [ -z "$scope" ]; then
+                BAD="${BAD}  无 scope   ${subj}\n"; continue
+            fi
+            if [ "$type" = fix ] && has_token "$scope" "$ENGINEERING_SCOPES"; then
+                continue
+            fi
+            if ! has_token "$scope" "$KNOWN_SCOPES"; then
+                BAD="${BAD}  未知 scope(${scope})   ${subj}\n"; continue
+            fi
+            if has_token "$scope" "$SCOPES"; then
+                HIT=1
+                breaking=0; [[ "$subj" == *"!"* ]] && breaking=1
+                if [ "$breaking" = 1 ]; then NEWL=major
+                elif [ "$type" = feat ]; then
+                    [ "${NEWL:-}" != major ] && NEWL=minor
+                else
+                    [ -z "${NEWL:-}" ] && NEWL=patch
+                fi
+            fi
+            ;;
+    esac
+done < <(git log --format='%s' "$RANGE")
+
+if [ -n "$BAD" ]; then
+    echo "错误：以下版本级提交的 scope 无法归属（合法值：${KNOWN_SCOPES} 中的 ${SCOPES} 归 ${COMP}），请拆分提交或修正 scope：" >&2
+    printf '%b' "$BAD" >&2
+    exit 1
+fi
+[ "$HIT" = 1 ] || { echo "错误：${RANGE} 内没有归属 ${COMP} 的 feat/fix/perf/revert 提交，无需发版" >&2; exit 1; }
+LEVEL="${NEWL:-patch}"
+
+# 基线号去掉 -beta.N/-dev 尾巴后按档位递增
+BASE_VER="${LATEST%%-*}"
+IFS='.' read -r MA MI PA <<<"$BASE_VER"
+case "$LEVEL" in
+    major) NEXT="$((MA + 1)).0.0" ;;
+    minor) NEXT="${MA}.$((MI + 1)).0" ;;
+    patch) NEXT="${MA}.${MI}.$((PA + 1))" ;;
+esac
+
 if [ "$MODE" = beta ]; then
     N=0
-    for t in $(git tag --list "v$BASE-beta.*"); do
-        n=${t##*-beta.}
-        [ "$n" -gt "$N" ] 2>/dev/null && N=$n
+    for t in $(git tag --list "${PKG}/v${NEXT}-beta.*"); do
+        n="${t##*-beta.}"; [ "$n" -gt "$N" ] 2>/dev/null && N=$n
     done
-    NEXT="$BASE-beta.$((N + 1))"
+    NEXT="$NEXT-beta.$((N + 1))"
+fi
+[ "$NEXT" != "$LATEST" ] || { echo "错误：推导结果与当前版本相同（$LATEST），无需发版" >&2; exit 1; }
+
+TAG="${PKG}/v${NEXT}"
+echo "组件 $COMP ｜ 基线 ${LATEST_TAG:-v0.5.0(迁移首版)} ｜ 档位 $LEVEL ｜ 下一版本 $TAG"
+
+if [ "$DRY" = 1 ]; then
+    echo "── 归属 $COMP 的版本级提交："
+    git log --format='  %s' "$RANGE" | grep -E '^(  )?(feat|fix|perf|revert)' | grep -E "\(($(echo "$SCOPES" | tr ' ' '|')\))" || true
+    echo "（dry-run 结束，未做任何修改）"
+    exit 0
 fi
 
-if [ "$NEXT" = "$LATEST" ]; then
-    echo "错误：当前已是最新版本 v$LATEST，没有可触发版本变动的提交，无需重复发版；如需发布验证版请执行 $0 beta" >&2
-    exit 1
-fi
-
-echo "下一版本：v$NEXT"
-
-# 生成中文更新日志（chore 类提交不入日志；ignore-tags 与版本推导保持同一基线）。
-# CHANGELOG.md 不存在时 git-cliff 会基于全部历史 tag 生成完整日志
-git-cliff ${IGNORE_FLAGS[@]+"${IGNORE_FLAGS[@]}"} --bump -o CHANGELOG.md
-# cliff 生成的段落标题可能带 beta 尾巴，统一改写为与本次 tag 同名
-# （Release 工作流靠 `## <tag>（` 精确匹配版本 token 提取发布说明）
+# ── CHANGELOG 渲染（cliff 只渲染不推导，版本号全由脚本内置推导）──
+# 只渲染本次区间生成新段、既有段落原样保留：首枚组件 tag 之上没有更早的
+# 本组件 tag，让 cliff 全量重生成会把 v0.5.0 前已发布的整段历史回填进新
+# 文件；--bump 同因不可用——无本组件 tag 时 cliff 从 0.1.0 起算，又被
+# tag_pattern 校验拒绝而报错退出（实测 2.14.2）
 DATE=$(date "+%Y-%m-%d")
-awk -v new="## v${NEXT}（${DATE}）" '
-    !done && $0 ~ /^## v/ { $0 = new; done = 1 }
+SEC_FILE="CHANGELOG-${COMP}.md"
+NEW_FILE="${SEC_FILE}.new"
+rm -f "$NEW_FILE"
+git-cliff --config "cliff/${COMP}.toml" --tag-pattern "${PKG}/v[0-9].*" "$RANGE" > "$NEW_FILE"
+# 段标题统一改写为与本次 tag 同名（Release 工作流按 `## <tag>（` 提取发布说明）
+awk -v new="## ${TAG}（${DATE}）" '
+    !done && $0 ~ /^## / { $0 = new; done = 1 }
     { print }
-' CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
-grep -q "^## v${NEXT}（" CHANGELOG.md || {
-    echo "错误：CHANGELOG.md 未生成 v$NEXT 段落" >&2
-    exit 1
-}
+' "$NEW_FILE" > "${NEW_FILE}.tmp" && mv "${NEW_FILE}.tmp" "$NEW_FILE"
+# 新段插到文件头块之后（既有段落保持冻结态）；文件尚不存在则整文件即渲染结果
+if [ -f "$SEC_FILE" ]; then
+    awk -v secfile="$NEW_FILE" '
+        BEGIN {
+            p = 0
+            while ((getline line < secfile) > 0) {
+                if (!p && line ~ /^## /) p = 1
+                if (p) sec = sec line "\n"
+            }
+        }
+        !ins && /^## / { printf "%s", sec; ins = 1 }
+        { print }
+    ' "$SEC_FILE" > "${SEC_FILE}.tmp" && mv "${SEC_FILE}.tmp" "$SEC_FILE"
+else
+    mv "$NEW_FILE" "$SEC_FILE"
+fi
+rm -f "$NEW_FILE"
+grep -q "^## ${TAG}（" "$SEC_FILE" || { echo "错误：${SEC_FILE} 未生成 ${TAG} 段落" >&2; exit 1; }
 
-# 同步 workspace 版本（Cargo.toml 首个 version 赋值行即 [workspace.package].version，
-# 依赖的版本声明都在其后；perl 做首处替换以兼容 BSD/GNU sed 差异）
-NEXT="$NEXT" perl -0777 -pi -e 's/^version = "[^"]*"/version = "$ENV{NEXT}"/m' Cargo.toml
-grep -q "^version = \"$NEXT\"" Cargo.toml || {
-    echo "错误：Cargo.toml 版本同步失败" >&2
-    exit 1
-}
-# 仅更新 lockfile 中 workspace 成员的版本记录，不动第三方依赖
+# ── 版本写入（crate 单源；gui 另同步 tauri.conf.json 与 package.json）──
+NEXT="$NEXT" perl -0777 -pi -e 's/^version = "[^"]*"/version = "$ENV{NEXT}"/m' "$CRATE"
+grep -q "^version = \"$NEXT\"" "$CRATE" || { echo "错误：$CRATE 版本同步失败" >&2; exit 1; }
+if [ "$COMP" = gui ]; then
+    NEXT="$NEXT" perl -0777 -pi -e 's/"version": "[^"]*"/"version": "$ENV{NEXT}"/m' \
+        crates/gui/src-tauri/tauri.conf.json crates/gui/package.json
+    grep -q "\"version\": \"$NEXT\"" crates/gui/src-tauri/tauri.conf.json || { echo "错误：tauri.conf.json 同步失败" >&2; exit 1; }
+fi
 cargo update -w
 
-git add CHANGELOG.md Cargo.toml Cargo.lock
-git commit -m "chore(release): v$NEXT" -m "由 scripts/release.sh 生成，版本与更新日志依据 Conventional Commits 自动推导。"
-# 附注标签：git push --follow-tags 只推附注标签，轻量标签会被静默漏推
-# （tag 不上去则 cargo-dist 的 Release 工作流不触发）
-git tag -a "v$NEXT" -m "Release v$NEXT"
+FILES=(CHANGELOG-${COMP}.md "$CRATE" Cargo.lock)
+[ "$COMP" = gui ] && FILES+=(crates/gui/src-tauri/tauri.conf.json crates/gui/package.json)
+git add "${FILES[@]}"
+git commit -m "chore(release): ${COMP} v$NEXT" -m "由 scripts/release.sh 生成，${COMP} 组件版本与更新日志按 scope 归属独立推导。"
+git tag -a "$TAG" -m "Release $PKG v$NEXT"
 
-# 发版后将开发版本占位到「下一版本-dev」：dev 构建永不与已发布正式版同号
-# （否则 dev 升级安装时与线上同名版本无法区分，方向判定也失真）。占位号
-# 只是标识，下次发版时会被上面 cliff 算出的正式号覆盖——正式版后保守取
-# patch+1（cargo-release 的 dev-version 同款惯例），beta 后取 beta 序号 +1。
-# 提交位于 tag 之后，不进本次发版产物
+# ── dev 占位（不进发版产物；正式版后 patch+1，beta 后序号+1）──
 case "$NEXT" in
-    *-beta.*)
-        DEV="${NEXT%-beta.*}-beta.$((${NEXT##*-beta.} + 1))-dev" ;;
-    *)
-        _rest="${NEXT#*.}"
-        DEV="${NEXT%%.*}.${_rest%%.*}.$((${_rest##*.} + 1))-dev" ;;
+    *-beta.*) DEV="${NEXT%-beta.*}-beta.$((${NEXT##*-beta.} + 1))-dev" ;;
+    *) _rest="${NEXT#*.}"; DEV="${NEXT%%.*}.${_rest%%.*}.$((${_rest##*.} + 1))-dev" ;;
 esac
-DEV="$DEV" perl -0777 -pi -e 's/^version = "[^"]*"/version = "$ENV{DEV}"/m' Cargo.toml
-grep -q "^version = \"$DEV\"" Cargo.toml || {
-    echo "错误：Cargo.toml 开发版本占位失败" >&2
-    exit 1
-}
+DEV="$DEV" perl -0777 -pi -e 's/^version = "[^"]*"/version = "$ENV{DEV}"/m' "$CRATE"
+if [ "$COMP" = gui ]; then
+    DEV="$DEV" perl -0777 -pi -e 's/"version": "[^"]*"/"version": "$ENV{DEV}"/m' \
+        crates/gui/src-tauri/tauri.conf.json crates/gui/package.json
+fi
 cargo update -w
-git add Cargo.toml Cargo.lock
-git commit -m "chore(release): 开发版本占位 v$DEV" -m "发版后 dev 分支保持领先一个开发版本号，避免开发构建与已发布正式版同号。"
+git add "$CRATE" Cargo.lock
+[ "$COMP" = gui ] && git add crates/gui/src-tauri/tauri.conf.json crates/gui/package.json
+git commit -m "chore(release): ${COMP} 开发版本占位 v$DEV" -m "发版后 dev 分支保持领先一个开发版本号，避免开发构建与已发布正式版同号。"
 
-echo "完成：v$NEXT 已提交并打 tag（附注），开发版本已占位 ${DEV} 。推送到远端时记得：git push --follow-tags"
+echo "完成：$TAG 已提交并打 tag（附注），dev 占位 ${DEV} 。推送：git push --follow-tags"

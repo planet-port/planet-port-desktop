@@ -1,0 +1,46 @@
+# cli 组件更新日志配置:版本推导在 scripts/release.sh 内置(cliff 的
+# scope 过滤无法作用于 bump,实测 2.14.2),此处只负责渲染——非本组件
+# scope 的版本级提交前置 skip。tag_pattern 只认本组件斜杠 tag。
+[changelog]
+header = """
+# cli 更新日志
+
+版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。仅记录 cli 侧用户可感知变更。\n
+"""
+body = """
+{% if version %}\
+## {{ version }}（{{ timestamp | date(format="%Y-%m-%d") }}）
+{% else %}\
+## 未发布
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}\
+### {{ group | upper_first }}
+
+{% for commit in commits %}\
+- {% if commit.scope %}**{{ commit.scope }}：**{% endif %}{{ commit.message | split(pat="\n") | first | trim }}
+{% endfor %}\
+
+{% endfor %}\
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+protect_breaking_commits = true
+tag_pattern = "planet-port/v[0-9].*"
+sort_commits = "oldest"
+commit_parsers = [
+    # gui 域与 daemon 的版本级提交不属于本组件;工程类提交不入日志。
+    # message 正则按 scope 过滤(scope 键在 2.14.2 无效,见头注)
+    { message = "^(feat|fix|perf|revert)(\\((gui|tray|net|settings|daemon)\\))?!?:", skip = true },
+    { message = "^fix\\((ci|docs|build|test|release|deps)\\)", skip = true },
+    { message = "^feat", group = "新增" },
+    { message = "^fix", group = "修复" },
+    { message = "^perf", group = "性能" },
+    { message = "^revert", group = "回滚" },
+    { message = ".*", skip = true },
+]
+filter_commits = true
