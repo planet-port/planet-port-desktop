@@ -133,6 +133,9 @@ export function Sheet({
             遮罩点击须自带关闭;层叠时最新层遮罩 z 最高,点击即关最顶层 */}
         <div
           data-slot="sheet-overlay"
+          // data-state 须手动挂:自渲染层不在 Radix 状态通道里,漏挂则
+          // data-[state=open]:opacity-100 永不生效,遮罩全程透明不可见
+          data-state={entered ? 'open' : 'closed'}
           className={sheetOverlayClasses}
           style={{ '--layer': layer } as CSSProperties}
           onClick={onClose}

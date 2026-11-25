@@ -63,6 +63,27 @@ describe('DrawerShell', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
+  it('遮罩随进入态挂 data-state:漏挂则 data-[state=open]:opacity-100 永不生效,遮罩全程透明不可见', () => {
+    const { rerender } = render(
+      <DrawerShell open onClose={() => {}} testId="shell">
+        <p>抽屉内容</p>
+      </DrawerShell>,
+    );
+    // 挂载帧 closed(淡入前),16ms 后翻 open 淡入
+    expect(mask()).toHaveAttribute('data-state', 'closed');
+    act(() => {
+      vi.advanceTimersByTime(16);
+    });
+    expect(mask()).toHaveAttribute('data-state', 'open');
+    // 关闭期回 closed:遮罩淡出且关闭动画期禁点(data-[state=closed]:pointer-events-none)
+    rerender(
+      <DrawerShell open={false} onClose={() => {}} testId="shell">
+        <p>抽屉内容</p>
+      </DrawerShell>,
+    );
+    expect(mask()).toHaveAttribute('data-state', 'closed');
+  });
+
   it('open=false 推进 250ms 后卸载(关闭动画期内容保留)', () => {
     const { rerender } = render(
       <DrawerShell open onClose={() => {}} testId="shell">
