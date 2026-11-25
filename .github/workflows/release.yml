@@ -324,7 +324,12 @@ jobs:
             cat "$RUNNER_TEMP/notes.txt"
           } > "$RUNNER_TEMP/final-notes.txt"
 
-          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/final-notes.txt" artifacts/*
+          # 手工补丁（dist 模板硬编码 artifacts/*）：gui 链路零产物时 glob
+          # 不展开会把字面量传给 gh 致 exit 1、host 挂、gui job 永不运行；
+          # nullglob 下零资产即无文件参数的 create，属合法调用
+          shopt -s nullglob
+          files=(artifacts/*)
+          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/final-notes.txt" "${files[@]}"
 
   announce:
     needs:
