@@ -142,6 +142,11 @@ pub(crate) fn locate_daemon_src() -> std::path::PathBuf {
         eprintln!("{}", rust_i18n::t!("cli.service.exeNotFound", e = e));
         std::process::exit(1);
     });
+    // macOS 的 current_exe 原样返回调用路径、不解析软链:经 PATH 入口
+    // (/usr/local/bin/planet-port → 统一 bin 目录真身)运行时,兄弟查找会落进
+    // /usr/local/bin,那里只有 CLI 软链没有 daemon。先解析到真身再找;
+    // 解析失败退回原路径,保持 Linux 等已解析平台的既有行为
+    let exe = fs::canonicalize(&exe).unwrap_or(exe);
     if exe.file_name().and_then(|n| n.to_str()) == Some("planet-portd") {
         return exe;
     }

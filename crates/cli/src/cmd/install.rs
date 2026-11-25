@@ -64,6 +64,9 @@ pub fn run(yes: bool, json: bool) {
         eprintln!("{}", rust_i18n::t!("cli.service.exeNotFound", e = e));
         std::process::exit(1);
     });
+    // 同 service::locate_daemon_src:macOS 不解析软链调用路径,先落到真身,
+    // 同目录二进制套装的查找才不会落进只有 CLI 软链的 /usr/local/bin
+    let exe = fs::canonicalize(&exe).unwrap_or(exe);
     let dir = exe.parent().map(|p| p.to_path_buf()).unwrap_or_default();
     let cli_src = if exe_stem(&exe) == Some("planet-port") {
         exe.clone()
