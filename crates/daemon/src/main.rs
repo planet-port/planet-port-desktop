@@ -83,7 +83,7 @@ async fn version() -> Json<serde_json::Value> {
         .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
         .map(|t| {
             t.with_timezone(&chrono::Local)
-                .format("%Y-%m-%d %H:%M:%S %Z")
+                .format("%Y-%m-%d %H:%M:%S")
                 .to_string()
         });
     Json(serde_json::json!({
@@ -177,7 +177,7 @@ fn parse_args() -> Args {
                     option_env!("PLANET_PORT_BUILD_EPOCH").and_then(|s| s.parse::<i64>().ok()).unwrap_or(0),
                     0,
                 )
-                .map(|t| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S %z").to_string())
+                .map(|t| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string())
                 .unwrap_or_else(|| "unknown".into());
                 println!("planet-portd {} (zerotier-core {major}.{minor}.{rev}, built {built})", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
