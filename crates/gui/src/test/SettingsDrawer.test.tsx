@@ -38,7 +38,11 @@ beforeAll(async () => {
 beforeEach(() => {
   invokeMock.mockReset();
   invokeMock.mockImplementation((cmd: string) =>
-    cmd === 'identity_get' ? Promise.resolve(identity) : Promise.resolve(null));
+    cmd === 'identity_get'
+      ? Promise.resolve(identity)
+      : cmd === 'get_cli_version'
+        ? Promise.resolve('0.6.0')
+        : Promise.resolve(null));
   localStorage.removeItem('theme');
   mockMatchMedia(false);
 });
@@ -64,8 +68,12 @@ describe('SettingsDrawer', () => {
     expect(screen.getAllByText('语言').length).toBeGreaterThan(0);
     expect(screen.getAllByText('外观').length).toBeGreaterThan(0);
     expect(screen.getByText('关于')).toBeInTheDocument();
+    // 关于区三行分列 gui/cli/daemon 组件版本,cli 行取已装探测值
+    expect(screen.getByText('planet-port-gui')).toBeInTheDocument();
     expect(screen.getByText('planet-port')).toBeInTheDocument();
+    expect(screen.getByText('planet-portd')).toBeInTheDocument();
     expect(screen.getByText('0.4.1')).toBeInTheDocument();
+    expect(screen.getByText('0.6.0')).toBeInTheDocument();
     expect(screen.getByTestId('settings-drawer')).toBeInTheDocument();
   });
 

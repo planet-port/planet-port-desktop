@@ -15,6 +15,12 @@ pub fn get_daemon_state(state: tauri::State<'_, SharedState>) -> Value {
     })
 }
 
+/// 关于区展示用:已装 cli 版本(未装返回 None,前端回退内嵌 manifest.cli)
+#[tauri::command]
+pub fn get_cli_version() -> Option<String> {
+    crate::api_client::installed_cli_version()
+}
+
 #[tauri::command]
 pub fn get_status() -> Result<Value, GuiError> {
     discover()?.get_json(endpoints::status())

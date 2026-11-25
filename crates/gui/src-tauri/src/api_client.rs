@@ -81,7 +81,7 @@ pub fn fetch_daemon_version() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// 离线场景读已装 daemon 版本：执行 daemon bin `--version`（clap 输出
+/// 离线场景读已装 daemon 版本：执行 daemon bin `--version`（单行输出
 /// `planet-portd X.Y.Z`，取第二个空格 token）。bin 缺失/执行失败回 None
 pub fn installed_daemon_version() -> Option<String> {
     let out = std::process::Command::new(DAEMON_BIN)
@@ -91,6 +91,22 @@ pub fn installed_daemon_version() -> Option<String> {
     let text = String::from_utf8_lossy(&out.stdout);
     let ver = text.split_whitespace().nth(1)?;
     (!ver.is_empty()).then(|| ver.to_string())
+}
+
+/// 已装 cli 二进制版本:`planet-port --version` 首行第二 token(与
+/// installed_daemon_version 同目录同口径)。缺失/失败回 None
+pub fn installed_cli_version() -> Option<String> {
+    let cli = DAEMON_BIN
+        .trim_end_matches("planet-portd.exe")
+        .trim_end_matches("planet-portd")
+        .to_string()
+        + if cfg!(windows) { "planet-port.exe" } else { "planet-port" };
+    let out = std::process::Command::new(&cli).arg("--version").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    s.lines().next()?.split_whitespace().nth(1).map(String::from)
 }
 
 /// port 文件内容 → 端口号；含空白则 trim，非法/0（守护进程未写入完成）一律回退默认端口

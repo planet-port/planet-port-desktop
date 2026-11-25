@@ -3452,6 +3452,7 @@ dependencies = [
 name = "planet-port-gui"
 version = "0.5.1-dev"
 dependencies = [
+ "chrono",
  "planet-port-api",
  "serde",
  "serde_json",

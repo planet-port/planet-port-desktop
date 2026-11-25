@@ -12,6 +12,8 @@ async function cmd<T>(name: string, args?: Record<string, unknown>): Promise<T> 
 
 export const api = {
   daemonState: () => cmd<DaemonState>('get_daemon_state'),
+  /// 已装 cli 二进制版本:未装/探测失败为 null,前端回退内嵌 manifest.cli
+  cliVersion: () => cmd<string | null>('get_cli_version'),
   /// 内嵌安装资源清单:null = 无内嵌资源,前端退回手动引导
   embeddedManifest: () => cmd<EmbeddedManifest | null>('embedded_manifest'),
   /// 启动提权安装:Ok 仅代表流程已启动,结果走 install-done/failed 事件;

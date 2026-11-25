@@ -123,7 +123,7 @@ function DaemonInstallRow({ installed }: { installed: boolean }) {
 }
 
 /// 设置抽屉(布局参照 iOS PrefsView,即时生效无保存按钮):身份/语言/外观
-/// (模式+主题色行+背景行)/关于(版本+Core 版本)。选项组件参照 iOS 设置:
+/// (模式+主题色行+背景行)/关于(gui/cli/daemon 三组件版本+Core 版本)。选项组件参照 iOS 设置:
 /// 值行(右侧当前值+›)进下级勾选页,不再用行内 seg。iOS 的 IPv6/多连接数/
 /// 按需连接为 VPN 层设置,mac daemon 无对应不做。
 /// 瞬时型弹层:由 App 条件渲染挂载,内部持有 open,onClose 只翻 state 走
@@ -135,6 +135,9 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   const [layer, setLayer] = useState<'none' | 'accent' | 'background' | 'lang' | 'theme'>('none');
   const [version, setVersion] = useState('');
   const [buildTime, setBuildTime] = useState('');
+  const [manifest, setManifest] = useState<EmbeddedManifest | null>(null);
+  const [cliVersion, setCliVersion] = useState<string | null>(null);
+  const [daemonVersion, setDaemonVersion] = useState<string | null>(null);
   /// theme 本地镜像:setTheme 只写 DOM/localStorage 不触发渲染,须同步 state 高亮当前项
   const [theme, setThemeState] = useState<ThemeMode>(getTheme());
   const status = useQuery({ queryKey: ['status'], queryFn: api.status });
@@ -143,8 +146,18 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   /// daemon 服务安装态:决定安装行文案(安装/重装);读取失败按已装处理
   const [daemonInstalled, setDaemonInstalled] = useState(true);
   useEffect(() => {
-    void api.daemonState().then(s => setDaemonInstalled(s.installed)).catch(() => {});
+    void api.daemonState().then(s => {
+      setDaemonInstalled(s.installed);
+      setDaemonVersion(s.daemonVersion);
+    }).catch(() => {});
   }, []);
+  // cli/daemon 未装(探测为 null)时回退内嵌 manifest 双版本
+  useEffect(() => {
+    void api.embeddedManifest().then(setManifest).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (cliVersion === null) void api.cliVersion().then(setCliVersion).catch(() => setCliVersion(null));
+  }, [cliVersion]);
   useEffect(() => {
     if (!version) void getVersion().then(setVersion).catch(() => setVersion('-'));
   }, [version]);
@@ -193,7 +206,9 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
         </section>
         <h4 className={groupTitle}>{t('settings.about')}</h4>
         <section className={sectionCard}>
-          <div className={kvRow}><span className={kvLabel}>planet-port</span><span className={monoValue}>{version || '-'}</span></div>
+          <div className={kvRow}><span className={kvLabel}>planet-port-gui</span><span className={monoValue}>{version || '-'}</span></div>
+          <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>planet-port</span><span className={monoValue}>{cliVersion || manifest?.cli || '-'}</span></div>
+          <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>planet-portd</span><span className={monoValue}>{daemonVersion || manifest?.daemon || '-'}</span></div>
           <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>ZeroTier Core</span><span className={monoValue}>{coreVersion ?? '-'}</span></div>
           <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>{t('settings.buildTime')}</span><span className={monoValue}>{buildTime || '-'}</span></div>
           <DaemonInstallRow installed={daemonInstalled} />
