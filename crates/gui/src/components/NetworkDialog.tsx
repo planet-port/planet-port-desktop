@@ -151,6 +151,11 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
         </section>
         <h4 className="group-title">{t('networks.addrs')}</h4>
         <section className="detail-section">
+          {/* 接口行在地址行之前:设备面信息与数据面信息同组(卡片口径一致) */}
+          <div className="kv">
+            <span>{t('networks.iface')}</span>
+            <span className="mono">{row.interface ?? '-'}</span>
+          </div>
           {row.assignedAddrs.length === 0 ? (
             <div className="kv"><span>{t('networks.addrLabel', { index: 1 })}</span><span className="mono">-</span></div>
           ) : (
@@ -230,6 +235,10 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
           title={t('networks.qrTitle')}
           subtitle={row.name ?? row.nwid}
           data={qrData}
+          onCopy={() => {
+            void navigator.clipboard.writeText(row.nwid);
+            toast.ok(t('guide.copied'));
+          }}
           onDismiss={() => setShowQR(false)}
           onSave={async dataUrl => {
             const path = await save({ defaultPath: `${row.nwid}.png` });

@@ -17,12 +17,15 @@ export default function QRShareSheet({
   title,
   data,
   subtitle,
+  onCopy,
   onSave,
   onDismiss,
 }: {
   title: string;
   data: Uint8Array;
   subtitle?: string;
+  /// 单帧时的文本复制动作(如网络 ID);多帧(行星数据轮播)无对应单值,不传
+  onCopy?: () => void;
   onSave?: (dataUrl: string) => void;
   onDismiss: () => void;
 }) {
@@ -112,9 +115,10 @@ export default function QRShareSheet({
                   )}
                 </div>
               )}
-              {frames.length === 1 && onSave && (
-                <div className="mt-4 flex justify-end gap-2">
-                  <Button variant="primary" onClick={() => onSave(urls[0])}>{t('qrtransfer.savePng')}</Button>
+              {frames.length === 1 && (onCopy || onSave) && (
+                <div className="mt-4 flex justify-center gap-2">
+                  {onCopy && <Button onClick={onCopy}>{t('guide.copy')}</Button>}
+                  {onSave && <Button variant="primary" onClick={() => onSave(urls[0])}>{t('qrtransfer.savePng')}</Button>}
                 </div>
               )}
             </>

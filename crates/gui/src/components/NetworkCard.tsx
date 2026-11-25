@@ -76,13 +76,20 @@ export default function NetworkCard({
         <span className="max-w-full truncate font-mono text-xs leading-none tracking-[0.1px] text-muted-foreground">
           {row.nwid}
         </span>
-        <CopyableValue
-          small
-          className={`max-w-full font-mono text-xs leading-none tracking-[0.1px] [&>span]:truncate ${
-            row.assignedAddrs.length === 0 ? 'cursor-default opacity-45' : ''
-          }`}
-          text={pickDisplayAddr(row.assignedAddrs) || '-'}
-        />
+        <div className="flex w-full items-center gap-2">
+          <CopyableValue
+            small
+            className={`min-w-0 font-mono text-xs leading-none tracking-[0.1px] [&>span]:truncate ${
+              row.assignedAddrs.length === 0 ? 'cursor-default opacity-45' : ''
+            }`}
+            text={pickDisplayAddr(row.assignedAddrs) || '-'}
+          />
+          {/* 接口名与 IP 同行、行尾右对齐(ml-auto 推右,CopyableValue 保内容宽
+              靠左——其根自带 justify-end,拉伸即把 IP 推右,故不给 flex-1) */}
+          {row.interface && (
+            <span className="ml-auto flex-none font-mono text-xs leading-none text-[var(--muted)]">{row.interface}</span>
+          )}
+        </div>
         {(row.conflict || deviceError) && (
           <span
             className="mt-0.5 inline-flex items-center rounded-full border border-[color:color-mix(in_srgb,var(--warn)_34%,transparent)] px-[9px] py-[3px] font-mono text-xs leading-none text-[var(--warn)]"
