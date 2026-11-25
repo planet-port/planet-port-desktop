@@ -169,6 +169,19 @@ fn parse_args() -> Args {
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
+            "--version" => {
+                // 与 CLI --version 同构的单行文案;GUI installed_daemon_version
+                // 按「首行第二 token」解析,格式不可变
+                let (major, minor, rev) = zt_core::node::NodeHandle::core_version();
+                let built = chrono::DateTime::from_timestamp(
+                    option_env!("PLANET_PORT_BUILD_EPOCH").and_then(|s| s.parse::<i64>().ok()).unwrap_or(0),
+                    0,
+                )
+                .map(|t| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S %z").to_string())
+                .unwrap_or_else(|| "unknown".into());
+                println!("planet-portd {} (zerotier-core {major}.{minor}.{rev}, built {built})", env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
             "--config-dir" => match args.next() {
                 Some(v) => config_dir = Some(PathBuf::from(v)),
                 None => {
@@ -180,9 +193,9 @@ fn parse_args() -> Args {
             "--service" => service = true,
             other => {
                 #[cfg(unix)]
-                eprintln!("未知参数: {other}(仅支持 --config-dir <path>)");
+                eprintln!("未知参数: {other}(仅支持 --config-dir <path> 与 --version)");
                 #[cfg(windows)]
-                eprintln!("未知参数: {other}(仅支持 --config-dir <path> 与 --service)");
+                eprintln!("未知参数: {other}(仅支持 --config-dir <path>、--service 与 --version)");
                 std::process::exit(2);
             }
         }

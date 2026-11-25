@@ -116,3 +116,44 @@ pub fn fmt_value(v: &Value) -> String {
         other => other.to_string(),
     }
 }
+
+/// `planet-port[d] X.Y.Z (…)` 形态 stdout 的版本提取:取首行第二 token。
+/// install.rs 的 installed_version 与 --version 的 daemon 探测共用,
+/// 修复此前 `.last()` 取到构建日期的问题
+pub(crate) fn parse_bin_version(stdout: &str) -> Option<String> {
+    stdout
+        .lines()
+        .next()?
+        .split_whitespace()
+        .nth(1)
+        .map(String::from)
+}
+
+#[cfg(test)]
+mod parse_version_tests {
+    use super::parse_bin_version;
+
+    #[test]
+    fn parses_plain_and_decorated() {
+        assert_eq!(
+            parse_bin_version("planet-port 0.5.1-dev (zerotier-core 1.16.2, built 2026-11-24 16:45:30 +08:00)"),
+            Some("0.5.1-dev".into())
+        );
+        assert_eq!(parse_bin_version("planet-portd 0.5.0-beta.2"), Some("0.5.0-beta.2".into()));
+    }
+
+    #[test]
+    fn two_line_output_takes_first_line() {
+        // --version 改两行后,已装 cli 的输出形态
+        assert_eq!(
+            parse_bin_version("planet-port 0.6.0 (zerotier-core 1.16.2, built x)\nplanet-portd 0.5.3\n"),
+            Some("0.6.0".into())
+        );
+    }
+
+    #[test]
+    fn rejects_degenerate() {
+        assert_eq!(parse_bin_version("planet-port"), None);
+        assert_eq!(parse_bin_version(""), None);
+    }
+}

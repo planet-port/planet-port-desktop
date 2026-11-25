@@ -14,7 +14,7 @@ serde.workspace = true
 serde_json.workspace = true
 planet-port-api = { path = "../api" }
 zt-core = { path = "../zt-core" }
-# URL 源 planet 文件下载(world.rs fetch_remote_planet)
+# URL 源 planet 文件下载(world::fetch_url,调用点 api_planet.rs)
 ureq = "3"
 # daemon /version 与 --version 的时间戳本地化
 chrono = "0.4"

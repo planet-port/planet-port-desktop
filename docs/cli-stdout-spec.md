@@ -22,13 +22,21 @@
 ### --version — 版本信息 ◇(本机实测)
 
 ```text
-planet-port 0.4.1-dev (zerotier-core 1.16.2, built 2026-11-22 20:14:54 +08:00)
+planet-port 0.5.1-dev (zerotier-core 1.16.2, built 2026-11-25 20:40:08 +08:00)
+planet-portd 0.5.1-dev
 ```
 
-- 单行输出:name + 包版本 + zerotier-core 版本(FFI 取核心常量,三段式,
-  与 `info` 的 VERSION 列同源)+ 构建时间(build.rs 注入 epoch,本地时区展示);
-- e2e 脚本按 `grep -q <ver>` 子串匹配版本号,同行追加字段不影响既有断言;
-- daemon 侧 `GET /version` 同源:`{"version","zerotierCore","built"}`。
+- 两行输出:第一行 cli 自身(name + 包版本 + zerotier-core 版本(FFI 取核心
+  常量,三段式,与 `info` 的 VERSION 列同源)+ 构建时间(build.rs 注入 epoch,
+  本地时区展示));第二行为 daemon 版本**运行时探测**(先找 cli 同目录的
+  planet-portd,便携套装优先;再退已安装路径),探测不到(未安装或 daemon
+  过旧无 `--version`)时为 `planet-portd (not installed)`,不猜版本;
+- `-V` 仍为单行(仅第一行);
+- e2e 脚本按 `grep -q <ver>` 子串匹配版本号,两行不影响既有断言;
+- daemon 自身 `--version` 输出与第一行同构的单行
+  `planet-portd X.Y.Z (zerotier-core M.m.r, built …)`,GUI 离线探测按
+  「首行第二 token」解析;daemon 侧 `GET /version` 同源:
+  `{"version","zerotierCore","built"}`。
 
 ### info — 聚合状态表 ❇(RELAY 列为 v0.4 补充,◇ 口径)
 

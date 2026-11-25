@@ -27,6 +27,43 @@ fn version_str() -> &'static str {
     })
 }
 
+/// daemon 版本运行时探测:同目录(便携套装)优先,其次已安装路径
+/// (service::CLI_BIN 的同目录 sibling;三平台安装布局下 daemon 与 cli
+/// 同目录,见 cmd/service 平台模块)。找不到时如实标注,不猜版本
+fn probe_daemon_version() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let daemon_name = if cfg!(windows) { "planet-portd.exe" } else { "planet-portd" };
+    let mut candidates: Vec<std::path::PathBuf> = vec![exe.parent()?.join(daemon_name)];
+    if let Some(dir) = std::path::Path::new(crate::cmd::service::CLI_BIN).parent() {
+        candidates.push(dir.join(daemon_name));
+    }
+    for path in candidates {
+        if !path.is_file() {
+            continue;
+        }
+        if let Ok(out) = std::process::Command::new(&path).arg("--version").output() {
+            if out.status.success() {
+                if let Some(v) = crate::output::parse_bin_version(&String::from_utf8_lossy(&out.stdout)) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// --version 两行文案:第一行 cli 自身(同 version_str),第二行探测到的
+/// daemon 版本。不能挂到 clap 的 long_version 属性:derive 会把表达式编进
+/// command() 并在每次进程启动时求值(--help、普通子命令也不例外),daemon
+/// 探测含子进程,只能由 main 的 --version 分支显式调用
+fn version_str_full() -> &'static str {
+    static S: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    S.get_or_init(|| {
+        let daemon = probe_daemon_version().unwrap_or_else(|| "(not installed)".to_string());
+        format!("{}\nplanet-portd {daemon}", version_str())
+    })
+}
+
 #[derive(Parser)]
 #[command(
     name = "planet-port",
@@ -162,6 +199,14 @@ fn main() {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
     init_locale();
+    // --version 两行文案手工输出:-V 走 clap 的 version 单行;两行版含 daemon
+    // 子进程探测,不能挂 long_version 属性(每次进程启动都会求值)。全量扫描
+    // arg 串即可:clap 侧 version 旗标本就非 global,子命令后跟 --version 也是
+    // 报错路径,提前打印版本无害
+    if std::env::args_os().any(|a| a == *"--version") {
+        println!("planet-port {}", version_str_full());
+        return;
+    }
     let cli = Cli::parse();
     let json = cli.json;
     // 定位链 ①>②:--planet 显式指定,否则取 PLANET_PORT_PLANET 环境变量;

@@ -119,7 +119,7 @@ pub fn run(yes: bool, json: bool) {
     }
 }
 
-/// 已装 CLI 的版本号(执行 `--version` 取末段);未安装/执行失败返回 None
+/// 已装 CLI 的版本号(执行 `--version`,取首行第二 token);未安装/执行失败返回 None
 /// (失败视作版本未知,按"有旧版"处理走确认)
 fn installed_version() -> Option<String> {
     if !Path::new(service::CLI_BIN).is_file() {
@@ -131,7 +131,7 @@ fn installed_version() -> Option<String> {
         .ok()
         .filter(|o| o.status.success())?;
     let s = String::from_utf8_lossy(&out.stdout);
-    s.split_whitespace().last().map(String::from)
+    crate::output::parse_bin_version(&s)
 }
 
 /// 点分数值比较(a < b?)。覆盖本项目的版本形态:X.Y.Z(正式)、
