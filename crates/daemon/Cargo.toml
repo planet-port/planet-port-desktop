@@ -1,0 +1,36 @@
+[package]
+name = "planet-portd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "planet-portd"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+planet-port-api = { path = "../api" }
+zt-core = { path = "../zt-core" }
+# URL 源 planet 文件下载(world.rs fetch_remote_planet)
+ureq = "3"
+# daemon /version 与 --version 的时间戳本地化
+chrono = "0.4"
+# 单例锁(flock);workspace 已有同版本依赖
+libc = "0.2"
+# planet-portd HTTP API 服务
+axum = "0.8"
+# signal:SIGINT/SIGTERM 优雅退出;sync:watch 停止通道(Windows 服务停止)
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync"] }
+
+# 命名互斥体单例锁 + 随机数(BCryptGenRandom)+ SCM 服务入口;
+# 版本对齐 cli 既有 0.59
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_Security_Cryptography",
+    "Win32_System_Services",
+] }

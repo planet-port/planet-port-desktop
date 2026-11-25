@@ -32,11 +32,11 @@ bash "$ROOT/scripts/bootstrap.sh"
 
 # 1. 本平台或交叉目标的 daemon/cli;GUI 随后由 tauri 按同一 target 构建
 if [ "$TRIPLE" = "$HOST" ]; then
-  cargo build --release -p planet-port --bins
+  cargo build --release -p planet-port -p planet-portd --bins
   BIN="$ROOT/target/release"
 else
   rustup target add "$TRIPLE"
-  cargo build --release -p planet-port --bins --target "$TRIPLE"
+  cargo build --release -p planet-port -p planet-portd --bins --target "$TRIPLE"
   BIN="$ROOT/target/$TRIPLE/release"
 fi
 

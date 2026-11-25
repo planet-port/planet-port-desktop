@@ -3424,7 +3424,6 @@ name = "planet-port"
 version = "0.5.1-dev"
 dependencies = [
  "arboard",
- "axum",
  "chrono",
  "clap",
  "libc",
@@ -3434,7 +3433,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sys-locale",
- "tokio",
  "unicode-width",
  "ureq",
  "windows-sys 0.59.0",
@@ -3464,6 +3462,22 @@ dependencies = [
  "tauri-plugin-single-instance",
  "ureq",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "planet-portd"
+version = "0.5.1-dev"
+dependencies = [
+ "axum",
+ "chrono",
+ "libc",
+ "planet-port-api",
+ "serde",
+ "serde_json",
+ "tokio",
+ "ureq",
+ "windows-sys 0.59.0",
+ "zt-core",
 ]
 
 [[package]]
