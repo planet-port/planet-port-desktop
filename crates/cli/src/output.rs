@@ -94,15 +94,15 @@ pub fn fmt_local_secs(s: u64) -> String {
         .unwrap_or_else(|| s.to_string())
 }
 
-/// 构建时间 epoch 字符串(build.rs 注入)→ 本地时区可读形;缺失/非法
-/// 退化为 "unknown"。daemon /version 端点有同源实现(bin 间不共享模块)
+/// 构建时间 epoch 字符串(build.rs 注入)→ 查看者本地时区;缺失/非法
+/// 退化为 "unknown"。daemon --version 与 /version 端点有同源实现(bin 间不共享模块)
 pub fn fmt_build_time(epoch: Option<&str>) -> String {
     epoch
         .and_then(|s| s.parse::<i64>().ok())
         .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
         .map(|t| {
             t.with_timezone(&chrono::Local)
-                .format("%Y-%m-%d %H:%M:%S %Z")
+                .format("%Y-%m-%d %H:%M:%S")
                 .to_string()
         })
         .unwrap_or_else(|| "unknown".to_string())

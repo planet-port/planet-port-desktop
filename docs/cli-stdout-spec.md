@@ -22,7 +22,7 @@
 ### --version — 版本信息 ◇(本机实测)
 
 ```text
-planet-port 0.5.1-dev (zerotier-core 1.16.2, built 2026-11-25 20:40:08 +08:00)
+planet-port 0.5.1-dev (zerotier-core 1.16.2, built 2026-11-25 20:40:08)
 planet-portd 0.5.1-dev
 ```
 
