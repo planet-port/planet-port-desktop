@@ -29,7 +29,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 
 /// get_daemon_state 的返回由用例按需指定；其余命令给页面级查询兜底数据
-let daemonState: { online: boolean; installed: boolean };
+let daemonState: { online: boolean; installed: boolean; daemonVersion: string | null };
 
 function emit(event: string, payload: unknown) {
   act(() => {
@@ -54,7 +54,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   listeners.clear();
-  daemonState = { online: true, installed: true };
+  daemonState = { online: true, installed: true, daemonVersion: null };
   invokeMock.mockReset();
   invokeMock.mockImplementation((cmd: string) => {
     switch (cmd) {

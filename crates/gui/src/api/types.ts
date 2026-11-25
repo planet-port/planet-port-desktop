@@ -92,6 +92,8 @@ export interface GuiError {
 export interface DaemonState {
   online: boolean;
   installed: boolean;
+  /// 已装/运行中 daemon 版本(在线 /version、离线 bin --version);不可得为 null
+  daemonVersion: string | null;
 }
 
 /// bundle 内嵌安装资源清单(embedded_manifest 返回;dev/未组包时为 null)

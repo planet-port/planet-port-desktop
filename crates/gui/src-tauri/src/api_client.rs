@@ -58,6 +58,41 @@ pub fn installed() -> bool {
     token_file().exists()
 }
 
+/// 已装 daemon 二进制路径。路径由 CLI service install 决定（cli/cmd/service/
+/// 各平台文件的 BIN_PATH），两侧必须同源改动，GUI 侧无 cli 依赖故本地对齐
+#[cfg(target_os = "macos")]
+const DAEMON_BIN: &str = "/Library/Application Support/planet-portd/bin/planet-portd";
+#[cfg(target_os = "linux")]
+const DAEMON_BIN: &str = "/usr/local/bin/planet-portd";
+#[cfg(target_os = "windows")]
+const DAEMON_BIN: &str = r"C:\Program Files\planet-port\planet-portd.exe";
+
+/// 在线场景读 daemon 版本：/version 响应的 version 字段（= daemon bin 的
+/// CARGO_PKG_VERSION，与 CLI --version 同源）。任何失败（离线/token 缺失/
+/// 解析失败）回 None，由调用方走离线通道
+pub fn fetch_daemon_version() -> Option<String> {
+    discover()
+        .ok()?
+        .get_json(planet_port_api::endpoints::version())
+        .ok()?
+        .get("version")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .filter(|s| !s.is_empty())
+}
+
+/// 离线场景读已装 daemon 版本：执行 daemon bin `--version`（clap 输出
+/// `planet-portd X.Y.Z`，取第二个空格 token）。bin 缺失/执行失败回 None
+pub fn installed_daemon_version() -> Option<String> {
+    let out = std::process::Command::new(DAEMON_BIN)
+        .arg("--version")
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let ver = text.split_whitespace().nth(1)?;
+    (!ver.is_empty()).then(|| ver.to_string())
+}
+
 /// port 文件内容 → 端口号；含空白则 trim，非法/0（守护进程未写入完成）一律回退默认端口
 fn resolve_port(raw: &str) -> u16 {
     raw.trim().parse::<u16>().ok().filter(|p| *p != 0).unwrap_or(DEFAULT_API_PORT)
@@ -205,6 +240,17 @@ impl ApiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `--version` 输出解析:`planet-portd X.Y.Z[-beta.N][-dev] (…)` 取第二 token
+    #[test]
+    fn version_token_extraction_from_cli_output() {
+        let line = "planet-portd 0.5.0-beta.2 (zerotier-core 1.16.2, built 2026-11-25)";
+        assert_eq!(line.split_whitespace().nth(1), Some("0.5.0-beta.2"));
+        let dev = "planet-portd 0.4.1-dev";
+        assert_eq!(dev.split_whitespace().nth(1), Some("0.4.1-dev"));
+        let single = "planet-portd";
+        assert_eq!(single.split_whitespace().nth(1), None);
+    }
 
     /// Rust↔TS 契约：GuiError 各变体序列化形态必须与 src/api/types.ts 的 GuiError 对齐
     /// （serde tag="kind" → 判别字段 kind，其余字段小写单词、无需 camelCase rename）

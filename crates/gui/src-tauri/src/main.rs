@@ -13,6 +13,9 @@ use tauri::Manager;
 pub struct GuiState {
     pub online: bool,
     pub installed: bool,
+    /// 已装/运行中 daemon 的版本(heartbeat 维护):在线取 /version,离线读
+    /// daemon bin --version 一次缓存;None = 不可得(未装/读取失败)
+    pub daemon_version: Option<String>,
     pub lang: String,
     pub snapshot_planets: serde_json::Value,
     pub snapshot_networks: serde_json::Value,
@@ -40,6 +43,7 @@ fn main() {
         .manage::<SharedState>(Mutex::new(GuiState {
             online: false,
             installed: api_client::installed(),
+            daemon_version: None,
             lang: String::from("zh"),
             snapshot_planets: serde_json::Value::Array(Vec::new()),
             snapshot_networks: serde_json::Value::Array(Vec::new()),

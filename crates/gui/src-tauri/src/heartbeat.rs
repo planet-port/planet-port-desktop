@@ -1,4 +1,4 @@
-use crate::api_client::{discover, installed, probe_online};
+use crate::api_client::{discover, fetch_daemon_version, installed, installed_daemon_version, probe_online};
 use crate::SharedState;
 use planet_port_api::endpoints;
 use serde_json::Value;
@@ -15,6 +15,15 @@ pub fn spawn(app: AppHandle) {
             let state = app.state::<SharedState>();
             let mut st = state.lock().unwrap();
             st.installed = installed();
+            // 版本面:在线每 tick 从 /version 刷新(升级后即换新);离线仅首轮
+            // 跑一次 daemon bin --version 缓存,避免离线期每 tick spawn 进程
+            st.daemon_version = if online {
+                fetch_daemon_version()
+            } else if st.installed {
+                st.daemon_version.clone().or_else(installed_daemon_version)
+            } else {
+                None
+            };
             let t = st.online != online;
             st.online = online;
             t

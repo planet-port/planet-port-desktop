@@ -8,7 +8,11 @@ use tauri::Manager;
 #[tauri::command]
 pub fn get_daemon_state(state: tauri::State<'_, SharedState>) -> Value {
     let st = state.lock().unwrap();
-    json!({ "online": st.online, "installed": st.installed })
+    json!({
+        "online": st.online,
+        "installed": st.installed,
+        "daemonVersion": st.daemon_version,
+    })
 }
 
 #[tauri::command]

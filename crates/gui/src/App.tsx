@@ -27,6 +27,7 @@ export default function App() {
   const toast = useToast();
   const [online, setOnline] = useState(false);
   const [installed, setInstalled] = useState(true);
+  const [daemonVersion, setDaemonVersion] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<DrawerState>({ kind: 'none' });
   /// macOS 红绿灯悬浮于 webview(Overlay 标题栏),顶栏需留出左侧灯位;
   /// Windows/Linux 保持原生标题栏,不加留位
@@ -36,6 +37,7 @@ export default function App() {
     void api.daemonState().then(s => {
       setOnline(s.online);
       setInstalled(s.installed);
+      setDaemonVersion(s.daemonVersion);
     });
     const unsubs = [
       listen('daemon-online', () => setOnline(true)),
@@ -104,7 +106,7 @@ export default function App() {
         )}
       </header>
       {!online ? (
-        <OfflineGuide installed={installed} />
+        <OfflineGuide installed={installed} daemonVersion={daemonVersion} />
       ) : (
         <main className="flex min-w-0 flex-1 flex-col">
           <Home onAddNetwork={planet => setDrawer({ kind: 'addNet', planet })} />

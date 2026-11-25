@@ -43,8 +43,9 @@ export function versionLt(a: string, b: string): boolean {
 /// 自动安装区显隐判定:
 /// - 无内嵌资源(manifest=null)→ 不显示,走手动引导;
 /// - 未安装 → 显示「立即安装」;
-/// - 已装但拿不到已装版本号(v1 不预读)→ 按幂等升级处理,仍显示;
-/// - 已装且有版本号 → 内嵌版本更高才显示升级区
+/// - 已装但拿不到已装版本号 → 按幂等升级处理,仍显示;
+/// - 已装且版本不低于内嵌版本 → 不显示(直接用手动「启动服务」引导)
+/// - 已装且内嵌版本更高才显示升级区
 export function needInstall(
   manifest: { version: string } | null,
   installed: boolean,
@@ -52,6 +53,6 @@ export function needInstall(
 ): boolean {
   if (manifest === null) return false;
   if (!installed) return true;
-  if (installedVersion === null) return true;
+  if (!installedVersion) return true;
   return versionLt(installedVersion, manifest.version);
 }

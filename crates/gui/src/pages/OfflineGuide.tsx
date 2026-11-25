@@ -15,7 +15,7 @@ const INSTALL_URL = 'https://api.github.com/repos/planet-port/planet-port-deskto
 /// 无内嵌资源(dev 或未组包)→ 维持纯手动引导。
 /// 旧 .guide 系规则对译:根自承滚动(视口已锁死)+ 720px 上限、h2 15px/500、
 /// details 10px 上距、summary 手型、灰注文字、命令双列网格 320px auto-fill
-export default function OfflineGuide({ installed }: { installed: boolean }) {
+export default function OfflineGuide({ installed, daemonVersion }: { installed: boolean; daemonVersion: string | null }) {
   const { t } = useTranslation();
   const os = useMemo(detectOs, []);
   const win = os === 'windows';
@@ -24,13 +24,14 @@ export default function OfflineGuide({ installed }: { installed: boolean }) {
     ? `Invoke-WebRequest -UseBasicParsing -Headers @{Accept='application/vnd.github.raw'} "${INSTALL_URL}/install.ps1?ref=main" -OutFile install.ps1\npowershell -ExecutionPolicy Bypass -File .\\install.ps1`
     : `curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALL_URL}/install.sh?ref=main" | sudo bash`;
 
-  // v1 不预读已装版本号(installedVersion 固定 null):已装场景一律按幂等升级展示
+  // 已装版本由 Rust 心跳预读(在线 /version、离线 daemon bin --version):
+  // 拿得到且不低于内嵌版本 → 走「启动服务」手动引导直接用,不再弹自动安装区
   const [manifest, setManifest] = useState<EmbeddedManifest | null>(null);
   useEffect(() => {
     // 读取失败按"无内嵌资源"处理,退回手动引导
     void api.embeddedManifest().then(setManifest).catch(() => {});
   }, []);
-  const auto = needInstall(manifest, installed, null);
+  const auto = needInstall(manifest, installed, daemonVersion);
 
   const manual = (
     <>
