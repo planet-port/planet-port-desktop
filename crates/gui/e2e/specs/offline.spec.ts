@@ -7,9 +7,9 @@ describe('offline guide', () => {
     if (await daemonUp()) this.skip();
   });
 
-  it('窗口标题为 planet-port', async () => {
+  it('窗口标题为 Planet Port', async () => {
     const title = await browser.getTitle();
-    expect(title).toBe('planet-port');
+    expect(title).toBe('Planet Port');
   });
 
   it('离线引导页可见(OfflineGuide 根节点)', async () => {

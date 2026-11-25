@@ -34,7 +34,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         // 非模板:mac 恒白形状不随菜单栏深浅反色(用户指定口径);win 彩色
         // logo 模板模式只对单色有意义
         .icon_as_template(false)
-        .tooltip("planet-port")
+        .tooltip("Planet Port")
         .menu(&menu)
         // 左键点托盘 = 打开菜单(网络按行星分组);不开主窗口
         .show_menu_on_left_click(true)
@@ -67,7 +67,7 @@ pub fn refresh(app: &AppHandle) {
             if let Ok(img) = tauri::image::Image::from_bytes(bytes) {
                 let _ = tray.set_icon(Some(img));
             }
-            let _ = tray.set_tooltip(Some(if online { "planet-port: online" } else { "planet-port: offline" }));
+            let _ = tray.set_tooltip(Some(if online { "Planet Port: online" } else { "Planet Port: offline" }));
             let state = app.state::<SharedState>();
             state.lock().unwrap().icon_online = Some(online);
         }

@@ -11,8 +11,8 @@ describe('online main ui', () => {
     if (!(await daemonUp())) this.skip();
   });
 
-  it('窗口标题为 planet-port', async () => {
-    expect(await browser.getTitle()).toBe('planet-port');
+  it('窗口标题为 Planet Port', async () => {
+    expect(await browser.getTitle()).toBe('Planet Port');
   });
 
   it('单页首页加载行星分组头', async () => {

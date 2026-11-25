@@ -13,7 +13,7 @@ const repoRoot = path.resolve(here, '..', '..', '..');
  * safaridriver 无法拉起);linux/win 用 release 裸二进制即可 */
 export function appPath(): string {
   if (process.platform === 'darwin') {
-    return path.join(repoRoot, 'target', 'release', 'bundle', 'macos', 'planet-port.app');
+    return path.join(repoRoot, 'target', 'release', 'bundle', 'macos', 'Planet Port.app');
   }
   const bin = process.platform === 'win32' ? 'planet-port-gui.exe' : 'planet-port-gui';
   return path.join(repoRoot, 'target', 'release', bin);
