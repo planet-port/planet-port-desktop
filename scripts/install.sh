@@ -119,7 +119,9 @@ if [[ -n "${PLANET_PORT_TARBALL:-}" ]]; then
 else
     command -v curl >/dev/null || die "缺少 curl"
     if [[ -n "${PLANET_PORT_VERSION:-}" ]]; then
-        TAG="v${PLANET_PORT_VERSION#v}"
+        # 组件化后 cli 版本挂在 planet-port/v* tag 下;旧手工版本(≤0.5.0)
+        # 仍在 v* 下,由下方旧命名回退链以 OLD_TAG 兜底
+        TAG="planet-port/v${PLANET_PORT_VERSION#v}"
     else
         # 组件拆分后 releases/latest 可能落在 daemon/gui 上,改为按
         # planet-port/v 前缀过滤非 prerelease 的最新一条(无 jq,状态机
@@ -132,6 +134,8 @@ else
         [[ -n "$TAG" ]] || die "获取最新 cli 版本失败(仓库可能还没有 Release;GitHub 直连不通时可使用 --proxy 加代理站点下载)"
     fi
     VERSION="${TAG#planet-port/v}"
+    # 旧命名资产只存在于拆分前的 v* tag 下
+    OLD_TAG="v${VERSION}"
     ASSET="planet-port-${TRIPLE}.tar.xz"
     URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
     # 旧命名回退:triple → 手工发版时代的 platform_arch(仅用于 404 后重试)
@@ -152,7 +156,7 @@ else
     # 不加 -s(静默会压掉 --progress-bar,用户看不到下载进度)
     if ! fetch 3 -fL --connect-timeout 15 --progress-bar -o "$TARBALL" "$(dl_url "$URL")"; then
         [[ -n "$OLD_ASSET" ]] || die "下载失败(确认 Release 已附带 ${ASSET};GitHub 直连不通时可使用 --proxy 加代理站点下载)"
-        OLD_URL="https://github.com/${REPO}/releases/download/${TAG}/${OLD_ASSET}"
+        OLD_URL="https://github.com/${REPO}/releases/download/${OLD_TAG}/${OLD_ASSET}"
         echo "未找到 ${ASSET},回退尝试旧命名 ${OLD_ASSET}"
         # 旧命名是 gzip 内容,落盘文件名必须同步换成 .tar.gz,
         # 否则解包按扩展名误判走 -xJf(GNU tar 直接报 xz 格式错误)
