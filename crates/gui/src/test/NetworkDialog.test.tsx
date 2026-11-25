@@ -140,7 +140,7 @@ describe('NetworkDialog 网络详情', () => {
     renderDialog();
     fireEvent.click(await screen.findByRole('button', { name: '二维码' }));
     expect(await screen.findByAltText('QR')).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole('button', { name: '保存 PNG' }));
+    fireEvent.click(await screen.findByRole('button', { name: '保存' }));
     await waitFor(() => expect(saveDialogMock).toHaveBeenCalledWith({ defaultPath: '5cf54f1815588318.png' }));
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith('write_file_bytes', expect.objectContaining({ path: '/tmp/out.png' })),

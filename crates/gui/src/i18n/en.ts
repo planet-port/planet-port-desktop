@@ -163,6 +163,6 @@ export default {
     tooLarge: 'Too large for QR; share a file instead',
     generating: 'Generating QR…',
     manual: 'Manual',
-    savePng: 'Save PNG',
+    savePng: 'Save',
   },
 };

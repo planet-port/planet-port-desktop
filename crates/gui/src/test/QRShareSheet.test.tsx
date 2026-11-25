@@ -29,7 +29,7 @@ describe('QRShareSheet', () => {
     const img = await screen.findByAltText('QR');
     expect(img.getAttribute('src')).toMatch(/^data:image\/png;base64,/);
     screen.getByText('办公网');
-    screen.getByRole('button', { name: '保存 PNG' }).click();
+    screen.getByRole('button', { name: '保存' }).click();
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave.mock.calls[0][0]).toMatch(/^data:image\/png;base64,/);
   });
@@ -39,7 +39,7 @@ describe('QRShareSheet', () => {
     render(<QRShareSheet title="分享" data={enc('x')} onDismiss={() => {}} />);
     await screen.findByAltText('QR', {}, { timeout: 4000 });
     expect(await screen.findByText('1/30')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '保存 PNG' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument();
   });
 
   it('超限载荷: 显示过大提示,不出二维码', async () => {
