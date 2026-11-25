@@ -3,14 +3,25 @@
 所有显著变更均记录于此。版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## v0.5.0（2026-11-25）
-### CI
+### 新增
 
-- GUI 安装包并入 tag 发版矩阵
-- **gui：**macOS runner 更新为 macos-15 并交叉编译 Intel dmg
+- **gui：**已装 daemon 版本预读,无需更新时直接用
+## v0.5.0-beta.2（2026-11-25）
 ### 修复
 
-- **release：**占位 echo 的变量与全角句号隔离防 bash 3.2 吞字
-- **docs：**统一 tcp-proxy 命名并修正 install/compatibility 过时引用
+- **cli：**macOS 软链调用路径下兄弟 daemon 查找落错目录
+- **zt-core：**建设备前调高 feth 内核 MTU 上限,修复重启后设备全灭
+- **gui：**多层抽屉改为逐层关闭
+- **gui：**抽屉遮罩补挂 data-state 修复全程透明不可见
+### 新增
+
+- **net：**设备层失败时网络状态合成 DEVICE_ERROR,修复状态失真
+- **gui：**设置关于组新增 daemon 安装/重装入口
+- **gui：**安装引导页补齐标题栏与内容布局重构
+- **gui：**网络接口显示与二维码抽屉复制网络 ID
+## v0.5.0-beta.1（2026-11-24）
+### 修复
+
 - **gui：**修正 tauri beforeBuildCommand 的工作目录假设
 - **gui：**心跳每 tick 常态广播在线状态
 - **gui：**确认对话框换原生组件并区分查询错误与空态
@@ -20,8 +31,6 @@
 - set-relay 对运行中 planet 即时热生效
 - **cli：**修复软链建立的悬空风险与迁移静默失败
 - **gui：**安装完成等待 daemon 上线加超时兜底
-- **build：**resources 目录缺失致构建崩与 NSIS 口径清理
-- **ci：**gui-e2e 补 pnpm 版本与缓存锁路径
 - **gui：**修正平台 triple 断言在 Linux 上的判据错误
 - **gui：**IPv6 校验收紧压缩态边缘与组数上限
 - **gui：**行星详情信封解包修正
@@ -42,25 +51,6 @@
 - **gui：**app 图标加工为 macOS squircle 规范
 - **gui：**抽屉打开时自定义背景消失
 - **gui：**自定义背景承载层从 body 迁至 html 修复 Select 展开背景丢失
-- **ci：**gui-e2e 依赖安装补 crates/gui 目录
-- **ci：**GUI 包标记 dist=false 排除出 cargo-dist 构建规划
-- **ci：**dist 配置启用 precise-builds 精确构建
-- **cli：**macOS 软链调用路径下兄弟 daemon 查找落错目录
-- **zt-core：**建设备前调高 feth 内核 MTU 上限,修复重启后设备全灭
-- **gui：**多层抽屉改为逐层关闭
-- **gui：**抽屉遮罩补挂 data-state 修复全程透明不可见
-### 文档
-
-- **readme：**Termux 支持态由待定改为不计划支持
-- **readme：**移除指向未入库的 superpowers 设计文档死链
-- CLI 回归清单与 stdout 规范重命名为现行基准名
-- README 对齐 v0.4 实现现状
-- COMMANDS.md 补齐 identity、set-relay 等命令面至 v0.4
-- 修正 set-relay 括注口径与期望状态表述
-- 回归清单与 stdout 规范更新至 v0.4 命令面
-- 移除三份历史一次性报告
-- 补齐派生规则口径残留并修正升级路径表述
-- 命令按网络/行星/应用三组重组并收录新命令
 ### 新增
 
 - **gui：**Tauri 2 工程脚手架与构建链
@@ -120,43 +110,6 @@
 - **gui：**网络卡片按名称排序且不受连接状态影响
 - **net：**网络显示别名与名称本地缓存
 - **gui：**托盘菜单移除添加类入口并归并底部组
-- **net：**设备层失败时网络状态合成 DEVICE_ERROR,修复状态失真
-- **gui：**设置关于组新增 daemon 安装/重装入口
-- **gui：**安装引导页补齐标题栏与内容布局重构
-- **gui：**网络接口显示与二维码抽屉复制网络 ID
-- **gui：**已装 daemon 版本预读,无需更新时直接用
-### 构建
-
-- GUI 免安装组包脚本与 gui job 产物链改造
-- **gui：**引入 Tailwind v4 并映射现有主题变量为语义 token
-- **gui：**shadcn 原件拉取通道与全量原件入库
-### 样式
-
-- **gui：**补齐可交互组件的 hover/focus 识别度
-- **gui：**抽屉内容分组卡片化提升静止态识别度
-- **gui：**分组标题移出卡片为卡外裸文字
-- **gui：**添加网络卡 hover 底色改为 80% 透明度
-- **gui：**switch 轨道圆角定为轨道高一半(10px)
-- **gui：**加入网络抽屉行星选择置首并内嵌扫码钮
-- **gui：**二维码保存按钮文案「保存 PNG」改为「保存」
-### 测试
-
-- **gui：**补 GUI 逻辑层单测与三平台 CI
-- **gui：**增加 tauri-driver + WebdriverIO E2E 基建
-- **gui：**E2E 增加向导降级形态断言
-- **gui：**E2E 重写在线用例并增补新交互冒烟
-### 重构
-
-- **gui：**全部弹窗统一为右侧抽屉并增加开合动画
-- **settings：**精简设置为四区,身份模式改 switch 即切
-- **gui：**switch 迁移 shadcn 原语经封装层替换三处业务
-- **gui：**Button/Input/Label 封装层——shadcn 原语的项目语义壳
-- **gui：**弹层容器迁移 shadcn Dialog/AlertDialog
-- **gui：**抽屉与选择器迁移 shadcn Sheet/Select/Tabs
-- **gui：**页面与业务组件全面 Tailwind 化
-- **gui：**toast 系统迁移 sonner
-- **gui：**styles.css 收敛与死件清理
-- **gui：**托盘菜单图标收敛为仅网络行状态点
 ## v0.4.0（2026-11-12）
 ### 修复
 
@@ -167,9 +120,6 @@
 - **diag：**PlanetDetail 补 transport 与 relay 配置态回显
 - **cli：**info 表显示节点地址与版本,列结构对齐官方口径
 - **core：**终审必修项——迁移删源失败不上抛与 clippy 闭包清理
-### 文档
-
-- tcp-proxy 部署指引
 ### 新增
 
 - **scripts：**新增 zerotier-one 官方服务启停脚本
@@ -184,13 +134,7 @@
 - **release：**开发版本占位 -dev 号,与已发布正式版永不同号
 - **cli：**set-relay 支持精简形,复用 planet 根端点展开完整地址
 - **cli：**info 表增 RELAY 列显示 TCP 兜底 relay 配置态
-### 构建
-
-- **scripts：**tcp-proxy 编译脚本(macOS 本地 + zig 交叉 Linux)
 ## v0.4.0-beta.1（2026-11-09）
-### 修复
-
-- **ci：**补回 release.sh 可执行位
 ### 新增
 
 - **ci：**新增网页发版工作流
@@ -210,25 +154,15 @@
 ### 新增
 
 - **identity：**导入官方身份后自动切换共享模式并指引游离记录清理
-### 重构
-
-- **identity：**导入模式与相同 planet 身份选择交还用户
 ## v0.3.3（2026-11-07）
 ### 修复
 
 - **scripts：**e2e 产物下载适配 v0.3.1 起 dash 命名 tar.xz 资产
 - **e2e：**资产解包兼容 v0.3.1+ 嵌套目录布局
-- **ci：**manylinux 容器内补装 libclang 修复 bindgen 构建
-### 构建
-
-- Linux 产物改在 manylinux_2_28 容器构建,glibc 基线降至 2.28
 ## v0.3.2（2026-11-06）
 ### 修复
 
 - **zt-core：**托管路由不压本机直连路由 + CLI 管道静默退出
-### 文档
-
-- 补记 v0.3.0 多机型部署实测并同步 RHEL 系支持状态
 ### 新增
 
 - **scripts：**固化主机级部署 e2e 测试脚本
@@ -238,26 +172,13 @@
 - **install：**glibc 基线放宽至 2.34 并豁免沙箱模式提权
 - **install：**latest 旧命名资产回退修复一条命令安装 404
 - **install：**回退旧命名资产按实际格式解包
-### 文档
-
-- **compat：**补记 huaweimatebook v0.3.0 覆盖升级 e2e 实测记录
 ## v0.3.1-beta.2（2026-11-06）
 ### 修复
 
-- **build：**补 allow-dirty 跳过 CI 再生成比对并清理残留引用
 - **install：**修复 GNU find 兼容并同步 Windows 资产命名
-- **build：**补 dist profile 并消除构建注入文件的 workflow 噪音
-- **ci：**构建前拉取 ZeroTier 核心源码并兼容 Linux SHA256 工具
-### 文档
-
-- README 平台状态同步至 Linux / Windows CLI 已发布
-- **compat：**补记 openclaw v0.3.0 覆盖升级 e2e 实测记录
 ### 新增
 
 - **install：**install.sh 适配 cargo-dist 产物命名
-### 构建
-
-- 接入 cargo-dist 发布流水线并将 daemon 并入 cli 单包双 bin
 ## v0.3.0（2026-11-06）
 ### 修复
 
@@ -270,18 +191,6 @@
 - **daemon：**身份导入持 runtime_gate 收窄启动竞态并前置权限收紧
 - **daemon：**身份导入补双文件回滚与 gate 内覆盖重判
 - **cli：**identity use 成功行恢复本地化并修正帮助文案
-### 文档
-
-- 补线上安装实测结论与 raw 引导阻断边界
-- 身份管理层设计(全局/独立身份与官方身份迁移)
-- 身份管理层实施计划
-- NRPT 全链路实测销项与适配器自愈记录
-- wintun 适配器自愈实施计划
-- 安装自动注册 PATH 与换行符约定设计
-- README 补 identity 命令说明
-- 身份模式全局化说明
-- 身份隔离注释限定与切换文案去嵌套括号
-- 精简 README 特色描述
 ### 新增
 
 - **daemon：**Windows 适配器失效自愈重建
@@ -295,17 +204,6 @@
 - **cli：**leave 无 --planet 时按 nwid 跨行星唯一定位
 - **daemon：**planet 启用禁用开关与派生运行规则
 - **daemon,cli：**启停语义并入 enable/disable 并重构列表分组输出
-### 样式
-
-- **cli：**改写 symlink 清理分支消除 clippy single-match
-### 重构
-
-- **daemon：**身份模式改为 daemon 级全局开关
-- **cli：**identity use 改为全局模式开关
-## v0.2.0-beta.2（2026-11-01）
-### 文档
-
-- 兼容性记录更新线上安装验证边界
 ## v0.2.0-beta.1（2026-11-01）
 ### 修复
 
@@ -319,17 +217,6 @@
 - **cli：**顶层 install 命令支持 Windows 二进制定位
 - **api：**Windows 客户端解析系统数据目录并对齐 token 可读性
 - **cli：**服务失败自拉起覆盖后续全部失败
-### 文档
-
-- 新增 Windows 支持评估 POC 设计
-- Windows 支持评估 POC 实施计划
-- 实施计划同步 poc4 独立 crate 结构
-- **poc4：**Windows 支持评估阶段报告与兼容性记录
-- Windows POC 三道 Gate 实机实测结果回填
-- wincli 正式 Windows 客户端设计
-- wincli 实施计划
-- Windows 安装与命令文档
-- 修正 Windows 文档与安装脚本的归因表述
 ### 新增
 
 - **poc4：**poc4 Windows 设备层骨架(wintun L3)
@@ -343,12 +230,10 @@
 - **daemon：**Windows Service SCM 入口
 - **cli：**Windows 服务管理(sc.exe 后端)
 - **daemon：**DNS Windows 接线(NRPT)
-### 构建
-
-- **zt-sys：**Windows 目标交叉编译兼容修正
-- **zt-sys：**修复 Windows 目标静态链接
-- Windows 产物打包与安装脚本
 ## v0.1.2-beta.1（2026-10-31）
+### Refactor
+
+- 移除 mockd 契约 mock daemon
 ### 修复
 
 - **cli：**修复多视角评估报告的 17 项反馈问题
@@ -357,15 +242,6 @@
 - **daemon：**leave 同时清除 net_local 记录,不再被重启复活
 - **scripts：**修正 Linux 目标产物目录后缀剥离残留 .2
 - **cli：**修复 Linux 状态诊断与帮助文案的平台表述
-### 文档
-
-- 扩充 CLI 规范并新增手工回归清单
-- **cli：**四视角 CLI 功能校验报告
-- 整理 CLI 全命令标准输出规范
-- 安装指南收敛为在线/离线两条路径,.pkg 延后评估
-- Linux systemd 安装流程实施计划
-- 安装指南与命令规范补 Linux 平台说明
-- 新增平台兼容性实测记录
 ### 新增
 
 - **scripts：**新增发版打包脚本
@@ -385,12 +261,6 @@
 - **scripts：**install.sh 支持 Linux amd64/arm64 在线安装
 - **scripts：**release.sh 增加 linux_amd64/linux_arm64 产物
 - **scripts：**release.sh 支持 beta 标签发布
-### 重构
-
-- 移除 mockd 契约 mock daemon
-- **cli：**移除交互式 planet 选择器
-- **cli：**service 拆分平台模块,launchd 实现移入 macos.rs
-- **cli：**install 落盘路径收敛到平台模块
 ## v0.1.1（2026-10-29）
 ### 修复
 
@@ -410,7 +280,6 @@
 - **cli：**set 校验 routeViaZeroTier 取值并拒绝空参数列表
 - **cli：**HTTP 请求加 10s 全局超时并保证 planet rm --json 输出纯净
 - **mockd：**查询过滤的 planet 解析不再要求 running
-- **build：**bootstrap 缓存损坏分支先删缓存再退出
 - **core：**路由记账仅记成功写入并补充设备入向帧计数
 - **pocs：**poc3 断言 4 计数与断言 5 判定语义修正
 - **license：**补齐 Core/ 下 MPL-2.0 全文分发
@@ -428,19 +297,6 @@
 - **daemon：**崩溃残留的 feth 孤儿设备启动时清扫
 - **cli：**service install 误把 CLI 自身拷贝为 daemon 二进制
 - **daemon：**feth 登记任务改为落盘前重读最新设备快照
-### 文档
-
-- README 补充组件说明与命令参考
-- README 补充环境变量说明与 --follow、rm --json 行为
-- daemon 一期 POC(1-3)设计 spec
-- 核心库依赖管理改为 bootstrap 模式
-- spec 验证方式措辞修正
-- 并入 POC 前置调查的三项事实修正
-- daemon 一期 POC(1-3)实现计划
-- **poc：**spec §8 收口 POC 3 最终结果与环境问题定案
-- **daemon：**planet-portd 一期设计 spec
-- **daemon：**一期实现计划
-- **spec：**对齐复审反馈的三处文档偏差
 ### 新增
 
 - **api：**定义 REST 契约类型与端点构造函数
@@ -471,14 +327,4 @@
 - **cli：**表格输出改为传统空格对齐列
 - **cli：**交互式选择器改为 --ui 显式启用,默认非交互
 - **cli：**service start/stop 等待实际结果,服务标识对齐命名规则
-### 构建
-
-- bootstrap 拉取核心源码并产出 zt-sys 绑定
-### 样式
-
-- **zt-core：**device-reader 停止日志带上网络 id
-- **daemon：**优雅退出日志改为动作式中文描述
-### 重构
-
-- **cli：**events 定位与 dump 完全对齐
 
