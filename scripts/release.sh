@@ -44,8 +44,14 @@ git diff --quiet && git diff --cached --quiet || {
     echo "错误：已跟踪文件有未提交改动，请先提交或暂存" >&2; exit 1;
 }
 
-# ── 基线：本组件最新斜杠 tag；迁移首版回落 v0.5.0 ──────────
-LATEST_TAG="$(git tag --list "${PKG}/v*" | sort -V | tail -1)"
+# ── 基线：本组件最新非 beta 稳定 tag；迁移首版回落 v0.5.0 ──
+# 两模式统一取稳定基线：sort -V 下同名正式版排在 beta 之前，取「最新
+# tag」会在有稳定 tag 时居尾选中旧 beta——区间错过其间已发布的正式
+# 内容，推出的 beta 号虚高，后续正式版回落稳定基线即倒挂。稳定基线
+# 的区间天然收齐 beta 线全部提交，档位单调不降，续号不会倒挂
+# 首个组件版直接以 beta 起步时无非 beta tag 可选，grep 无选中行会以
+# pipefail 中止整个脚本，|| true 放行空结果走下方 v0.5.0 回落
+LATEST_TAG="$(git tag --list "${PKG}/v*" | grep -v -- '-beta\.' | sort -V | tail -1 || true)"
 if [ -n "$LATEST_TAG" ]; then
     LATEST="${LATEST_TAG#${PKG}/v}"
     RANGE="${LATEST_TAG}..HEAD"
@@ -54,25 +60,10 @@ else
     RANGE="v0.5.0..HEAD"
 fi
 
-# 发正式版且上个组件 tag 是 beta 时忽略 beta 基线（与单版本时期同因：
-# 以 beta 为基线会漏 beta 段落、纯 chore 时误中止）
-IGNORE_BETA_ARGS=()
-if [ "$MODE" != beta ] && [[ "$LATEST" == *-beta.* ]]; then
-    # 首个组件版直接以 beta 起步时无非 beta tag 可选，grep 无选中行会
-    # 以 pipefail 中止整个脚本，|| true 放行空结果走下方 v0.5.0 回落
-    LATEST_TAG="$(git tag --list "${PKG}/v*" | grep -v -- '-beta\.' | sort -V | tail -1 || true)"
-    if [ -n "$LATEST_TAG" ]; then
-        LATEST="${LATEST_TAG#${PKG}/v}"
-        RANGE="${LATEST_TAG}..HEAD"
-    else
-        LATEST="0.5.0"; RANGE="v0.5.0..HEAD"
-    fi
-    # 回落后的区间覆盖 beta 期提交，cliff 会在界内 beta tag 处分段：
-    # awk 只改首段标题使 beta 期提交进不了发布说明，且该段会被整段前插
-    # 成重复段。忽略 beta tag 让界内提交并入同一段；正常路径基线即最新
-    # tag，界内不会再有本组件 tag，无需此参数
-    IGNORE_BETA_ARGS=(--ignore-tags "${PKG}/v[0-9].*-beta\.[0-9]+")
-fi
+# 渲染时忽略界内本组件 beta tag，两模式都需要：beta 模式区间含既有
+# beta 线 tag、正式模式区间可能含 beta 线 tag，cliff 都会在其处分段，
+# awk 只改首段标题会错冠、该段被整段前插成重复段
+IGNORE_BETA_ARGS=(--ignore-tags "${PKG}/v[0-9].*-beta\.[0-9]+")
 
 # ── 版本推导（内置；scope 归属表见 usage 区注释与 KNOWN_SCOPES）──
 LEVEL="" BAD="" HIT=0
@@ -117,7 +108,7 @@ fi
 [ "$HIT" = 1 ] || { echo "错误：${RANGE} 内没有归属 ${COMP} 的 feat/fix/perf/revert 提交，无需发版" >&2; exit 1; }
 LEVEL="${NEWL:-patch}"
 
-# 基线号去掉 -beta.N/-dev 尾巴后按档位递增
+# 基线号（恒为稳定号）按档位递增
 BASE_VER="${LATEST%%-*}"
 IFS='.' read -r MA MI PA <<<"$BASE_VER"
 case "$LEVEL" in
