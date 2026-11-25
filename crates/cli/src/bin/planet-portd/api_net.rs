@@ -17,7 +17,7 @@ use axum::{
 };
 use planet_port_api::types::{NetworkEntry, RouteLine};
 use serde_json::{json, Value};
-use zt_core::NetConfig;
+use zt_core::{NetConfig, NetStatus};
 
 use crate::registry::{NetDisabled, NetLocal, RegistryEntry};
 use crate::runtime;
@@ -312,14 +312,24 @@ fn mac_str(mac: u64) -> String {
         .join(":")
 }
 
-/// 核心 NetConfig + net_local → NetworkEntry(planet-port-api 类型)
+/// 核心 NetConfig + net_local → NetworkEntry(planet-port-api 类型)。
+/// device_error:该网络最近的设备层错误(PlanetRuntime.device_errors 快照)
 fn to_network_entry(
     planet_id: &str,
     cfg: &NetConfig,
     nl: &NetLocal,
     conflict: Option<String>,
     if_name: Option<String>,
+    device_error: Option<String>,
 ) -> NetworkEntry {
+    // 核心已 OK 但设备层失败(feth 没建起来/地址路由没挂上):数据面不通,
+    // 状态覆盖为 DEVICE_ERROR。REQUESTING 等中间态保持核心语义(那是
+    // 「配置还没到」,与本地设备面失败是两回事)
+    let status = if cfg.status == NetStatus::Ok && device_error.is_some() {
+        "DEVICE_ERROR"
+    } else {
+        runtime::status_name(&cfg.status)
+    };
     NetworkEntry {
         planet: planet_id.to_string(),
         nwid: format!("{:016x}", cfg.nwid),
@@ -328,7 +338,7 @@ fn to_network_entry(
         name: nl.alias.clone().or_else(|| {
             if cfg.name.is_empty() { nl.cached_name.clone() } else { Some(cfg.name.clone()) }
         }),
-        status: runtime::status_name(&cfg.status).into(),
+        status: status.into(),
         conflict,
         kind: if cfg.is_private { "PRIVATE" } else { "PUBLIC" }.into(),
         mac: mac_str(cfg.mac),
@@ -400,6 +410,7 @@ pub async fn networks_list(
                 &nl,
                 conflicts.get(&cfg.nwid).cloned(),
                 rt.if_name(cfg.nwid),
+                rt.device_error(cfg.nwid),
             ));
         }
         items.extend(disabled_entries(&pid, &entry));
@@ -1066,7 +1077,7 @@ pub async fn net_set(
         .get(&nwid_u)
         .cloned();
     let network = match cfg {
-        Some(c) => to_network_entry(&pid, &c, &nl, conflict, rt.if_name(c.nwid)),
+        Some(c) => to_network_entry(&pid, &c, &nl, conflict, rt.if_name(c.nwid), rt.device_error(c.nwid)),
         None => return Err(internal("network snapshot disappeared".into())),
     };
     Ok(Json(json!({ "network": network })))

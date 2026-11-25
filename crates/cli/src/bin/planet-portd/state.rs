@@ -35,6 +35,11 @@ pub struct PlanetRuntime {
     pub stopping: Arc<AtomicBool>,
     /// nwid → "subnet" | "address"(冲突扫描结果,networks 合成用)
     pub conflicts: Arc<Mutex<HashMap<u64, String>>>,
+    /// nwid → 最近一次设备层错误。sink 在 apply 失败时记录、成功时清除、
+    /// teardown 时清除。网络状态合成用:核心报 OK 但此表非空 → status
+    /// 覆盖为 DEVICE_ERROR——核心状态与本地设备面是两层事实,设备建不起
+    /// 来时数据面全灭而状态层全绿(2026-11-24 feth 断网事故的教训)
+    pub device_errors: Arc<Mutex<HashMap<u64, String>>>,
     /// nwid → NetLocal:registry.net_local 的运行时镜像,sink 在驱动线程
     /// 读它取 route_via_zero_tier,set/join handler 写它(registry 为持久层)。
     /// 选它而非"sink 直接锁 registry":stop 路径持 registry 锁时 sink 若也
@@ -66,6 +71,15 @@ impl PlanetRuntime {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .if_name_of(nwid)
             .map(|s| s.to_string())
+    }
+
+    /// 指定网络最近的设备层错误(无错误/已停 → None)。状态合成用,短锁
+    pub fn device_error(&self, nwid: u64) -> Option<String> {
+        self.device_errors
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&nwid)
+            .cloned()
     }
 
     /// 对端快照(实例已停 → 空)

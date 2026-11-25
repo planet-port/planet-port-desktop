@@ -13,6 +13,8 @@ export default {
     theme: { light: 'Light', dark: 'Dark', system: 'System' },
     accent: 'Accent color', accentCustom: 'Custom', accentDefault: 'Reset to default',
     background: 'Background', bgPick: 'Choose image', bgClear: 'Clear background',
+    installDaemon: 'Install daemon', reinstallDaemon: 'Reinstall daemon',
+    installDone: 'Daemon installed',
   },
   identity: {
     section: 'Node identity',
@@ -105,14 +107,15 @@ export default {
     disabledHint: 'Network disabled (detached, local config kept); re-enable to edit',
     /// Status code map: enums = daemon runtime::status_name full set + local
     /// STOPPED (placeholder entries of non-running planets) + daemon-synthesized
-    /// DISABLED (net_disabled registry placeholder rows). Must not be named
+    /// DISABLED (net_disabled registry placeholder rows) + DEVICE_ERROR (core
+    /// OK but local device-plane failure, no data path). Must not be named
     /// status — a same-named dictionary leaf blocks i18next deep resolution of
     /// statusMap.*, degrading badges to raw codes
     statusMap: {
       OK: 'OK', REQUESTING_CONFIGURATION: 'Requesting config', ACCESS_DENIED: 'Access denied',
       NOT_FOUND: 'Not found', PORT_ERROR: 'Port error', CLIENT_TOO_OLD: 'Client too old',
       AUTHENTICATION_REQUIRED: 'Auth required', STOPPED: 'Stopped',
-      DISABLED: 'Disabled',
+      DISABLED: 'Disabled', DEVICE_ERROR: 'Device error',
     },
   },
   planets: {

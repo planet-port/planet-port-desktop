@@ -73,8 +73,9 @@ export default function Home({ onAddNetwork }: { onAddNetwork?: (planet?: string
   const onToggle = (row: NetworkEntry) => {
     setToggling(`${row.planet}/${row.nwid}`);
     // 开关语义 = 网络启停:disable 脱离但保留配置,enable 恢复;彻底删除
-    // (leave)走详情抽屉「删除网络」;STOPPED 等占位行的开 = 重新 join
-    if (row.status === 'OK') disable.mutate(row);
+    // (leave)走详情抽屉「删除网络」;STOPPED 等占位行的开 = 重新 join。
+    // DEVICE_ERROR 是在网态(核心 OK、本地设备层失败),开关语义同 OK = disable
+    if (row.status === 'OK' || row.status === 'DEVICE_ERROR') disable.mutate(row);
     else if (row.status === 'DISABLED') enable.mutate(row);
     else rejoin.mutate(row);
   };

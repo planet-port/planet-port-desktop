@@ -49,6 +49,8 @@ pub struct DaemonSink {
     net_local: NetLocalCache,
     /// 本网络冲突标记(与 PlanetRuntime.conflicts 同体共享)
     conflicts: Arc<Mutex<HashMap<u64, String>>>,
+    /// 本网络设备层错误(与 PlanetRuntime.device_errors 同体共享)
+    device_errors: Arc<Mutex<HashMap<u64, String>>>,
     /// 全部 planet 的网段快照(冲突扫描数据源)
     net_cache: NetCache,
     /// 构造时的 tokio runtime 句柄:sink 在驱动线程,异步收尾(Fatal 自动
@@ -115,6 +117,8 @@ impl NodeSink for DaemonSink {
         match op {
             NetConfigOp::Down | NetConfigOp::Destroy => {
                 lock(&self.plane).teardown(nwid);
+                // 设备已拆,设备层错误随之消除(网络已不在数据面,状态走核心)
+                lock(&self.device_errors).remove(&nwid);
                 // 设备已拆,feth 登记随之收敛(崩溃孤儿清扫依据,见下)
                 self.sync_iface_registry();
                 let cleared = lock(&self.net_cache).remove(&(self.planet_id.clone(), nwid)).is_some();
@@ -141,6 +145,14 @@ impl NodeSink for DaemonSink {
                     cfg.routes.clear();
                 }
                 let r = lock(&self.plane).apply(&cfg, &self.frame_tx);
+                // 设备层错误入查询面:核心报 OK 但设备没建起来/地址路由没挂上
+                // 时数据面不通,状态不能仍是 OK(2026-11-24 feth 事故的教训)。
+                // 成功即清除旧错误:下一轮 ConfigUpdate 恢复后状态自动翻回 OK
+                if let Err(e) = &r {
+                    lock(&self.device_errors).insert(nwid, e.to_string());
+                } else {
+                    lock(&self.device_errors).remove(&nwid);
+                }
                 // feth 登记落盘必须在崩溃前完成:此刻就把当前设备名快照写进
                 // registry,kill -9 后启动清扫才有依据(见 sync_iface_registry)
                 self.sync_iface_registry();
@@ -496,6 +508,7 @@ pub async fn start_planet(state: &AppState, id: &str) -> Result<(), String> {
     let frame_tx: FrameInTxSlot = Arc::new(OnceLock::new());
     let stopping = Arc::new(AtomicBool::new(false));
     let conflicts = Arc::new(Mutex::new(HashMap::new()));
+    let device_errors = Arc::new(Mutex::new(HashMap::new()));
     // registry.net_local(nwid hex 字符串键)→ 运行时镜像(u64 键);非法键跳过
     let net_local: NetLocalCache = Arc::new(Mutex::new(
         entry
@@ -513,6 +526,7 @@ pub async fn start_planet(state: &AppState, id: &str) -> Result<(), String> {
         frame_tx: Arc::clone(&frame_tx),
         net_local: Arc::clone(&net_local),
         conflicts: Arc::clone(&conflicts),
+        device_errors: Arc::clone(&device_errors),
         net_cache: Arc::clone(&state.net_cache),
         // 当前异步上下文的 runtime 句柄与共享状态:供 sink 在驱动线程发起
         // Fatal 自动收尾与 DNS 应用(见 DaemonSink 字段注释)
@@ -558,6 +572,7 @@ pub async fn start_planet(state: &AppState, id: &str) -> Result<(), String> {
         plane,
         stopping,
         conflicts,
+        device_errors,
         net_local: Arc::clone(&net_local),
     });
     state.planets.lock().unwrap().insert(pid.clone(), Arc::clone(&rt));

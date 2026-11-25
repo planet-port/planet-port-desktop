@@ -25,10 +25,11 @@ const dynamicPrefixes: Record<string, string[]> = {
   // Home/NetworkCard/NetworkDialog: t(`networks.statusMap.${row.status}`)
   // 枚举 = daemon runtime::status_name 全量 + 本地合成 STOPPED(非运行 planet 占位条目)
   // + daemon 合成 DISABLED(net_disabled 注册表占位行,api_net.rs)
+  // + daemon 合成 DEVICE_ERROR(核心 OK 但本地设备层失败,api_net.rs to_network_entry)
   'networks.statusMap': [
     'OK', 'REQUESTING_CONFIGURATION', 'ACCESS_DENIED', 'NOT_FOUND',
     'PORT_ERROR', 'CLIENT_TOO_OLD', 'AUTHENTICATION_REQUIRED', 'STOPPED',
-    'DISABLED',
+    'DISABLED', 'DEVICE_ERROR',
   ],
   'identity.mode': ['shared', 'independent'], // IdentitySection: t(`identity.mode.${m}`)
 };

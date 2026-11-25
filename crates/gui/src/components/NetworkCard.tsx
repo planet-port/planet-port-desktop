@@ -30,19 +30,22 @@ export default function NetworkCard({
   const on = row.status === 'OK';
   /// 连接努力中(enable 后未拿到配置的中间态):青光呼吸 + 开关位 spinner
   const connecting = row.status === 'REQUESTING_CONFIGURATION';
+  /// 设备层失败(daemon 合成:核心 OK 但本地 feth/地址/路由没建起来,数据面
+  /// 不通):黄灯警示不降透明,与 conflict 同色系;详情走诊断面板事件流
+  const deviceError = row.status === 'DEVICE_ERROR';
   return (
     <section
       data-testid="network-card"
       className={`flex flex-col gap-2 rounded-md border border-[var(--border)] bg-[var(--veil)] px-3.5 py-3 transition-[border-color,background-color] duration-[120ms] ease-[ease] hover:border-[var(--border-h)] hover:bg-secondary ${
         pending ? 'cursor-default opacity-70' : 'cursor-pointer'
-      } ${on || connecting ? '' : 'opacity-55'}`}
+      } ${on || connecting || deviceError ? '' : 'opacity-55'}`}
       onClick={() => !pending && onOpen(row)}
     >
       <header className="flex items-center gap-2.5">
         <span
           className={`h-2 w-2 flex-none rounded-[2px] ${
-            row.conflict
-              ? 'bg-[var(--warn)]'
+            row.conflict || deviceError
+              ? 'bg-[var(--warn)] shadow-[0_0_4px_var(--warn)]'
               : on
                 ? 'bg-[var(--lamp)] shadow-[0_0_4px_var(--lamp)]'
                 : connecting
@@ -80,12 +83,12 @@ export default function NetworkCard({
           }`}
           text={pickDisplayAddr(row.assignedAddrs) || '-'}
         />
-        {row.conflict && (
+        {(row.conflict || deviceError) && (
           <span
             className="mt-0.5 inline-flex items-center rounded-full border border-[color:color-mix(in_srgb,var(--warn)_34%,transparent)] px-[9px] py-[3px] font-mono text-xs leading-none text-[var(--warn)]"
-            title={row.conflict}
+            title={row.conflict ?? undefined}
           >
-            {t('networks.conflict')}
+            {row.conflict ? t('networks.conflict') : t('networks.statusMap.DEVICE_ERROR')}
           </span>
         )}
       </div>
