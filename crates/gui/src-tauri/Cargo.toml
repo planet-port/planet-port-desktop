@@ -22,6 +22,8 @@ serde_json.workspace = true
 tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 ureq = "3"
+# 构建时间 epoch → 查看者本地时区格式化(关于页);MIT/Apache-2.0
+chrono = "0.4"
 
 # 保存/选择文件对话框(二维码保存 PNG、planet 导出、身份文件选择)
 tauri-plugin-dialog = "2"

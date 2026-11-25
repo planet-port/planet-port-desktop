@@ -27,10 +27,19 @@ pub struct GuiState {
 
 pub type SharedState = Mutex<GuiState>;
 
-/// 构建时间(build.rs 注入;dev 增量编译沿用上次,打包环境必新鲜)
+/// 构建时间(build.rs 注入 epoch,显示期转查看者本地时区;
+/// dev 增量编译沿用上次,打包环境必新鲜)
 #[tauri::command]
 fn build_time() -> String {
-    env!("PP_BUILD_TIME").to_string()
+    option_env!("PP_BUILD_EPOCH")
+        .and_then(|s| s.parse::<i64>().ok())
+        .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
+        .map(|t| {
+            t.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        })
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn main() {
