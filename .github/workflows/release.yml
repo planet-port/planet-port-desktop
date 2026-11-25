@@ -298,11 +298,19 @@ jobs:
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
 
           # 手工补丁（dist generate 会回退，与上方 token 替换同属人工复查项）：
-          # 变更说明取 git-cliff CHANGELOG（scripts/release.sh 生成）对应版本段落，
-          # 置于 dist 自动生成的安装/下载表格之前；无对应段落时仅用 dist 说明
-          # （精确匹配 `（` 前的完整版本 token，避免 v0.3.6 前缀误中 beta 段落）
+          # 变更说明取 git-cliff CHANGELOG（scripts/release.sh 组件化后按
+          # daemon/cli/gui 分文件生成）对应版本段落，置于 dist 自动生成的
+          # 安装/下载表格之前；无对应段落或文件时仅用 dist 说明
+          # （精确匹配 `（` 前的完整版本 token，避免前缀误中 beta 段落）
+          TAG_PREFIX="${GITHUB_REF_NAME%%/*}"
+          case "$TAG_PREFIX" in
+              planet-portd)    CL="CHANGELOG-daemon.md" ;;
+              planet-port)     CL="CHANGELOG-cli.md" ;;
+              planet-port-gui) CL="CHANGELOG-gui.md" ;;
+              *)               CL="" ;;
+          esac
           TAG="${{ needs.plan.outputs.tag }}"
-          awk -v tag="$TAG" '
+          [ -n "$CL" ] && awk -v tag="$TAG" '
             $1 == "##" {
               v = $2
               sub(/（.*/, "", v)
@@ -310,7 +318,7 @@ jobs:
             }
             insec && $1 == "##" { exit }
             insec { print }
-          ' CHANGELOG.md > "$RUNNER_TEMP/changes.md" || true
+          ' "$CL" > "$RUNNER_TEMP/changes.md" || true
           {
             [ -s "$RUNNER_TEMP/changes.md" ] && cat "$RUNNER_TEMP/changes.md" && echo
             cat "$RUNNER_TEMP/notes.txt"
@@ -318,63 +326,14 @@ jobs:
 
           gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/final-notes.txt" artifacts/*
 
-  publish-homebrew-formula:
-    needs:
-      - plan
-      - host
-    runs-on: "ubuntu-22.04"
-    env:
-      # 推送 tap 用 DIST_RELEASE_TOKEN(对 tap 仓库有写权限);注意:
-      # 本文件由 dist generate 重新生成时会回退为默认 token,届时需人工复查此处两处替换
-      GH_TOKEN: ${{ secrets.DIST_RELEASE_TOKEN }}
-      PLAN: ${{ needs.plan.outputs.val }}
-      GITHUB_USER: "axo bot"
-      GITHUB_EMAIL: "admin+bot@axo.dev"
-    if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: true
-          repository: "planet-port/homebrew-tap"
-          token: ${{ secrets.DIST_RELEASE_TOKEN }}
-      # So we have access to the formula
-      - name: Fetch homebrew formulae
-        uses: actions/download-artifact@v8
-        with:
-          pattern: artifacts-*
-          path: Formula/
-          merge-multiple: true
-      # This is extra complex because you can make your Formula name not match your app name
-      # so we need to find releases with a *.rb file, and publish with that filename.
-      - name: Commit formula files
-        run: |
-          git config --global user.name "${GITHUB_USER}"
-          git config --global user.email "${GITHUB_EMAIL}"
-
-          for release in $(echo "$PLAN" | jq --compact-output '.releases[] | select([.artifacts[] | endswith(".rb")] | any)'); do
-            filename=$(echo "$release" | jq '.artifacts[] | select(endswith(".rb"))' --raw-output)
-            name=$(echo "$filename" | sed "s/\.rb$//")
-            version=$(echo "$release" | jq .app_version --raw-output)
-
-            export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
-            brew update
-            # We avoid reformatting user-provided data such as the app description and homepage.
-            brew style --except-cops FormulaAudit/Homepage,FormulaAudit/Desc,FormulaAuditStrict --fix "Formula/${filename}" || true
-
-            git add "Formula/${filename}"
-            git commit -m "${name} ${version}"
-          done
-          git push
-
   announce:
     needs:
       - plan
       - host
-      - publish-homebrew-formula
     # use "always() && ..." to allow us to wait for all publish jobs while
     # still allowing individual publish jobs to skip themselves (for prereleases).
     # "host" however must run to completion, no skipping allowed!
-    if: ${{ always() && needs.host.result == 'success' && (needs.publish-homebrew-formula.result == 'skipped' || needs.publish-homebrew-formula.result == 'success') }}
+    if: ${{ always() && needs.host.result == 'success' }}
     runs-on: "ubuntu-22.04"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -384,10 +343,101 @@ jobs:
           persist-credentials: false
           submodules: recursive
 
+  # 套装组装：cli 归档注入最新稳定 daemon 后重传；homebrew tap 由本 job 维护
+  # (dist 生成的公式 checksum 不含注入后归档，故 homebrew 发布从 dist 剥离)。
+  # 依赖 host 完成(Release 已建)后才可 clobber 资产;仅 cli tag 触发。
+  suite:
+    if: ${{ !github.event.pull_request && startsWith(github.ref_name, 'planet-port/v') }}
+    needs: host
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Resolve latest daemon release
+        id: daemon
+        run: |
+          # cli 正式版套装取最新稳定 daemon；本次为 prerelease 时放宽到最新(含 beta)
+          if gh release view "${GITHUB_REF_NAME}" --json isPrerelease --jq .isPrerelease | grep -q true; then
+            SEL='.[0]'
+          else
+            SEL='([.[] | select(.prerelease == false)][0])'
+          fi
+          TAG=$(gh api 'repos/${{ github.repository }}/releases?per_page=50' \
+            --jq "[.[] | select(.tag_name | startswith(\"planet-portd/\"))] | ${SEL} | .tag_name // empty")
+          [ -n "$TAG" ] || { echo "未找到 planet-portd release，先发 daemon"; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Assemble suite archives
+        run: |
+          set -euo pipefail
+          DAEMON_TAG="${{ steps.daemon.outputs.tag }}"
+          mkdir -p work && cd work
+          flatten() {
+            # dist 归档带顶层目录(planet-port-<triple>/),剥掉平铺到根部:
+            # homebrew 公式 bin.install 与 install.sh 的根部探测都按平层取
+            local inner
+            inner="$(find "$1" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+            [ -n "$inner" ] && { mv "$inner"/* "$1/" && rmdir "$inner"; }
+            return 0
+          }
+          for T in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            gh release download "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --pattern "planet-port-${T}.tar.xz" --clobber
+            gh release download "$DAEMON_TAG"      --repo "${{ github.repository }}" --pattern "planet-portd-${T}.tar.xz" --clobber
+            mkdir -p cli dm && tar -xJf "planet-port-${T}.tar.xz" -C cli && tar -xJf "planet-portd-${T}.tar.xz" -C dm
+            flatten cli
+            find dm -type f -name 'planet-portd' -exec cp {} cli/ \;
+            OUT="planet-port-${T}.tar.xz"
+            (cd cli && tar -cJf "../$OUT" .)
+            sha256sum "$OUT" > "${OUT}.sha256"
+            gh release upload "$GITHUB_REF_NAME" "$OUT" "${OUT}.sha256" --clobber
+            rm -rf cli dm "$OUT"
+          done
+          # Windows zip：cli zip 注入 daemon.exe
+          gh release download "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --pattern "planet-port-x86_64-pc-windows-msvc.zip" --clobber
+          gh release download "$DAEMON_TAG"      --repo "${{ github.repository }}" --pattern "planet-portd-x86_64-pc-windows-msvc.zip" --clobber
+          mkdir -p cli dm && unzip -q "planet-port-x86_64-pc-windows-msvc.zip" -d cli \
+            && unzip -q "planet-portd-x86_64-pc-windows-msvc.zip" -d dm
+          flatten cli
+          find dm -type f -name 'planet-portd.exe' -exec cp {} cli/ \;
+          OUT="planet-port-x86_64-pc-windows-msvc.zip"
+          # zip 对已存在的归档是"更新合并"不是重建,必须先删掉刚下载的同名
+          # 原始 zip,否则旧嵌套条目全被带进套装包(tar -cJf 截断重建无此问题)
+          rm -f "$OUT"
+          (cd cli && zip -qr "../$OUT" .)
+          sha256sum "$OUT" > "${OUT}.sha256"
+          gh release upload "$GITHUB_REF_NAME" "$OUT" "${OUT}.sha256" --clobber
+      - name: Update homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.DIST_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#planet-port/v}"
+          DAEMON_VER="${{ steps.daemon.outputs.tag }}"
+          DAEMON_VER="${DAEMON_VER#planet-portd/v}"
+          cd work
+          sha() { cat "$1.sha256" | awk '{print $1}'; }
+          # 套装归档含 daemon+cli，tap 版本以 cli 为准
+          export AARCH64_MAC_SHA=$(sha planet-port-aarch64-apple-darwin.tar.xz) \
+                 X64_MAC_SHA=$(sha planet-port-x86_64-apple-darwin.tar.xz) \
+                 X64_LINUX_SHA=$(sha planet-port-x86_64-unknown-linux-gnu.tar.xz) \
+                 ARM64_LINUX_SHA=$(sha planet-port-aarch64-unknown-linux-gnu.tar.xz) \
+                 REPO="${{ github.repository }}" TAG="$GITHUB_REF_NAME"
+          sed -i "s/__VERSION__/$VER/" ../scripts/tap-formula.rb
+          envsubst < ../scripts/tap-formula.rb > planet-port.rb
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/planet-port/homebrew-tap.git" tap
+          cp planet-port.rb tap/Formula/planet-port.rb
+          cd tap && git config user.name "github-actions[bot]" \
+            && git config user.email "41898282+github-actions[bot]@users.noreply.github.com" \
+            && git add Formula/planet-port.rb && git commit -m "planet-port $VER (daemon $DAEMON_VER)" && git push
+
   # GUI(Tauri)桌面安装包 + 免安装包:与 cargo-dist 产物同 tag 发布。
   # 依赖链:host 完成(Release 已建)后才上传;PR 仅 plan 不触发本 job。
+  # gui 包走 dist Library Mode(dist=false 不行,它会连斜杠 tag 的包绑定一起拒绝),
+  # host 只建 Release 不产 gui 二进制,桌面安装包全由本 job 提供。
   gui:
-    if: ${{ !github.event.pull_request }}
+    if: ${{ !github.event.pull_request && startsWith(github.ref_name, 'planet-port-gui/') }}
     needs: host
     strategy:
       fail-fast: false
@@ -422,11 +472,13 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev build-essential file
       # 组包脚本内含:bootstrap(拉 ZT 核心源码)→ daemon/cli 构建 → resources 组装
       # → tauri build(win 走 no-bundle 自组 planet-port-<ver>-x64-portable.zip);
-      # 交叉目标经 TARGET 环境变量传入,daemon/cli 与 GUI 同 target
+      # 交叉目标经 TARGET 环境变量传入,daemon/cli 与 GUI 同 target。
+      # 内嵌二进制默认拉各组件最新 release,须给 gh 登录态(GITHUB_TOKEN)
       - name: Build portable GUI
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/build-gui-portable.sh "${TARGET}"
       - name: Upload bundles to release
         shell: bash

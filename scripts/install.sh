@@ -121,11 +121,17 @@ else
     if [[ -n "${PLANET_PORT_VERSION:-}" ]]; then
         TAG="v${PLANET_PORT_VERSION#v}"
     else
-        TAG="$(fetch 3 -fsSL "$(dl_url "https://api.github.com/repos/${REPO}/releases/latest")" \
-            | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
-        [[ -n "$TAG" ]] || die "获取最新版本失败(仓库可能还没有 Release;GitHub 直连不通时可使用 --proxy 加代理站点下载)"
+        # 组件拆分后 releases/latest 可能落在 daemon/gui 上,改为按
+        # planet-port/v 前缀过滤非 prerelease 的最新一条(无 jq,状态机
+        # 逐对消费 tag_name/prerelease;GitHub API 按 created 倒序返回)
+        TAG="$(fetch 3 -fsSL "$(dl_url "https://api.github.com/repos/${REPO}/releases?per_page=100")" \
+            | grep -o '"tag_name": *"[^"]*"\|"prerelease": *\(true\|false\)' \
+            | awk '/tag_name/ { gsub(/.*"tag_name": *"|"$/, ""); tag=$0; next }
+                   /prerelease/ { pre=$0; sub(/.*"prerelease": */, "", pre);
+                     if (tag ~ /^planet-port\/v/ && pre !~ /true/ && !found) { print tag; found=1 } }')"
+        [[ -n "$TAG" ]] || die "获取最新 cli 版本失败(仓库可能还没有 Release;GitHub 直连不通时可使用 --proxy 加代理站点下载)"
     fi
-    VERSION="${TAG#v}"
+    VERSION="${TAG#planet-port/v}"
     ASSET="planet-port-${TRIPLE}.tar.xz"
     URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
     # 旧命名回退:triple → 手工发版时代的 platform_arch(仅用于 404 后重试)

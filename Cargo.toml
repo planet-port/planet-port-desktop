@@ -13,19 +13,18 @@ description = "Multi-planet ZeroTier client"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# cargo-dist 发布配置：tag push → CI 五目标构建 → GitHub Releases + homebrew tap
+# cargo-dist 发布配置：tag push → CI 五目标构建 → GitHub Releases。
+# homebrew 不在此发布:cli 归档要注入 daemon 形成套装,dist 生成的公式
+# checksum 是注入前归档的,公式改由 release.yml 的 suite job 渲染推送。
 [workspace.metadata.dist]
 cargo-dist-version = "0.34.0"
-allow-dirty = ["ci"]                # release.yml 含手工 token 替换，跳过 CI 再生成比对
+allow-dirty = ["ci"]                # release.yml 含手工补丁，跳过 CI 再生成比对
 # 精确构建(-p planet-port)替代默认 --workspace 全量编译:gui 包在 Linux
 # 容器不可编译(无 webkit2gtk/glib),dist=false 只影响产物规划不影响编译集,
 # 全量模式必挂(v0.5.0-beta.1 两轮实测;cargo-dist#1117 官方解法)
 precise-builds = true
 ci = "github"
-installers = ["homebrew"]
-publish-jobs = ["homebrew"]
-tap = "planet-port/homebrew-tap"
-publish-prereleases = true            # -beta.N tag 也要发 prerelease 并更新 tap
+publish-prereleases = true            # -beta.N tag 也要发 prerelease Release
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin",
            "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
            "x86_64-pc-windows-msvc"]

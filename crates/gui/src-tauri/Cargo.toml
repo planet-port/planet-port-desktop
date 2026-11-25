@@ -5,12 +5,14 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "planet-port 桌面 GUI（Tauri 薄客户端）"
-
 # GUI 不经 cargo-dist 直构:构建链是 pnpm tauri build(前端产物 + bundle),
-# Linux 容器无 webkit2gtk/glib 系统库必挂;dist 按工作区全 dist-able 包规划,
-# v0.4.0 后 gui 入区即被卷入(2026-11-24 v0.5.0-beta.1 实测),显式排除
-[package.metadata.dist]
-dist = false
+# Linux 容器无 webkit2gtk/glib 系统库必挂,v0.4.0 后 gui 入区即被卷入
+# (2026-11-24 v0.5.0-beta.1 实测)。publish=false 使 dist 永远不编译本包;
+# 不能用 [package.metadata.dist] dist=false 表达同一语义——斜杠 tag
+# planet-port-gui/v* 的包绑定依赖 dist 的 Library Mode 放行(仅对
+# 非 dist=false 的包补零产物 Release),dist=false 会连 tag 绑定一起拒绝,
+# plan job 直接挂,gui job 便没有挂载点。
+publish = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

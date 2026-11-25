@@ -2,12 +2,17 @@ name: Release Dispatch
 
 # 网页发版入口：Actions 页 Run workflow 即完成「版本推导（含 beta）→ CHANGELOG →
 # Cargo 版本同步 → 提交 → 打 tag → 推送」全流程，等价于本地 ./scripts/release.sh
-# [beta] + git push --follow-tags。版本推导复用发版脚本本体（macOS runner 原生
-# 满足 BSD sed 与 git-cliff），tag 推送后由 cargo-dist 的 Release 工作流接管
-# （构建/发布/homebrew tap）。
+# <component> [beta] + git push --follow-tags。版本推导复用发版脚本本体（macOS
+# runner 原生满足 BSD sed 与 git-cliff），tag 推送后由 cargo-dist 的 Release
+# 工作流接管（dist 构建/发布；cli 链另有套装组装与 homebrew tap 更新）。
 on:
   workflow_dispatch:
     inputs:
+      component:
+        description: 发布组件
+        type: choice
+        options: [daemon, cli, gui]
+        default: gui
       beta:
         description: 发布 beta 验证版（vX.Y.Z-beta.N，prerelease 形式）
         type: boolean
@@ -43,11 +48,9 @@ jobs:
 
       - name: 执行发版脚本
         run: |
-          if [ "${{ inputs.beta }}" = "true" ]; then
-            ./scripts/release.sh beta
-          else
-            ./scripts/release.sh
-          fi
+          args=("${{ inputs.component }}")
+          [ "${{ inputs.beta }}" = "true" ] && args+=(beta)
+          ./scripts/release.sh "${args[@]}"
 
       - name: 推送发版提交与 tag
         run: git push origin "HEAD:${GITHUB_REF_NAME}" --follow-tags
