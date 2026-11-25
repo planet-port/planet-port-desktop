@@ -36,7 +36,7 @@ REPO="planet-port/planet-port-desktop"
 resolve_latest_tag() { # $1=tag前缀(如 planet-portd/v) $2=allow_prerelease(true/false)
   gh api "repos/${REPO}/releases?per_page=50" --jq \
     "[.[] | select(.tag_name | startswith(\"$1\"))] |
-     (if \"$2\" == \"true\" then .[0] else ([.[] | select(.prerelease == false)][0]) end) |
+     (if \"$2\" == \"true\" then .[0] else ([.[] | select(.draft == false) | select(.prerelease == false)][0]) end) |
      .tag_name // empty"
 }
 
@@ -45,8 +45,19 @@ fetch_assets() { # $1=tag $2=triple $3=bin名(无扩展) → 解出二进制到 
   gh release download "$1" --repo "$REPO" \
     --pattern "planet-port*-${2}.tar.xz" --pattern "planet-port*-${2}.zip" \
     --dir "$RES.dl" --clobber
+  # gh release download 只落盘不解包;pattern 可同时命中两种归档,须全部就地展开
+  local archive
+  for archive in "$RES.dl"/*.tar.xz "$RES.dl"/*.zip; do
+    [ -e "$archive" ] || continue
+    case "$archive" in
+      *.tar.xz) tar -xJf "$archive" -C "$RES.dl" ;;
+      *.zip) unzip -oq "$archive" -d "$RES.dl" ;;
+    esac
+  done
   local bin
-  bin="$(find "$RES.dl" \( -name "$3" -o -name "$3.exe" \) | head -1)"
+  # -type f 排除与二进制同名的顶层目录(否则 find 先命中目录,mv 会搬走整个目录);
+  # -print -quit 取首个命中,避免管道 + pipefail 下 head 提前退出误伤
+  bin="$(find "$RES.dl" -type f \( -name "$3" -o -name "$3.exe" \) -print -quit)"
   [ -n "$bin" ] || { echo "资产中未找到 $3（$1 $2）" >&2; exit 1; }
   mv "$bin" "$RES/"
   chmod +x "$RES/$3" "$RES/$3.exe" 2>/dev/null || true
@@ -67,6 +78,8 @@ if [ "${PLANET_LOCAL_BINS:-}" = "1" ]; then
   fi
   DAEMON_VER="$(awk '/^version = /{gsub(/"/, "", $3); print $3; exit}' "$ROOT/crates/daemon/Cargo.toml")"
   CLI_VER="$(awk '/^version = /{gsub(/"/, "", $3); print $3; exit}' "$ROOT/crates/cli/Cargo.toml")"
+  [ -n "$DAEMON_VER" ] || { echo "无法提取 daemon 版本" >&2; exit 1; }
+  [ -n "$CLI_VER" ] || { echo "无法提取 cli 版本" >&2; exit 1; }
   if [ "$WIN_TARGET" = 1 ]; then
     cp "$BIN/planet-portd.exe" "$BIN/planet-port.exe" "$RES/"
   else
