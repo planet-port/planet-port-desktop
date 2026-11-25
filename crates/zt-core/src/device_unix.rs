@@ -112,6 +112,71 @@ impl FrameInTx {
 /// 设备线程开跑可能更早,首帧前自旋等待一次即可。
 pub type FrameInTxSlot = Arc<OnceLock<FrameInTx>>;
 
+/// feth 内核 MTU 上限的 sysctl 名与目标值。
+/// 上限默认 2048(xnu if_fake.c FETH_MAX_MTU_DEFAULT)且**重启归零**,mtu
+/// 超限的 SIOCSIFMTU 直接 EINVAL,设备层整体建不起来。曾依赖本机官方
+/// zerotier-one 每次启动调到 10000 的残效,其停用后重启即断网。对齐官方
+/// 取值 10000(ZT MacEthernetTap.cpp 同款),daemon 为 root,开机自愈
+#[cfg(target_os = "macos")]
+const FETH_MAX_MTU_SYSCTL: &[u8] = b"net.link.fake.max_mtu\0";
+#[cfg(target_os = "macos")]
+const FETH_MAX_MTU_TARGET: u32 = 10000;
+
+/// 建设备前确保 feth 内核 MTU 上限足够。进程内只尝试一次:成功后跳过;
+/// 失败(非 root 手跑 daemon)缓存错误原样上抛,避免逐次 netconf 重试时
+/// 反复发起 sysctl
+#[cfg(target_os = "macos")]
+fn ensure_feth_max_mtu() -> io::Result<()> {
+    use std::ptr;
+
+    // Some(None) = 已成功,None = 尚未尝试,Some(Some(errno)) = 已失败
+    static ATTEMPTED: OnceLock<Option<Option<i32>>> = OnceLock::new();
+    let cached = ATTEMPTED.get_or_init(|| {
+        unsafe {
+            let mut old: u32 = 0;
+            let mut old_len = std::mem::size_of::<u32>();
+            let r = libc::sysctlbyname(
+                FETH_MAX_MTU_SYSCTL.as_ptr().cast(),
+                (&mut old as *mut u32).cast(),
+                &mut old_len,
+                ptr::null_mut(),
+                0,
+            );
+            if r != 0 {
+                return Some(Some(io::Error::last_os_error().raw_os_error().unwrap_or(0)));
+            }
+            if old >= FETH_MAX_MTU_TARGET {
+                return Some(None);
+            }
+            let new: u32 = FETH_MAX_MTU_TARGET;
+            let r = libc::sysctlbyname(
+                FETH_MAX_MTU_SYSCTL.as_ptr().cast(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                // sysctlbyname 的 newval 形参签名是 *mut(写接口沿用的历史包袱)
+                (&new as *const u32 as *mut u32).cast(),
+                std::mem::size_of::<u32>(),
+            );
+            if r != 0 {
+                return Some(Some(io::Error::last_os_error().raw_os_error().unwrap_or(0)));
+            }
+            eprintln!(
+                "[device] net.link.fake.max_mtu {old} -> {FETH_MAX_MTU_TARGET}"
+            );
+            Some(None)
+        }
+    });
+    match cached {
+        None | Some(None) => Ok(()),
+        Some(Some(errno)) => Err(io::Error::other(format!(
+            "无法调高 {} 至 {FETH_MAX_MTU_TARGET}(errno {errno});\
+             feth 设备 mtu 超过内核默认 2048 会全部创建失败。\
+             生产 daemon 由 launchd 以 root 运行可自愈,手动调试请以 root 运行",
+            String::from_utf8_lossy(FETH_MAX_MTU_SYSCTL).trim_end_matches('\0')
+        ))),
+    }
+}
+
 /// 单网络的 feth L2 设备 + managed 地址/路由应用状态。
 struct NetDevice {
     dev: Arc<SyncDevice>,
@@ -197,6 +262,9 @@ impl DevicePlane {
 
     fn create_device(&mut self, cfg: &NetConfig, frame_tx: &FrameInTxSlot) -> io::Result<NetDevice> {
         let mtu = cfg.mtu.max(1280);
+        // mtu 超过内核默认 2048 时 SIOCSIFMTU 必 EINVAL,先把 sysctl 上限抬起来
+        #[cfg(target_os = "macos")]
+        ensure_feth_max_mtu()?;
         // MAC 必须等于核心分配的虚拟网 MAC,否则内核 ARP/交换行为与核心不一致
         let mac = mac_bytes(cfg.mac);
         // 设备名不指定:内核 SIOCIFCREATE 自动取空闲 feth 单元号,与本机官方
