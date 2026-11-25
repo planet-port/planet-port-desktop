@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { WifiOff } from 'lucide-react';
 import { api } from '../api/client';
 import type { EmbeddedManifest } from '../api/types';
 import CmdBlock from '../components/CmdBlock';
@@ -33,7 +34,8 @@ export default function OfflineGuide({ installed }: { installed: boolean }) {
 
   const manual = (
     <>
-      <h2 className="mb-1 mt-2 text-[15px] font-medium">
+      <h2 className="mb-1.5 flex items-center gap-2 text-[17px] font-semibold">
+        <WifiOff size={17} strokeWidth={1.8} className="flex-none text-[var(--warn)]" aria-hidden="true" />
         {installed ? t('guide.titleInstalled') : t('guide.titleNotInstalled')}
       </h2>
       <p className="text-muted-foreground">{win ? t('guide.windowsNote') : t('guide.unixNote')}</p>
@@ -44,21 +46,29 @@ export default function OfflineGuide({ installed }: { installed: boolean }) {
       <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-x-[18px] gap-y-1">
         <CmdBlock label={t('guide.status')} cmd={`planet-port service status`} />
         <CmdBlock label={t('guide.logs')} cmd={`planet-port service logs`} />
-        <CmdBlock label={t('guide.stop')} cmd={`${sudo}planet-port service stop`} />
       </div>
+      {/* 停止与启动同为全宽:首尾对称,避免 auto-fill 尾行落单的半宽缺口 */}
+      <CmdBlock label={t('guide.stop')} cmd={`${sudo}planet-port service stop`} />
       <p className="text-muted-foreground">{t('guide.retried')}</p>
     </>
   );
 
-  if (!auto || manifest === null)
-    return <div className="max-w-[720px] flex-1 overflow-y-auto" data-testid="offline-guide">{manual}</div>;
-  return (
-    <div className="max-w-[720px] flex-1 overflow-y-auto" data-testid="offline-guide">
+  // 内容垂直居中(my-auto:内容超高时自然退化为顶格滚动),720px 行长上限
+  // 水平居中——引导页内容量少,顶格+左对齐会显得半页空白、提示语像漂着
+  const wrap = (children: React.ReactNode) => (
+    <div className="flex flex-1 flex-col overflow-y-auto" data-testid="offline-guide">
+      <div className="mx-auto my-auto w-full max-w-[720px] px-[18px] py-8">{children}</div>
+    </div>
+  );
+
+  if (!auto || manifest === null) return wrap(manual);
+  return wrap(
+    <>
       <SetupWizard manifest={manifest} installed={installed} sudo={sudo} />
       <details className="mt-2.5">
         <summary className="cursor-pointer text-muted-foreground">{t('guide.manualTitle')}</summary>
         {manual}
       </details>
-    </div>
+    </>,
   );
 }

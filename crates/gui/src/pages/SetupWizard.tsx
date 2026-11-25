@@ -82,7 +82,7 @@ export default function SetupWizard({
   const failKey = FAIL_KEY[reason];
   return (
     <div>
-      <h2 className="mb-1 mt-2 text-[15px] font-medium">{t('guide.autoTitle')}</h2>
+      <h2 className="mb-1.5 text-[17px] font-semibold">{t('guide.autoTitle')}</h2>
       <p className="text-muted-foreground">{t('guide.autoDesc', { version: manifest.version })}</p>
       {phase === 'failed' ? (
         <>
