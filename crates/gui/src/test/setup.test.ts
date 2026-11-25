@@ -48,7 +48,7 @@ describe('versionLt', () => {
 /// 自动安装区显隐判定:无内嵌资源不显示;未装显示;已装但无已装版本号按幂等升级显示;
 /// 已装且有版本号时按 versionLt 判升级
 describe('needInstall', () => {
-  const m = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+  const m = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
 
   it('manifest 为 null(无内嵌资源)不出现自动安装区', () => {
     expect(needInstall(null, false, null)).toBe(false);

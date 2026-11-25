@@ -114,7 +114,7 @@ function DaemonInstallRow({ installed }: { installed: boolean }) {
         ) : phase === 'failed' ? (
           <span className={smallText}>{t('guide.retry')}</span>
         ) : (
-          <span className={smallText}>{manifest.version}</span>
+          <span className={smallText}>{manifest.daemon}</span>
         )
       }
       onClick={phase === 'installing' ? undefined : startInstall}

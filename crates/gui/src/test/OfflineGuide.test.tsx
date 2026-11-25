@@ -27,7 +27,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 /// embedded_manifest 返回值由用例按需指定;start_install 可注入 reject 串(在 invoke 时才构造,
 /// 避免 rejected promise 悬空触发 unhandled rejection)
-let manifest: { version: string; target: string } | null;
+let manifest: { daemon: string; cli: string; target: string } | null;
 let startInstallError: string | null;
 
 function emit(event: string, payload: unknown) {
@@ -67,7 +67,7 @@ describe('OfflineGuide 双态', () => {
   });
 
   it('manifest 有值且未安装:展示自动安装区,按钮文案「立即安装」,手动命令折叠', async () => {
-    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    manifest = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
     const { container } = render(<OfflineGuide installed={false} daemonVersion={null} />);
     const btn = await screen.findByTestId('install-btn');
     expect(btn).toHaveTextContent('立即安装');
@@ -80,7 +80,7 @@ describe('OfflineGuide 双态', () => {
   });
 
   it('已装场景(版本不可得):按钮文案「升级」', async () => {
-    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    manifest = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
     render(<OfflineGuide installed={true} daemonVersion={null} />);
     const btn = await screen.findByTestId('install-btn');
     expect(btn).toHaveTextContent('升级');
@@ -88,7 +88,7 @@ describe('OfflineGuide 双态', () => {
   });
 
   it('已装且版本不低于内嵌:不出自动安装区,维持「已安装」手动引导(直接用)', async () => {
-    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    manifest = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
     const { container } = render(<OfflineGuide installed={true} daemonVersion="0.5.0" />);
     await act(async () => {});
     expect(screen.queryByTestId('install-btn')).not.toBeInTheDocument();
@@ -98,7 +98,7 @@ describe('OfflineGuide 双态', () => {
   });
 
   it('点击安装:乐观置安装态(禁用+spinner 文案)并 invoke start_install', async () => {
-    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    manifest = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
     render(<OfflineGuide installed={false} daemonVersion={null} />);
     const btn = await screen.findByTestId('install-btn');
     fireEvent.click(btn);
@@ -111,7 +111,7 @@ describe('OfflineGuide 双态', () => {
   });
 
   it('start_install 被后端拒绝(embedded resources missing)转 failed 态并展示通用失败文案', async () => {
-    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    manifest = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
     startInstallError = 'embedded resources missing';
     render(<OfflineGuide installed={false} daemonVersion={null} />);
     fireEvent.click(await screen.findByTestId('install-btn'));
@@ -122,7 +122,7 @@ describe('OfflineGuide 双态', () => {
   });
 
   it('install-failed(daemon-timeout):展示超时文案与「重试」按钮,附日志指引', async () => {
-    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    manifest = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
     render(<OfflineGuide installed={false} daemonVersion={null} />);
     fireEvent.click(await screen.findByTestId('install-btn'));
     emit('install-failed', 'daemon-timeout');
@@ -133,7 +133,7 @@ describe('OfflineGuide 双态', () => {
   });
 
   it('install-failed(install-exit-nonzero):展示退出码失败文案', async () => {
-    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    manifest = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
     render(<OfflineGuide installed={false} daemonVersion={null} />);
     fireEvent.click(await screen.findByTestId('install-btn'));
     emit('install-failed', 'install-exit-nonzero');
@@ -141,7 +141,7 @@ describe('OfflineGuide 双态', () => {
   });
 
   it('重试回 idle:安装按钮复现并可再次触发安装', async () => {
-    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    manifest = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
     render(<OfflineGuide installed={false} daemonVersion={null} />);
     fireEvent.click(await screen.findByTestId('install-btn'));
     emit('install-failed', 'install-exit-nonzero');
@@ -154,7 +154,7 @@ describe('OfflineGuide 双态', () => {
   });
 
   it('install-done 维持安装态,等待 daemon-online 事件切页(不闪失败)', async () => {
-    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    manifest = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
     render(<OfflineGuide installed={false} daemonVersion={null} />);
     fireEvent.click(await screen.findByTestId('install-btn'));
     emit('install-done', undefined);
@@ -163,7 +163,7 @@ describe('OfflineGuide 双态', () => {
   });
 
   it('install-done 后 15s 内 daemon-online 未到达:超时转 failed,展示超时文案与重试按钮', async () => {
-    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    manifest = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
     render(<OfflineGuide installed={false} daemonVersion={null} />);
     // 先用真实时钟完成 render/findBy(findBy 依赖定时器轮询),再切 fake timers 推进等待窗口
     fireEvent.click(await screen.findByTestId('install-btn'));
@@ -189,7 +189,7 @@ describe('OfflineGuide 双态', () => {
   });
 
   it('卸载后解除安装事件监听(unlisten 真正执行,不泄漏)', async () => {
-    manifest = { version: '0.5.0', target: 'aarch64-apple-darwin' };
+    manifest = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
     const { unmount } = render(<OfflineGuide installed={false} daemonVersion={null} />);
     await screen.findByTestId('install-btn');
     expect([...listeners.keys()].sort()).toEqual(['install-done', 'install-failed', 'install-progress']);

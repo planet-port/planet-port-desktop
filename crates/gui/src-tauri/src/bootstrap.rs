@@ -1,12 +1,13 @@
-use serde::Deserialize;
 use serde_json::Value;
 use tauri::Manager;
 
-/// 内嵌资源清单(manifest.json 由 Task 4 组包脚本写入 resources/<triple>/)
-#[derive(Debug, PartialEq, Deserialize)]
-struct Manifest {
-    version: String,
-    target: String,
+/// resources/<triple>/manifest.json:记录两个内嵌二进制各自的版本
+/// (组件版本独立后 daemon 与 cli 不同号)与目标 triple
+#[derive(serde::Deserialize, Debug, PartialEq)]
+pub struct EmbeddedManifest {
+    pub daemon: String,
+    pub cli: String,
+    pub target: String,
 }
 
 /// 资源目录定位:bundle 内为 resources/<triple>,dev 下无该目录 → None(前端降级手动引导)
@@ -33,7 +34,7 @@ fn current_triple() -> String {
 }
 
 /// manifest.json 文本 → 结构;缺文件/坏 JSON 一律 None(按"无内嵌资源"处理)
-fn parse_manifest(s: &str) -> Option<Manifest> {
+fn parse_manifest(s: &str) -> Option<EmbeddedManifest> {
     serde_json::from_str(s).ok()
 }
 
@@ -234,7 +235,7 @@ pub fn embedded_manifest(app: tauri::AppHandle) -> Option<Value> {
     let m = parse_manifest(
         &std::fs::read_to_string(resource_dir(&app)?.join("manifest.json")).ok()?,
     )?;
-    Some(serde_json::json!({ "version": m.version, "target": m.target }))
+    Some(serde_json::json!({ "daemon": m.daemon, "cli": m.cli, "target": m.target }))
 }
 
 #[cfg(test)]
@@ -252,12 +253,14 @@ mod tests {
         );
     }
 
-    /// manifest.json 结构契约:仅 version/target 两字段
     #[test]
-    fn parse_manifest_parses_version_and_target() {
-        let m = parse_manifest(r#"{"version":"0.4.1","target":"x86_64-unknown-linux-gnu"}"#)
-            .expect("合法 manifest 应可解析");
-        assert_eq!(m.version, "0.4.1");
+    fn parse_manifest_parses_component_versions() {
+        let m = parse_manifest(
+            r#"{"daemon":"0.5.3","cli":"0.6.0","target":"x86_64-unknown-linux-gnu"}"#,
+        )
+        .unwrap();
+        assert_eq!(m.daemon, "0.5.3");
+        assert_eq!(m.cli, "0.6.0");
         assert_eq!(m.target, "x86_64-unknown-linux-gnu");
     }
 

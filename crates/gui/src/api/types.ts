@@ -96,9 +96,11 @@ export interface DaemonState {
   daemonVersion: string | null;
 }
 
-/// bundle 内嵌安装资源清单(embedded_manifest 返回;dev/未组包时为 null)
+/// bundle 内嵌安装资源清单(embedded_manifest 返回;dev/未组包时为 null)。
+/// daemon/cli 组件独立发版,双版本各自记录
 export interface EmbeddedManifest {
-  version: string;
+  daemon: string;
+  cli: string;
   target: string;
 }
 

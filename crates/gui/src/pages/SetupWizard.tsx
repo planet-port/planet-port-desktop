@@ -83,7 +83,7 @@ export default function SetupWizard({
   return (
     <div>
       <h2 className="mb-1.5 text-[17px] font-semibold">{t('guide.autoTitle')}</h2>
-      <p className="text-muted-foreground">{t('guide.autoDesc', { version: manifest.version })}</p>
+      <p className="text-muted-foreground">{t('guide.autoDesc', { version: manifest.daemon })}</p>
       {phase === 'failed' ? (
         <>
           <div className="text-destructive" data-testid="install-fail">
@@ -117,7 +117,7 @@ export default function SetupWizard({
             {phase === 'installing'
               ? t('guide.installing')
               : installed
-                ? t('guide.upgrade', { version: manifest.version })
+                ? t('guide.upgrade', { version: manifest.daemon })
                 : t('guide.installNow')}
           </Button>
         </p>

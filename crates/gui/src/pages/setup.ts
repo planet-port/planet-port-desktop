@@ -47,12 +47,12 @@ export function versionLt(a: string, b: string): boolean {
 /// - 已装且版本不低于内嵌版本 → 不显示(直接用手动「启动服务」引导)
 /// - 已装且内嵌版本更高才显示升级区
 export function needInstall(
-  manifest: { version: string } | null,
+  manifest: { daemon: string } | null,
   installed: boolean,
   installedVersion: string | null,
 ): boolean {
   if (manifest === null) return false;
   if (!installed) return true;
   if (!installedVersion) return true;
-  return versionLt(installedVersion, manifest.version);
+  return versionLt(installedVersion, manifest.daemon);
 }
