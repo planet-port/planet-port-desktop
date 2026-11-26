@@ -67,7 +67,16 @@ IGNORE_BETA_ARGS=(--ignore-tags "${PKG}/v[0-9].*-beta\.[0-9]+")
 
 # ── 版本推导（内置；scope 归属表见 usage 区注释与 KNOWN_SCOPES）──
 LEVEL="" BAD="" HIT=0
-while IFS= read -r subj; do
+# 一条提交读成一个记录：%s 与 %b 一起取（subject 与 body 用 \x1f 分隔、
+# 记录间用 \x00 分隔）——breaking 有两个合法声明位：subject 尾 ! 与 body
+# 里的 BREAKING CHANGE footer，只取 %s 时后者永远不可见
+while IFS= read -r -d '' rec; do
+    # git 的 --format 按 tformat 语义在每条记录后再补一个换行，read 按记录
+    # 分割后它会出现在下一条记录的头部；subject 不可能以换行开头，剥掉即可
+    # （不剥则从第二条记录起整条记录的 subject 解析全部带前导换行而失真）
+    rec="${rec#$'\n'}"
+    subj="${rec%%$'\x1f'*}"
+    body="${rec#*$'\x1f'}"
     [ -n "$subj" ] || continue
     # breaking 只认冒号前 type token 尾部的 !（fix!: / feat(x)!:），
     # subject 正文含 ! 不算；! 先归一掉再入 case，否则 feat!: 这类
@@ -75,6 +84,12 @@ while IFS= read -r subj; do
     type="${subj%%:*}"
     breaking=0; [[ "$type" == *'!' ]] && { breaking=1; type="${type%!}"; }
     type="${type%%(*}"
+    # Conventional Commits 的 footer 形式（body 行首 BREAKING CHANGE: /
+    # BREAKING-CHANGE:）同样声明破坏变更；不认它会把这类提交推成 minor，
+    # 而 cliff 侧 protect_breaking_commits 已按 breaking 渲染（major 保护），
+    # 推导与组件日志两侧失真（口径对齐 git-cliff，两种 footer 拼写都认）
+    [[ "$body" == "BREAKING CHANGE:"* || "$body" == *$'\n'"BREAKING CHANGE:"* \
+        || "$body" == "BREAKING-CHANGE:"* || "$body" == *$'\n'"BREAKING-CHANGE:"* ]] && breaking=1
     scope=""; [[ "$subj" == *"("*")"* ]] && { scope="${subj#*(}"; scope="${scope%%)*}"; }
     case "$type" in
         feat|fix|perf|revert)
@@ -98,7 +113,7 @@ while IFS= read -r subj; do
             fi
             ;;
     esac
-done < <(git log --format='%s' "$RANGE")
+done < <(git log --format='%s%x1f%b%x00' "$RANGE")
 
 if [ -n "$BAD" ]; then
     echo "错误：以下版本级提交的 scope 无法归属（合法值：${KNOWN_SCOPES} 中的 ${SCOPES} 归 ${COMP}），请拆分提交或修正 scope：" >&2
