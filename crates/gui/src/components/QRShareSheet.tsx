@@ -117,7 +117,7 @@ export default function QRShareSheet({
               )}
               {frames.length === 1 && (onCopy || onSave) && (
                 <div className="mt-4 flex justify-center gap-2">
-                  {onCopy && <Button onClick={onCopy}>{t('guide.copy')}</Button>}
+                  {onCopy && <Button onClick={onCopy}>{t('common.copy')}</Button>}
                   {onSave && <Button variant="primary" onClick={() => onSave(urls[0])}>{t('qrtransfer.savePng')}</Button>}
                 </div>
               )}

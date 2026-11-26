@@ -5,7 +5,7 @@ export default {
     saved: '已保存', empty: '暂无数据', close: '关闭', notSet: '未设置',
     loadError: '加载失败',
     authError: '鉴权失败：token 与 daemon 不匹配，请检查 PLANET_PORT_TOKEN 或重装服务',
-    done: '完成', import: '导入',
+    done: '完成', import: '导入', copy: '复制', copied: '已复制',
   },
   icon: { title: '选择图标', graphic: '图形', color: '底色', randomColor: '随机底色' },
   settings: {
@@ -15,6 +15,12 @@ export default {
     background: '背景', bgPick: '选择图片', bgClear: '清除背景',
     installDaemon: '安装 daemon', reinstallDaemon: '重新安装 daemon',
     installDone: 'daemon 安装完成',
+    /// 原离线引导页 guide.* 复用键(安装/重装失败提示与重试)
+    failExit: '安装程序退出码非零，请查看日志后重试。',
+    failTimeout: '安装已完成但服务未在预期时间内上线，请查看日志后重试。',
+    failGeneric: '安装启动失败',
+    retry: '重试',
+    installing: '正在安装，请留意系统提权弹窗…',
   },
   identity: {
     section: '节点身份',
@@ -36,6 +42,8 @@ export default {
     addNetwork: '添加网络', addPlanet: '添加行星',
     addCard: '添加网络',
     thisMachine: '本机', commands: '命令', cmdNote: '在终端中执行',
+    /// 服务命令速查标签(本机工具带,原 guide.* 键)
+    status: '查看状态', logs: '查看日志', start: '启动服务', stop: '停止服务',
     identity: '身份', version: '版本', port: '端口',
     sbPlanets: '{{count}} 个行星', sbNetworks: '{{count}} 个网络', sbOnline: '{{count}} 个在线',
     /// 英文复数 _one/_other 的 zh 镜像键:保持 zh/en 扁平键集合契约测试成立
@@ -140,26 +148,6 @@ export default {
     planet: 'Planet', address: '地址', role: '角色', version: '版本', latency: '延迟', path: '通道',
     relay: '中继',
     empty: '暂无节点',
-  },
-  guide: {
-    titleInstalled: 'daemon 已安装但未运行',
-    titleNotInstalled: '未检测到 planet-port daemon',
-    hintNotInstalled: '在终端执行以下命令完成安装（需管理员权限）：',
-    start: '启动服务', stop: '停止服务', status: '查看状态', logs: '查看日志',
-    copy: '复制', copied: '已复制',
-    windowsNote: '在管理员 PowerShell 中执行（右键开始菜单 → 终端(管理员)）',
-    unixNote: '在终端中执行',
-    retried: '启动后此处将自动恢复',
-    autoTitle: '自动安装',
-    autoDesc: '本应用已内置 planet-port {{version}} 安装资源，可一键完成安装（需管理员权限）。',
-    installNow: '立即安装',
-    upgrade: '升级到 {{version}}',
-    installing: '正在安装，请留意系统提权弹窗…',
-    failExit: '安装程序退出码非零，请查看日志后重试。',
-    failTimeout: '安装已完成但服务未在预期时间内上线，请查看日志后重试。',
-    failGeneric: '安装启动失败',
-    retry: '重试',
-    manualTitle: '手动安装命令',
   },
   qrtransfer: {
     tooLarge: '内容过大，无法生成二维码，请改用文件分享',

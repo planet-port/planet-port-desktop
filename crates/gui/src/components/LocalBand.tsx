@@ -27,7 +27,7 @@ function CopyBtn({ cmd }: { cmd: string }) {
           .catch(() => {}); // 剪贴板权限被拒时静默,不打断
       }}
     >
-      {copied ? t('guide.copied') : t('guide.copy')}
+      {copied ? t('common.copied') : t('common.copy')}
     </Button>
   );
 }
@@ -48,10 +48,10 @@ export default function LocalBand() {
   const planets = status.data?.planets ?? [];
   const port = planets.find(p => p.enabled && p.status === 'running')?.port ?? planets[0]?.port;
   const cmds = [
-    { label: t('guide.status'), cmd: 'planet-port service status' },
-    { label: t('guide.logs'), cmd: 'planet-port service logs' },
-    { label: t('guide.start'), cmd: `${sudo}planet-port service start` },
-    { label: t('guide.stop'), cmd: `${sudo}planet-port service stop` },
+    { label: t('home.status'), cmd: 'planet-port service status' },
+    { label: t('home.logs'), cmd: 'planet-port service logs' },
+    { label: t('home.start'), cmd: `${sudo}planet-port service start` },
+    { label: t('home.stop'), cmd: `${sudo}planet-port service stop` },
   ];
   const mode = identity.data?.mode;
 

@@ -10,7 +10,6 @@ import SettingsDrawer from './components/SettingsDrawer';
 import Statusbar from './components/Statusbar';
 import { useToast } from './components/Toaster';
 import Home from './pages/Home';
-import OfflineGuide from './pages/OfflineGuide';
 import { detectOs } from './platform';
 import { cn } from '@/lib/utils';
 
@@ -26,19 +25,13 @@ export default function App() {
   const { t } = useTranslation();
   const toast = useToast();
   const [online, setOnline] = useState(false);
-  const [installed, setInstalled] = useState(true);
-  const [daemonVersion, setDaemonVersion] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<DrawerState>({ kind: 'none' });
   /// macOS 红绿灯悬浮于 webview(Overlay 标题栏),顶栏需留出左侧灯位;
   /// Windows/Linux 保持原生标题栏,不加留位
   const mac = useMemo(() => detectOs() === 'macos', []);
 
   useEffect(() => {
-    void api.daemonState().then(s => {
-      setOnline(s.online);
-      setInstalled(s.installed);
-      setDaemonVersion(s.daemonVersion);
-    });
+    void api.daemonState().then(s => setOnline(s.online));
     const unsubs = [
       listen('daemon-online', () => setOnline(true)),
       listen('daemon-offline', () => setOnline(false)),
@@ -59,11 +52,10 @@ export default function App() {
   return (
     <div className="flex h-screen flex-col">
       {/* 标题栏(方案 C 布局):[灯位留白] logo · 应用名 │ daemon 状态 …… 动作组。
-          在线/离线引导两分支共用——引导页此前整页裸奔:无品牌层、无拖拽区、
-          mac 红绿灯悬浮叠在内容上。非交互子元素同样标注 drag-region ——
-          Tauri 只认 mousedown 目标元素。动作组仅在在线分支显示(设置/添加
-          行星都依赖 daemon);旧 .topbar 系规则对译:52px 恒定高与 --bg 同底
-          + hairline 下边、mac 96px 灯位、动作钮透明底 hover 显面 */}
+          在线/离线两态共用——首页离线只禁用不换屏。非交互子元素同样标注
+          drag-region —— Tauri 只认 mousedown 目标元素。添加行星离线禁用;
+          设置常显(安装入口在其中);旧 .topbar 系规则对译:52px 恒定高与
+          --bg 同底 + hairline 下边、mac 96px 灯位、动作钮透明底 hover 显面 */}
       <header
         className={cn(
           'flex h-[52px] shrink-0 items-center justify-start gap-2.5 border-b border-[var(--border-soft)] bg-background pr-3.5 pl-5 text-muted-foreground',
@@ -85,41 +77,35 @@ export default function App() {
           {online ? t('daemon.online') : t('daemon.offline')}
         </span>
         <span className="flex-[1_1_auto]" data-tauri-drag-region />
-        {online && (
-          <>
-            <button
-              className="inline-flex min-h-7 cursor-pointer items-center gap-1.5 rounded-[6px] border-none bg-transparent px-2.5 text-[13px] text-muted-foreground transition-[background-color,color] duration-[120ms] ease-[ease] enabled:hover:bg-card enabled:hover:text-foreground focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1"
-              data-testid="topbar-add-planet"
-              onClick={() => setDrawer({ kind: 'addPlanet' })}
-            >
-              {t('home.addPlanet')}
-            </button>
-            <button
-              className="inline-flex min-h-7 min-w-7 cursor-pointer items-center justify-center rounded-[6px] border-none bg-transparent p-0 text-muted-foreground transition-[background-color,color] duration-[120ms] ease-[ease] enabled:hover:bg-card enabled:hover:text-foreground focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1"
-              data-testid="topbar-settings"
-              aria-label={t('settings.title')}
-              onClick={() => setDrawer({ kind: 'settings' })}
-            >
-              <Settings size={14} strokeWidth={1.6} aria-hidden="true" />
-            </button>
-          </>
-        )}
+        <button
+          className="inline-flex min-h-7 cursor-pointer items-center gap-1.5 rounded-[6px] border-none bg-transparent px-2.5 text-[13px] text-muted-foreground transition-[background-color,color] duration-[120ms] ease-[ease] disabled:cursor-default disabled:opacity-70 enabled:hover:bg-card enabled:hover:text-foreground focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1"
+          data-testid="topbar-add-planet"
+          disabled={!online}
+          onClick={() => setDrawer({ kind: 'addPlanet' })}
+        >
+          {t('home.addPlanet')}
+        </button>
+        <button
+          className="inline-flex min-h-7 min-w-7 cursor-pointer items-center justify-center rounded-[6px] border-none bg-transparent p-0 text-muted-foreground transition-[background-color,color] duration-[120ms] ease-[ease] enabled:hover:bg-card enabled:hover:text-foreground focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-1"
+          data-testid="topbar-settings"
+          aria-label={t('settings.title')}
+          onClick={() => setDrawer({ kind: 'settings' })}
+        >
+          <Settings size={14} strokeWidth={1.6} aria-hidden="true" />
+        </button>
       </header>
-      {!online ? (
-        <OfflineGuide installed={installed} daemonVersion={daemonVersion} />
-      ) : (
-        <main className="flex min-w-0 flex-1 flex-col">
-          <Home onAddNetwork={planet => setDrawer({ kind: 'addNet', planet })} />
-          <Statusbar />
-        </main>
-      )}
+      <main className="flex min-w-0 flex-1 flex-col">
+        <Home online={online} onAddNetwork={planet => setDrawer({ kind: 'addNet', planet })} />
+        <Statusbar />
+      </main>
       {/* 三个抽屉均为瞬时型:内部自持 open 走滑出动画,关动画结束才回调
-          onClose 清 drawer 状态,故这里条件渲染保持不变 */}
+          onClose 清 drawer 状态,故这里条件渲染保持不变;settings 离线也可开
+          (安装能力在内),addNet/addPlanet 依赖 daemon 在线 */}
       {online && drawer.kind === 'addNet' && (
         <AddNetworkDrawer defaultPlanet={drawer.planet} onClose={() => setDrawer({ kind: 'none' })} />
       )}
       {online && drawer.kind === 'addPlanet' && <AddPlanetDrawer onClose={() => setDrawer({ kind: 'none' })} />}
-      {online && drawer.kind === 'settings' && <SettingsDrawer onClose={() => setDrawer({ kind: 'none' })} />}
+      {drawer.kind === 'settings' && <SettingsDrawer onClose={() => setDrawer({ kind: 'none' })} />}
     </div>
   );
 }

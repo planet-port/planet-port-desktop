@@ -50,7 +50,7 @@
   --knob-on: #0c0e11;
 }
 * { box-sizing: border-box; }
-/* 视口锁死:滚动只发生在页面内容区(Home/OfflineGuide 各自的内容容器),
+/* 视口锁死:滚动只发生在页面内容区(Home 的内容容器),
    顶栏/状态栏恒定在位;同时切断 WKWebView 整页(body 级)滚动与弹性滚动带来的跟随位移 */
 html, body, #root { height: 100%; overflow: hidden; }
 body {

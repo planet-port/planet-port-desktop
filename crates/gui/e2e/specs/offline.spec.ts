@@ -1,8 +1,8 @@
 import { daemonUp } from '../helpers';
 
-// daemon 不可达环境的离线引导面(CI 默认路径)。daemon 在跑则整组 skip
-// ——skip 不是失败,同一套代码在实机(online)环境不误报
-describe('offline guide', () => {
+// daemon 不可达环境的离线形态(CI 默认路径):首页常驻只禁用,不再有引导页。
+// daemon 在跑则整组 skip——skip 不是失败,同一套代码在实机(online)环境不误报
+describe('offline', () => {
   before(async function (this: Mocha.Context) {
     if (await daemonUp()) this.skip();
   });
@@ -12,21 +12,27 @@ describe('offline guide', () => {
     expect(title).toBe('Planet Port');
   });
 
-  it('离线引导页可见(OfflineGuide 根节点)', async () => {
-    // OfflineGuide 根节点 data-testid=offline-guide(批 E 锚点对齐:旧 .guide
-    // 语义类已随批 C Tailwind 化移除);给心跳首探(3s 周期)离线确认留余量
-    await browser.$('[data-testid="offline-guide"]').waitForDisplayed({ timeout: 20000 });
+  it('首页常驻:顶栏设置可见,添加行星禁用(不再整页替换为引导页)', async () => {
+    // 设置常显(安装入口在内);添加行星依赖 daemon,离线禁用。
+    // 给心跳首探(3s 周期)离线确认留余量
+    await browser.$('[data-testid="topbar-settings"]').waitForDisplayed({ timeout: 20000 });
+    await expect(browser.$('[data-testid="topbar-add-planet"]')).not.toBeEnabled();
   });
 
-  it('无内嵌资源时降级手动引导(不出现自动安装按钮)', async () => {
+  it('离线仍可开设置抽屉;无内嵌资源时无安装入口', async () => {
     // CI 走 --no-bundle 且无 resources 目录 → embedded_manifest 返回 null →
-    // OfflineGuide 退回纯手动引导,不挂载 SetupWizard,install-btn 不应存在
-    await expect(browser.$('[data-testid="install-btn"]')).not.toBeDisplayed();
+    // 安装行(DaemonInstallRow)不渲染,离线也没有引导页兜底安装
+    await browser.$('[data-testid="topbar-settings"]').click();
+    await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ timeout: 5000 });
+    await expect(browser.$('[data-testid="settings-install-daemon"]')).not.toBeDisplayed();
+    // 关抽屉还原环境:mask 覆盖全屏,不关会拦住后续用例的顶栏点击
+    await browser.$('[data-slot="sheet-overlay"]').click();
+    await browser.$('[data-testid="settings-drawer"]').waitForDisplayed({ reverse: true });
   });
 });
 
-// 设置抽屉冒烟:抽屉只在 daemon 在线(App online 态)时挂载,与上方离线引导组
-// 互斥——本组 daemon 不可达时整组 skip(skip 不算失败,实机路径才真正执行)
+// 设置抽屉冒烟:语言/主题属在线实机路径(与上方离线组按 daemon 状态互斥,
+// skip 不算失败);抽屉本身离线也可挂载,安装能力在内
 describe('settings drawer', () => {
   before(async function (this: Mocha.Context) {
     if (!(await daemonUp())) this.skip();

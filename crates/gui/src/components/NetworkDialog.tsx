@@ -237,7 +237,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
           data={qrData}
           onCopy={() => {
             void navigator.clipboard.writeText(row.nwid);
-            toast.ok(t('guide.copied'));
+            toast.ok(t('common.copied'));
           }}
           onDismiss={() => setShowQR(false)}
           onSave={async dataUrl => {

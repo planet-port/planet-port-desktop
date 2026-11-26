@@ -42,8 +42,8 @@ export default function CopyableValue({
         className,
       )}
       onClick={copy}
-      aria-label={t('guide.copy')}
-      title={title ?? (isPlaceholder ? undefined : t('guide.copy'))}
+      aria-label={t('common.copy')}
+      title={title ?? (isPlaceholder ? undefined : t('common.copy'))}
     >
       <span className="min-w-0 break-all text-right font-mono">{text}</span>
       {(!isPlaceholder || copied) && copied ? (

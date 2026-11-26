@@ -8,7 +8,8 @@ import { pickDisplayAddr } from '../lib/addr';
 /// 切换禁用/启用(OK↔DISABLED,占位行=join)。泊位灯=网络级状态(在线青光/
 /// 连接中青光呼吸/断开灰/冲突黄)。断开只是不连接、非禁用,卡面与名称一律
 /// 不降透明不弱化,状态语义全由灯与开关承载(2026-11-26 口径)。
-/// pending 期开关换 spinner 并整卡禁点(防抖动)。
+/// pending/离线 disabled 期整卡禁点(pending 防抖动;disabled 降透明属真禁用,
+/// 与「断开态不置灰」口径不冲突——断开仍在运行只是没连)。
 /// IP 行为可复制值(小号图标);状态文字不展示,灯已承载。
 /// IP 只显示一个(IPv4 优先),复制与显示一致(2026-11-24 口径)。
 /// 旧 .netcard 系规则对译:veil 卡面 + hairline 边 + --radius 圆角,hover 抬
@@ -18,11 +19,13 @@ import { pickDisplayAddr } from '../lib/addr';
 export default function NetworkCard({
   row,
   pending,
+  disabled,
   onOpen,
   onToggle,
 }: {
   row: NetworkEntry;
   pending: boolean;
+  disabled?: boolean;
   onOpen: (row: NetworkEntry) => void;
   onToggle: (row: NetworkEntry) => void;
 }) {
@@ -37,9 +40,9 @@ export default function NetworkCard({
     <section
       data-testid="network-card"
       className={`flex flex-col gap-2 rounded-md border border-[var(--border)] bg-[var(--veil)] px-3.5 py-3 transition-[border-color,background-color] duration-[120ms] ease-[ease] hover:border-[var(--border-h)] hover:bg-secondary ${
-        pending ? 'cursor-default opacity-70' : 'cursor-pointer'
+        pending || disabled ? 'cursor-default opacity-70' : 'cursor-pointer'
       }`}
-      onClick={() => !pending && onOpen(row)}
+      onClick={() => !pending && !disabled && onOpen(row)}
     >
       <header className="flex items-center gap-2.5">
         <span
@@ -64,8 +67,14 @@ export default function NetworkCard({
           />
         ) : (
           // 卡头开关:stopPropagation 挡住卡面 onClick 进详情;Radix 点击仍会
-          // 内部翻转并回调 onCheckedChange,业务回调保持传 row 的原签名
-          <Switch checked={on} onCheckedChange={() => onToggle(row)} onClick={e => e.stopPropagation()} />
+          // 内部翻转并回调 onCheckedChange,业务回调保持传 row 的原签名;
+          // disabled 期 Radix 原生拦截,防御挡外部程序化触发
+          <Switch
+            checked={on}
+            disabled={disabled}
+            onCheckedChange={() => !disabled && onToggle(row)}
+            onClick={e => e.stopPropagation()}
+          />
         )}
       </header>
       <div className="flex flex-col items-start gap-[3px]">

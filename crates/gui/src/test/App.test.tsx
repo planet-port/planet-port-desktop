@@ -31,6 +31,19 @@ vi.mock('@tauri-apps/api/event', () => ({
 /// get_daemon_state 的返回由用例按需指定；其余命令给页面级查询兜底数据
 let daemonState: { online: boolean; installed: boolean; daemonVersion: string | null };
 
+/// 一行星一网络的最小页面数据:供离线常驻断言(列表区不消失)使用
+const planet = {
+  id: 'p1', name: '默认行星', icon: '', color: '#0ea5e9', type: 'official', status: 'running',
+  enabled: true, online: true, nodeId: null, coreVersion: null, latencyMs: null,
+  networkCount: 1, port: 9993, transport: null, tcpFallbackRelay: null,
+};
+const network = {
+  planet: 'p1', nwid: '9536600adcf2b350', name: '测试网', status: 'OK', conflict: null,
+  type: 'PUBLIC', mac: 'aa:bb:cc:dd:ee:ff', interface: 'feth0', mtu: 2800,
+  assignedAddrs: ['10.0.0.1'], managedRoutes: [], dnsServers: [],
+  routeViaZeroTier: false, routeViaLocked: false, dnsMode: 'none', customDns: [],
+};
+
 function emit(event: string, payload: unknown) {
   act(() => {
     for (const cb of listeners.get(event) ?? []) cb({ payload });
@@ -94,18 +107,39 @@ describe('App 单页布局', () => {
 
   it('顶栏按钮:添加行星/设置各开对应抽屉,同一时刻仅一个(添加网络入口在首页空卡)', async () => {
     renderApp();
-    fireEvent.click(await screen.findByText('添加行星'));
+    const addBtn = await screen.findByTestId('topbar-add-planet');
+    expect(addBtn).not.toBeDisabled();
+    fireEvent.click(addBtn);
     expect(screen.getByTestId('add-planet-drawer')).toBeInTheDocument();
+    expect(screen.getByTestId('topbar-settings')).not.toBeDisabled();
     fireEvent.click(screen.getByLabelText('设置'));
     expect(screen.queryByTestId('add-planet-drawer')).not.toBeInTheDocument();
     expect(screen.getByTestId('settings-drawer')).toBeInTheDocument();
   });
 
-  it('daemon-offline 事件切换离线引导', async () => {
+  it('daemon-offline 后首页常驻:网络列表仍在、控制组件禁用,设置仍可开抽屉', async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case 'get_daemon_state':
+          return Promise.resolve(daemonState);
+        case 'get_status':
+          return Promise.resolve({ planets: [planet] });
+        case 'get_networks':
+          return Promise.resolve({ networks: [network] });
+        default:
+          return Promise.resolve(null);
+      }
+    });
     renderApp();
-    await screen.findAllByText('daemon 在线');
+    expect(await screen.findByTestId('network-card')).toBeInTheDocument();
     emit('daemon-offline', undefined);
-    expect(await screen.findByText('daemon 已安装但未运行')).toBeInTheDocument();
+    // 整页替换改为常驻:网络列表区不消失,卡片开关禁用(Radix disabled)
+    expect(screen.getByTestId('network-card')).toBeInTheDocument();
+    expect(screen.getByRole('switch')).toBeDisabled();
+    expect(screen.getByTestId('topbar-add-planet')).toBeDisabled();
+    // 设置常显:离线仍可打开抽屉(安装能力在内)
+    fireEvent.click(screen.getByTestId('topbar-settings'));
+    expect(await screen.findByTestId('settings-drawer')).toBeInTheDocument();
   });
 
   it('tray-error 弹错误 toast', async () => {

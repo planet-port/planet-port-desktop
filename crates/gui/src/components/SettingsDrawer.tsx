@@ -48,16 +48,16 @@ function ValueRow({
   );
 }
 
-/// 安装失败 reason → i18n key(与 SetupWizard 同表;其余 reject 串走 failGeneric)
+/// 安装失败 reason → i18n key(其余 reject 串走 failGeneric)
 const INSTALL_FAIL_KEY: Record<string, string> = {
-  'install-exit-nonzero': 'guide.failExit',
-  'daemon-timeout': 'guide.failTimeout',
+  'install-exit-nonzero': 'settings.failExit',
+  'daemon-timeout': 'settings.failTimeout',
 };
 
 /// daemon 安装行(关于组):bundle 内嵌资源时显示,一键安装/重装;无资源
-/// (dev/未组包)不渲染。安装走离线引导 SetupWizard 同款事件流(install-
-/// progress/done/failed)与 Rust in-flight 位,两入口不会并发提权。在线重装
-/// 会重启 daemon:主界面可能短暂切到离线引导页,daemon 上线后心跳自动恢复
+/// (dev/未组包)不渲染。安装走 install-progress/done/failed 事件流与 Rust
+/// in-flight 位,两入口不会并发提权。在线重装会重启 daemon:界面短暂离线,
+/// 首页只禁用不换屏,daemon 上线后心跳自动恢复
 function DaemonInstallRow({ installed }: { installed: boolean }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -68,8 +68,7 @@ function DaemonInstallRow({ installed }: { installed: boolean }) {
     void api.embeddedManifest().then(setManifest).catch(() => {});
     const unsubs = [
       listen('install-progress', () => setPhase('installing')),
-      // done 时 daemon 端口已通(bootstrap 已 wait_port),心跳 ≤3s 恢复在线;
-      // 若界面此刻已切离线引导页,本组件随之卸载,反馈由引导页接管
+      // done 时 daemon 端口已通(bootstrap 已 wait_port),心跳 ≤3s 恢复在线
       listen('install-done', () => {
         setPhase('idle');
         toast.ok(t('settings.installDone'));
@@ -77,7 +76,7 @@ function DaemonInstallRow({ installed }: { installed: boolean }) {
       listen<string>('install-failed', e => {
         const key = INSTALL_FAIL_KEY[String(e.payload)];
         setPhase('failed');
-        toast.error(key ? t(key) : t('guide.failGeneric'));
+        toast.error(key ? t(key) : t('settings.failGeneric'));
       }),
     ].map(p => p.then(f => f));
     // 每个 unlisten 必须真正执行,否则重复挂载后监听泄漏
@@ -97,7 +96,7 @@ function DaemonInstallRow({ installed }: { installed: boolean }) {
         if (msg.includes('already in progress')) return;
         // 提权前失败(缺资源/拷贝 staging)走 invoke rejection,事件不会来
         setPhase('failed');
-        toast.error(t('guide.failGeneric'));
+        toast.error(t('settings.failGeneric'));
       });
   };
   return (
@@ -112,7 +111,7 @@ function DaemonInstallRow({ installed }: { installed: boolean }) {
             aria-label="installing"
           />
         ) : phase === 'failed' ? (
-          <span className={smallText}>{t('guide.retry')}</span>
+          <span className={smallText}>{t('settings.retry')}</span>
         ) : (
           <span className={smallText}>{manifest.daemon}</span>
         )

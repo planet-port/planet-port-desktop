@@ -16,10 +16,12 @@ import { useToast } from '../components/Toaster';
 /// 单页首页:行星分组头(状态/传输/计数) + 网络卡片网格(方案C卡片,泊位灯)。
 /// 加入入口 = 卡片网格尾的空卡(点击开「添加网络」抽屉并预选本行星,顶栏按钮已移除);
 /// 卡片开关 = 禁用/启用(脱离保留配置/恢复),彻底删除走详情抽屉。
+/// daemon 离线时页面常驻,行星/网络控制组件整组禁用(online=false),列表
+/// 数据来自 react-query 缓存仍可见。
 /// 旧 .page/.pgroup 系/.netcards/.netcard.add 规则对译:页面区 16/18px 留白自滚、
 /// 分组头 32px、网格 240px auto-fill、空卡虚线边 + 主色加号 + hover 主色描边
 /// 与 80% 透明 veil 底
-export default function Home({ onAddNetwork }: { onAddNetwork?: (planet?: string) => void }) {
+export default function Home({ online = true, onAddNetwork }: { online?: boolean; onAddNetwork?: (planet?: string) => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const toast = useToast();
@@ -82,7 +84,7 @@ export default function Home({ onAddNetwork }: { onAddNetwork?: (planet?: string
 
   return (
     <div className="flex-1 overflow-y-auto px-[18px] py-4">
-      {status.isError ? (
+      {status.isError && !status.data ? (
         <QueryError error={status.error} />
       ) : planets.length === 0 ? (
         <div className="py-12 text-center text-muted-foreground">{t('home.emptyNoPlanet')}</div>
@@ -114,6 +116,7 @@ export default function Home({ onAddNetwork }: { onAddNetwork?: (planet?: string
                 <Button
                   variant="icon"
                   aria-label={t('planet.settingsTitle', { name: p.name })}
+                  disabled={!online}
                   onClick={() => setEditPlanet(p)}
                 >
                   <Settings size={14} strokeWidth={1.6} aria-hidden="true" />
@@ -125,13 +128,21 @@ export default function Home({ onAddNetwork }: { onAddNetwork?: (planet?: string
               )}
               <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2.5">
                 {mine.map(r => (
-                  <NetworkCard key={`${r.planet}/${r.nwid}`} row={r} pending={toggling === `${r.planet}/${r.nwid}`} onOpen={setEditing} onToggle={onToggle} />
+                  <NetworkCard
+                    key={`${r.planet}/${r.nwid}`}
+                    row={r}
+                    pending={toggling === `${r.planet}/${r.nwid}`}
+                    disabled={!online}
+                    onOpen={setEditing}
+                    onToggle={onToggle}
+                  />
                 ))}
                 {/* 空卡 = 添加网络入口(禁用分组不显示:行星已停,加入无意义) */}
                 {p.enabled && (
                   <button
-                    className="flex min-h-24 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-[var(--border-h)] bg-transparent px-3.5 py-3 font-medium text-muted-foreground transition-[border-color,background-color,color] duration-[120ms] ease-[ease] hover:border-primary hover:bg-[color:color-mix(in_srgb,var(--veil)_80%,transparent)] hover:text-foreground"
+                    className="flex min-h-24 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-[var(--border-h)] bg-transparent px-3.5 py-3 font-medium text-muted-foreground transition-[border-color,background-color,color] duration-[120ms] ease-[ease] disabled:cursor-default disabled:opacity-70 enabled:hover:border-primary enabled:hover:bg-[color:color-mix(in_srgb,var(--veil)_80%,transparent)] enabled:hover:text-foreground"
                     data-testid="home-add-network"
+                    disabled={!online}
                     onClick={() => onAddNetwork?.(p.id)}
                   >
                     <Plus size={18} strokeWidth={2} aria-hidden="true" className="text-primary" />
