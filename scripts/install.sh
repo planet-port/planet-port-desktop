@@ -32,6 +32,9 @@
 # 且下载后强制 sha256 校验:校验和优先直连获取,取不到才走代理,校验不过
 # 一律中止(宁可不装)。代理站仍可能连同校验和一起替换,务必只使用可信代理。
 #
+# tag 归属:cli 组件化发版后版本挂在 planet-port/v* tag 下,拆分前旧版本
+# (≤0.5.0)仍挂在无前缀 v* tag 下——显式指定版本时按 Release 实际存在与否
+# 判定归属(auto-latest 分支按 planet-port/v 前缀直接过滤,无需探测)
 # 资产命名兼容:cargo-dist 新命名(planet-port-<target>.tar.xz)404 时,
 # 回退尝试旧命名 planet-port_<ver>_<platform>_<arch>.tar.gz(如 v0.3.0
 # 手工 release.sh 产物,顶层直放布局,解包逻辑天然兼容)
@@ -112,6 +115,20 @@ fetch() { # fetch <尝试次数> <curl 参数...>
 }
 
 # ── 版本与下载 ─────────────────────────────────────────────────────────
+# 探测某 tag 的 Release 是否存在:输出 yes/no/unknown。unknown 表示接口
+# 不可达(网络故障/限流),与「不存在」区分——不可达时主流程按新版 tag
+# 维持现状继续,不把一次接口抖动升级成安装失败
+tag_state() { # tag_state <tag>
+    local code
+    code="$(fetch 2 -sS -o /dev/null -w '%{http_code}' --connect-timeout 15 \
+        "$(dl_url "https://api.github.com/repos/${REPO}/releases/tags/$1")")" || { echo unknown; return 0; }
+    case "$code" in
+        200) echo yes ;;
+        404) echo no ;;
+        *)   echo unknown ;;
+    esac
+}
+
 if [[ -n "${PLANET_PORT_TARBALL:-}" ]]; then
     TARBALL="$PLANET_PORT_TARBALL"
     [[ -f "$TARBALL" ]] || die "本地包不存在: $TARBALL"
@@ -119,9 +136,16 @@ if [[ -n "${PLANET_PORT_TARBALL:-}" ]]; then
 else
     command -v curl >/dev/null || die "缺少 curl"
     if [[ -n "${PLANET_PORT_VERSION:-}" ]]; then
-        # 组件化后 cli 版本挂在 planet-port/v* tag 下;旧手工版本(≤0.5.0)
-        # 仍在 v* 下,由下方旧命名回退链以 OLD_TAG 兜底
-        TAG="planet-port/v${PLANET_PORT_VERSION#v}"
+        # 组件化后 cli 版本挂在 planet-port/v* tag 下;拆分前旧版本(≤0.5.0)
+        # 仍在无前缀 v* tag 下且资产已是 dist 新命名——固定装旧版若一律取
+        # 斜杠前缀 tag,首跳 404、旧命名回退也 404(命名已换代),直接装不上。
+        # 归属按 Release 实际存在与否判定,不做版本号分段:新旧分界点会随时间漂移
+        VTAG="v${PLANET_PORT_VERSION#v}"
+        TAG="planet-port/${VTAG}"
+        case "$(tag_state "$TAG")" in
+            no)      TAG="$VTAG" ;;
+            unknown) echo "警告: 无法确认 ${TAG} 是否存在(接口不可达),按新版 tag 尝试下载" >&2 ;;
+        esac
     else
         # 组件拆分后 releases/latest 可能落在 daemon/gui 上,改为按
         # planet-port/v 前缀过滤非 prerelease 的最新一条(无 jq,状态机
@@ -133,7 +157,11 @@ else
                      if (tag ~ /^planet-port\/v/ && pre !~ /true/ && !found) { print tag; found=1 } }')"
         [[ -n "$TAG" ]] || die "获取最新 cli 版本失败(仓库可能还没有 Release;GitHub 直连不通时可使用 --proxy 加代理站点下载)"
     fi
+    # 归一化掉两种 tag 形态的版本前缀:斜杠 tag 剥 planet-port/v,旧 v* tag
+    # 剥 v。不归一化则 OLD_TAG/旧命名资产会拼出 planet-port_v0.3.0_... 这类
+    # 双重前缀名,末尾展示也会出现「v0.5.0 (triple)」与新版「0.6.0」两种口径
     VERSION="${TAG#planet-port/v}"
+    VERSION="${VERSION#v}"
     # 旧命名资产只存在于拆分前的 v* tag 下
     OLD_TAG="v${VERSION}"
     ASSET="planet-port-${TRIPLE}.tar.xz"
