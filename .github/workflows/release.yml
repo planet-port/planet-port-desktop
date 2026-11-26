@@ -358,7 +358,8 @@ jobs:
   # (dist 生成的公式 checksum 不含注入后归档，故 homebrew 发布从 dist 剥离)。
   # 依赖 host 完成(Release 已建)后才可 clobber 资产;仅 cli tag 触发。
   suite:
-    if: ${{ !github.event.pull_request && startsWith(github.ref_name, 'planet-port/v') }}
+    # always() 同 gui job:cli 正常链 build job 必跑,此处仅防御同类 skip 传染
+    if: ${{ always() && !github.event.pull_request && startsWith(github.ref_name, 'planet-port/v') && needs.host.result == 'success' }}
     needs: host
     runs-on: ubuntu-22.04
     env:
@@ -448,7 +449,11 @@ jobs:
   # gui 包走 dist Library Mode(dist=false 不行,它会连斜杠 tag 的包绑定一起拒绝),
   # host 只建 Release 不产 gui 二进制,桌面安装包全由本 job 提供。
   gui:
-    if: ${{ !github.event.pull_request && startsWith(github.ref_name, 'planet-port-gui/') }}
+    # always() 不可省:本 job 传递依赖 build-local/global-artifacts,gui 链
+    # Library Mode 零产物时它们按计划跳过,而 GitHub 会把 skip 沿 needs 图
+    # 传递(即使中间 host 已用 always() 照跑),无 always() 的下游会被连带
+    # 跳过——0.6.0-beta.1 三次零产物发布即栽在此
+    if: ${{ always() && !github.event.pull_request && startsWith(github.ref_name, 'planet-port-gui/') && needs.host.result == 'success' }}
     needs: host
     strategy:
       fail-fast: false
@@ -505,39 +510,3 @@ jobs:
           )
           echo "uploading: ${files[*]}"
           gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
-
-  # ── 二轮探针:gui job 确定性跳过的归因(查清后整段删除) ──
-  # a/b 对照 needs:host 因素, b/c 对照 job 依赖图位置因素,
-  # if 与 gui job 完全一致;matrix 腿位仅 ubuntu 免占用大 runner。
-  zz-probe-a-no-needs-matrix:
-    if: ${{ !github.event.pull_request && startsWith(github.ref_name, 'planet-port-gui/') }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-          - os: ubuntu-22.04
-            target: x86_64-apple-darwin
-          - os: macos-15
-    runs-on: ${{ matrix.os }}
-    steps:
-      - run: echo "probe-a leg os=[${{ matrix.os }}] target=[${{ matrix.target }}]"
-  zz-probe-b-needs-host-matrix:
-    if: ${{ !github.event.pull_request && startsWith(github.ref_name, 'planet-port-gui/') }}
-    needs: host
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-          - os: ubuntu-22.04
-            target: x86_64-apple-darwin
-    runs-on: ${{ matrix.os }}
-    steps:
-      - run: echo "probe-b leg target=[${{ matrix.target }}]"
-  zz-probe-c-needs-host-nomatrix:
-    if: ${{ !github.event.pull_request && startsWith(github.ref_name, 'planet-port-gui/') }}
-    needs: host
-    runs-on: ubuntu-22.04
-    steps:
-      - run: echo "probe-c ran"
