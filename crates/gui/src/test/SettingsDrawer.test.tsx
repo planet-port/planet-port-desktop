@@ -83,13 +83,17 @@ function mockManifest(manifest: { daemon: string; cli: string; target: string } 
 }
 
 // SettingsDrawer 自身无查询,但内嵌 IdentitySection 走 useQuery/useQueryClient,须挂 Provider。
-// 组件为瞬时型(App 条件渲染挂载,内部自持 open),不再收 open prop
-function renderDrawer(onClose: () => void = () => {}) {
+// 组件为瞬时型(App 条件渲染挂载,内部自持 open),不再收 open prop。
+// 第二参透传检查更新相关 props(guiUpdate/checking/onCheckUpdate),默认不传即全缺省
+function renderDrawer(
+  onClose: () => void = () => {},
+  updateProps: { guiUpdate?: string | null; checking?: boolean; onCheckUpdate?: () => void } = {},
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <ToastProvider>
-        <SettingsDrawer onClose={onClose} />
+        <SettingsDrawer onClose={onClose} {...updateProps} />
       </ToastProvider>
     </QueryClientProvider>,
   );
@@ -274,5 +278,38 @@ describe('SettingsDrawer', () => {
     await waitFor(() => expect(screen.getByTestId('settings-ver-daemon').textContent).toContain('已装 0.7.0'));
     // 本文件未挂 App:抽屉层不再自弹安装完成 toast(该职责在 App 层用例覆盖)
     expect(screen.queryByText('daemon 安装完成')).not.toBeInTheDocument();
+  });
+
+  it('检查更新行:位于关于区顶部,点击回调 onCheckUpdate', async () => {
+    const onCheckUpdate = vi.fn();
+    renderDrawer(undefined, { onCheckUpdate });
+    expect(await screen.findByText('节点身份')).toBeInTheDocument();
+    const row = screen.getByTestId('settings-check-update');
+    expect(row.textContent).toContain('检查更新');
+    // 关于区首行:gui 版本行紧随其后
+    expect(row.nextSibling?.textContent).toContain('planet-port-gui');
+    fireEvent.click(row);
+    expect(onCheckUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('检查中(checking=true):行内呈现 spinner 且点击不再触发', async () => {
+    const onCheckUpdate = vi.fn();
+    renderDrawer(undefined, { onCheckUpdate, checking: true });
+    expect(await screen.findByLabelText('checking')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('settings-check-update'));
+    expect(onCheckUpdate).not.toHaveBeenCalled();
+  });
+
+  it('gui 行升级图标随 guiUpdate 显隐:查得新版点亮,未查得不渲染', async () => {
+    const withMark = renderDrawer(undefined, { guiUpdate: '0.7.0' });
+    expect(await screen.findByText('节点身份')).toBeInTheDocument();
+    const marks = screen.getAllByLabelText('可升级');
+    expect(marks).toHaveLength(1);
+    expect(marks[0].closest('div')?.textContent ?? '').toContain('planet-port-gui');
+    // 两次 render 共挂 body:先卸载前者,再断言无 guiUpdate 时图标不渲染
+    withMark.unmount();
+    renderDrawer(undefined, { guiUpdate: null });
+    await screen.findAllByText('节点身份');
+    expect(screen.queryByLabelText('可升级')).not.toBeInTheDocument();
   });
 });

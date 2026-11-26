@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { Settings } from 'lucide-react';
@@ -10,8 +11,9 @@ import { FAIL_REASON_KEYS } from './components/ReinstallDialog';
 import SettingsDrawer from './components/SettingsDrawer';
 import Statusbar from './components/Statusbar';
 import { useToast } from './components/Toaster';
+import UpdateDialog, { type UpdatePhase } from './components/UpdateDialog';
 import Home from './pages/Home';
-import { compareVersion, overallState } from './lib/version';
+import { compareVersion, overallState, versionLt } from './lib/version';
 import { detectOs } from './platform';
 import { cn } from '@/lib/utils';
 
@@ -51,6 +53,28 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  /// GUI 更新检查(手动触发,无静默轮询):phase 与结果都在 App,弹窗受控;
+  /// 查得新版同时点亮关于区 gui 行升级图标(guiUpdate 会话内状态,不持久化)
+  const [updateDlg, setUpdateDlg] = useState<
+    { phase: UpdatePhase; current: string; latest?: string; error?: string } | null
+  >(null);
+  const [guiUpdate, setGuiUpdate] = useState<string | null>(null);
+  const runUpdateCheck = useCallback(() => {
+    void getVersion().then(current => {
+      setUpdateDlg({ phase: 'checking', current });
+      api.checkGuiUpdate()
+        .then(latest => {
+          if (versionLt(current, latest)) {
+            setGuiUpdate(latest);
+            setUpdateDlg({ phase: 'found', current, latest });
+          } else {
+            setUpdateDlg({ phase: 'latest', current });
+          }
+        })
+        .catch((e: unknown) => setUpdateDlg({ phase: 'failed', current, error: String(e) }));
+    });
+  }, []);
+
   useEffect(() => {
     void api.daemonState().then(s => setOnline(s.online));
     const unsubs = [
@@ -69,12 +93,14 @@ export default function App() {
       listen('install-done', () => toast.ok(t('settings.installDone'))),
       listen<string>('install-failed', e =>
         toast.error(t(FAIL_REASON_KEYS[String(e.payload)] ?? 'settings.failGeneric'))),
+      // 托盘「检查更新」:Rust 侧已先 show_main,这里只触发检查流程(结果弹窗)
+      listen('check-update', () => runUpdateCheck()),
     ].map(p => p.then(f => f));
     // 每个 unlisten 必须真正执行,否则重复挂载后监听泄漏
     return () => {
       for (const p of unsubs) void p.then(f => f());
     };
-  }, [toast, t]);
+  }, [toast, t, runUpdateCheck]);
 
   return (
     <div className="flex h-screen flex-col">
@@ -132,7 +158,26 @@ export default function App() {
         <AddNetworkDrawer defaultPlanet={drawer.planet} onClose={() => setDrawer({ kind: 'none' })} />
       )}
       {online && drawer.kind === 'addPlanet' && <AddPlanetDrawer onClose={() => setDrawer({ kind: 'none' })} />}
-      {drawer.kind === 'settings' && <SettingsDrawer onClose={() => setDrawer({ kind: 'none' })} />}
+      {drawer.kind === 'settings' && (
+        <SettingsDrawer
+          onClose={() => setDrawer({ kind: 'none' })}
+          guiUpdate={guiUpdate}
+          checking={updateDlg?.phase === 'checking'}
+          onCheckUpdate={runUpdateCheck}
+        />
+      )}
+      {/* 检查更新弹窗:updateDlg 非空即开(检查中就先开,checking 态弹窗内自显) */}
+      {updateDlg && (
+        <UpdateDialog
+          open
+          phase={updateDlg.phase}
+          current={updateDlg.current}
+          latest={updateDlg.latest}
+          error={updateDlg.error}
+          onClose={() => setUpdateDlg(null)}
+          onRetry={runUpdateCheck}
+        />
+      )}
     </div>
   );
 }

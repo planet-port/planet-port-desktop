@@ -31,6 +31,9 @@ chrono = "0.4"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 
+# 检查更新弹窗拉起浏览器(GitHub releases 页;ACL 仅放行 github.com)
+tauri-plugin-opener = "2"
+
 # Windows UAC 提权拉起安装子进程(bootstrap.rs):ShellExecuteW 的 runas 动词。
 # 仅 Windows 目标引入,MIT/Apache-2.0;版本对齐 cli 既有 0.59。
 # ShellExecuteW 挂在 UI::Shell 模块,但其签名引用 WindowsAndMessaging 的

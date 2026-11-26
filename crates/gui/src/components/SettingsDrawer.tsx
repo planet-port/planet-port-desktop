@@ -52,13 +52,22 @@ function ValueRow({
 }
 
 /// 设置抽屉(布局参照 iOS PrefsView,即时生效无保存按钮):身份/语言/外观
-/// (模式+主题色行+背景行)/关于(gui/cli/daemon 三组件版本+Core 版本)/底部
-/// 安装区(已装 vs 内嵌两行+全宽安装按钮)。选项组件参照 iOS 设置:
+/// (模式+主题色行+背景行)/关于(检查更新行+gui/cli/daemon 三组件版本+Core 版本)/
+/// 底部安装区(已装 vs 内嵌两行+全宽安装按钮)。选项组件参照 iOS 设置:
 /// 值行(右侧当前值+›)进下级勾选页,不再用行内 seg。iOS 的 IPv6/多连接数/
 /// 按需连接为 VPN 层设置,mac daemon 无对应不做。
 /// 瞬时型弹层:由 App 条件渲染挂载,内部持有 open,onClose 只翻 state 走
-/// 滑出动画,动画结束(DrawerShell onClosed)才回调父层 onClose 卸载
-export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
+/// 滑出动画,动画结束(DrawerShell onClosed)才回调父层 onClose 卸载。
+/// 检查更新:入口行仅触发,流程与结果弹窗都在 App 层(托盘入口共用);
+/// guiUpdate = 会话内查得的最新稳定版号,点亮 gui 行升级图标,不持久化
+export default function SettingsDrawer({
+  onClose, guiUpdate, checking, onCheckUpdate,
+}: {
+  onClose: () => void;
+  guiUpdate?: string | null;
+  checking?: boolean;
+  onCheckUpdate?: () => void;
+}) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(true);
   const close = () => setOpen(false);
@@ -155,7 +164,26 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
         </section>
         <h4 className={groupTitle}>{t('settings.about')}</h4>
         <section className={sectionCard}>
-          <div className={kvRow}><span className={kvLabel}>planet-port-gui</span><span className={monoValue}>{version || '-'}</span></div>
+          {/* 检查更新:手动触发,结果弹窗在 App 层(托盘入口共用) */}
+          <ValueRow
+            label={t('settings.checkUpdate')}
+            value={
+              checking ? (
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--primary)] [animation-duration:0.8s]" aria-label="checking" />
+              ) : null
+            }
+            onClick={checking ? undefined : onCheckUpdate}
+            testId="settings-check-update"
+          />
+          <div className={`${kvRow} ${rowDivider}`}>
+            <span className={kvLabel}>planet-port-gui</span>
+            <span className={monoValue}>
+              <span className="inline-flex items-center gap-1">
+                {version || '-'}
+                {guiUpdate != null && <UpgradeMark label={t('statusbar.upgradable')} />}
+              </span>
+            </span>
+          </div>
           <div className={`${kvRow} ${rowDivider}`}>
             <span className={kvLabel}>planet-port</span>
             <span className={monoValue}>

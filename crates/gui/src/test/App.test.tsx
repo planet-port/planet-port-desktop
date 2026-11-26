@@ -9,12 +9,14 @@ import { initTestI18n } from './i18n';
 import type { EmbeddedManifest } from '../api/types';
 
 // listen mock 把回调收集进 listeners，由测试侧手动触发事件
-const { invokeMock, listeners } = vi.hoisted(() => ({
+const { invokeMock, listeners, getVersionMock } = vi.hoisted(() => ({
   invokeMock: vi.fn<(cmd: string, args?: unknown) => Promise<unknown>>(),
   listeners: new Map<string, Array<(e: { payload: unknown }) => void>>(),
+  getVersionMock: vi.fn<() => Promise<string | null>>(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+vi.mock('@tauri-apps/api/app', () => ({ getVersion: getVersionMock }));
 
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn((event: string, cb: (e: { payload: unknown }) => void) => {
@@ -118,6 +120,8 @@ beforeEach(() => {
         return Promise.resolve(null);
     }
   });
+  getVersionMock.mockReset();
+  getVersionMock.mockResolvedValue('0.6.1');
 });
 
 describe('App 单页布局', () => {
@@ -207,7 +211,7 @@ describe('App 单页布局', () => {
     await screen.findAllByText('daemon 在线');
     unmount();
     await act(async () => {});
-    for (const event of ['daemon-online', 'daemon-offline', 'navigate', 'tray-error', 'install-done', 'install-failed']) {
+    for (const event of ['daemon-online', 'daemon-offline', 'navigate', 'tray-error', 'install-done', 'install-failed', 'check-update']) {
       expect(listeners.get(event), event).toHaveLength(0);
     }
   });
@@ -250,5 +254,74 @@ describe('启动版本差异探测(被动提示)', () => {
   it('无内嵌 manifest(dev/未组包)→ 不渲染', async () => {
     await renderAndFlush(); // beforeEach 兜底:embedded_manifest 等三探针均返回 null
     expect(screen.queryByTestId('statusbar-upgradable')).not.toBeInTheDocument();
+  });
+});
+
+describe('GUI 更新检查(手动触发:托盘事件/关于区入口)', () => {
+  /// check_gui_update 定向 mock:其余命令沿用 beforeEach 的页面级兜底
+  function mockUpdateCheck(result: () => Promise<string>) {
+    invokeMock.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case 'get_daemon_state':
+          return Promise.resolve(daemonState);
+        case 'get_status':
+          return Promise.resolve({ planets: [] });
+        case 'get_networks':
+          return Promise.resolve({ networks: [] });
+        case 'check_gui_update':
+          return result();
+        default:
+          return Promise.resolve(null);
+      }
+    });
+  }
+
+  it('托盘 check-update 事件:当前旧于最新 → found 弹窗(标题/正文含双版本)', async () => {
+    mockUpdateCheck(() => Promise.resolve('0.7.0'));
+    renderApp();
+    await screen.findAllByText('daemon 在线');
+    emit('check-update', undefined);
+    expect(await screen.findByTestId('update-dialog')).toBeInTheDocument();
+    expect(screen.getByText('发现新版本')).toBeInTheDocument();
+    expect(screen.getByText('当前 v0.6.1，最新 v0.7.0。')).toBeInTheDocument();
+  });
+
+  it('查得同版 → latest 态(已是最新 + 当前版本)', async () => {
+    mockUpdateCheck(() => Promise.resolve('0.6.1'));
+    renderApp();
+    await screen.findAllByText('daemon 在线');
+    emit('check-update', undefined);
+    expect(await screen.findByTestId('update-dialog')).toBeInTheDocument();
+    expect(screen.getByText('已是最新')).toBeInTheDocument();
+    expect(screen.getByText('当前版本 v0.6.1')).toBeInTheDocument();
+  });
+
+  it('检查失败 → failed 态呈现错误原文', async () => {
+    mockUpdateCheck(() => Promise.reject('GitHub 限流 (429)'));
+    renderApp();
+    await screen.findAllByText('daemon 在线');
+    emit('check-update', undefined);
+    expect(await screen.findByTestId('update-dialog')).toBeInTheDocument();
+    expect(screen.getByText('检查更新失败')).toBeInTheDocument();
+    expect(screen.getByText('GitHub 限流 (429)')).toBeInTheDocument();
+  });
+
+  it('found 后重开设置抽屉:gui 行点亮升级箭头,检查更新行点击同样触发检查', async () => {
+    mockUpdateCheck(() => Promise.resolve('0.7.0'));
+    renderApp();
+    await screen.findAllByText('daemon 在线');
+    // 关于区入口:点检查更新行触发(与托盘事件同一 runUpdateCheck)
+    fireEvent.click(screen.getByTestId('topbar-settings'));
+    fireEvent.click(await screen.findByTestId('settings-check-update'));
+    expect(await screen.findByTestId('update-dialog')).toBeInTheDocument();
+    expect(screen.getByText('发现新版本')).toBeInTheDocument();
+    // 关弹窗后 gui 行升级图标仍在(会话内状态,不随弹窗关闭消失)
+    fireEvent.click(screen.getByRole('button', { name: '稍后' }));
+    expect(screen.queryByTestId('update-dialog')).not.toBeInTheDocument();
+    const marks = await screen.findAllByLabelText('可升级');
+    expect(marks).toHaveLength(1);
+    const row = marks[0].closest('div')?.textContent ?? '';
+    expect(row).toContain('planet-port-gui');
+    expect(row).not.toContain('planet-portd');
   });
 });
