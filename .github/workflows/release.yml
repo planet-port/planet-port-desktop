@@ -499,3 +499,38 @@ jobs:
           )
           echo "uploading: ${files[*]}"
           gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+
+  # ── 二轮探针:gui job 确定性跳过的归因(查清后整段删除) ──
+  # a/b 对照 needs:host 因素, b/c 对照 job 依赖图位置因素,
+  # if 与 gui job 完全一致;matrix 腿位仅 ubuntu 免占用大 runner。
+  zz-probe-a-no-needs-matrix:
+    if: ${{ !github.event.pull_request && startsWith(github.ref_name, 'planet-port-gui/') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+          - os: ubuntu-22.04
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: echo "probe-a leg target=[${{ matrix.target }}]"
+  zz-probe-b-needs-host-matrix:
+    if: ${{ !github.event.pull_request && startsWith(github.ref_name, 'planet-port-gui/') }}
+    needs: host
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+          - os: ubuntu-22.04
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: echo "probe-b leg target=[${{ matrix.target }}]"
+  zz-probe-c-needs-host-nomatrix:
+    if: ${{ !github.event.pull_request && startsWith(github.ref_name, 'planet-port-gui/') }}
+    needs: host
+    runs-on: ubuntu-22.04
+    steps:
+      - run: echo "probe-c ran"
