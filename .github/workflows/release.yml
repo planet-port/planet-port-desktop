@@ -319,9 +319,15 @@ jobs:
             insec && $1 == "##" { exit }
             insec { print }
           ' "$CL" > "$RUNNER_TEMP/changes.md" || true
+          # 正文只放 CHANGELOG 段落,剥离 dist 生成的下载表——Assets 区就是
+          # 唯一下载入口,表格纯重复(平台对照在 README);changelog 段缺失
+          # 时才回落 dist 生成文案,避免空正文建版
           {
-            [ -s "$RUNNER_TEMP/changes.md" ] && cat "$RUNNER_TEMP/changes.md" && echo
-            cat "$RUNNER_TEMP/notes.txt"
+            if [ -s "$RUNNER_TEMP/changes.md" ]; then
+              cat "$RUNNER_TEMP/changes.md" && echo
+            else
+              cat "$RUNNER_TEMP/notes.txt"
+            fi
           } > "$RUNNER_TEMP/final-notes.txt"
 
           # 手工补丁（dist 模板硬编码 artifacts/*）：gui 链路零产物时 glob
@@ -512,9 +518,10 @@ jobs:
           - os: ubuntu-22.04
           - os: ubuntu-22.04
             target: x86_64-apple-darwin
+          - os: macos-15
     runs-on: ${{ matrix.os }}
     steps:
-      - run: echo "probe-a leg target=[${{ matrix.target }}]"
+      - run: echo "probe-a leg os=[${{ matrix.os }}] target=[${{ matrix.target }}]"
   zz-probe-b-needs-host-matrix:
     if: ${{ !github.event.pull_request && startsWith(github.ref_name, 'planet-port-gui/') }}
     needs: host
