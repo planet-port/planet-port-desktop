@@ -23,6 +23,9 @@ GUI="$ROOT/crates/gui"
 HOST="$(rustc -vV | awk '/^host:/ {print $2}')"
 TRIPLE="${1:-${TARGET:-}}"
 [ -n "$TRIPLE" ] || TRIPLE="$HOST"
+# 交叉构建(tauri --target / cargo --target)要求目标 triple 已安装;
+# host 目标时 rustup 幂等空操作。LOCAL_BINS 与 release 资产两条路径都要过
+rustup target add "$TRIPLE"
 
 case "$TRIPLE" in *windows*) WIN_TARGET=1 ;; *) WIN_TARGET=0 ;; esac
 RES="$GUI/src-tauri/resources/$TRIPLE"
@@ -72,7 +75,6 @@ if [ "${PLANET_LOCAL_BINS:-}" = "1" ]; then
     cargo build --release -p planet-port -p planet-portd --bins
     BIN="$ROOT/target/release"
   else
-    rustup target add "$TRIPLE"
     cargo build --release -p planet-port -p planet-portd --bins --target "$TRIPLE"
     BIN="$ROOT/target/$TRIPLE/release"
   fi
