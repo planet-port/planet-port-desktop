@@ -1,6 +1,6 @@
 [package]
 name = "planet-port-gui"
-version = "0.6.0-beta.2-dev"
+version = "0.6.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
