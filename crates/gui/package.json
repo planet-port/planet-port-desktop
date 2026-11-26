@@ -18,7 +18,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",
-    "i18next": "^25",
+    "i18next": "^26.3.5",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.78.0",
     "qrcode": "^1.5.4",

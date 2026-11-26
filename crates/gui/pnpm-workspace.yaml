@@ -6,3 +6,6 @@ allowBuilds:
   geckodriver: true
 minimumReleaseAgeExclude:
   - lucide-react@1.78.0
+# Dependabot: minimatch <11.0.1 glob amplification DoS；仅为 mocha/wdio 的 dev 传递依赖，用 override 强制到修复版
+overrides:
+  minimatch: '>=11.0.1'
