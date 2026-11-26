@@ -6,9 +6,9 @@ import { pickDisplayAddr } from '../lib/addr';
 
 /// 网络卡片(方案C卡片网格,弱透明卡面+泊位灯):信息区点击进设置弹层,卡头开关
 /// 切换禁用/启用(OK↔DISABLED,占位行=join)。泊位灯=网络级状态(在线青光/
-/// 连接中青光呼吸/断开灰/冲突黄),连接中(REQUESTING_CONFIGURATION,enable
-/// 后未获配置阶段)整卡不降透明、开关位 spinner(2026-11-24 口径:连接中
-/// 不得再呈断开灰态)。pending 期开关换 spinner 并整卡禁点(防抖动)。
+/// 连接中青光呼吸/断开灰/冲突黄)。断开只是不连接、非禁用,卡面与名称一律
+/// 不降透明不弱化,状态语义全由灯与开关承载(2026-11-26 口径)。
+/// pending 期开关换 spinner 并整卡禁点(防抖动)。
 /// IP 行为可复制值(小号图标);状态文字不展示,灯已承载。
 /// IP 只显示一个(IPv4 优先),复制与显示一致(2026-11-24 口径)。
 /// 旧 .netcard 系规则对译:veil 卡面 + hairline 边 + --radius 圆角,hover 抬
@@ -38,7 +38,7 @@ export default function NetworkCard({
       data-testid="network-card"
       className={`flex flex-col gap-2 rounded-md border border-[var(--border)] bg-[var(--veil)] px-3.5 py-3 transition-[border-color,background-color] duration-[120ms] ease-[ease] hover:border-[var(--border-h)] hover:bg-secondary ${
         pending ? 'cursor-default opacity-70' : 'cursor-pointer'
-      } ${on || connecting || deviceError ? '' : 'opacity-55'}`}
+      }`}
       onClick={() => !pending && onOpen(row)}
     >
       <header className="flex items-center gap-2.5">
@@ -54,11 +54,7 @@ export default function NetworkCard({
           }`}
           aria-hidden="true"
         />
-        <span
-          className={`min-w-0 flex-1 truncate text-[13px] ${
-            on ? 'font-medium text-foreground' : 'font-normal text-muted-foreground'
-          }`}
-        >
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
           {row.name ?? row.nwid}
         </span>
         {pending || connecting ? (
