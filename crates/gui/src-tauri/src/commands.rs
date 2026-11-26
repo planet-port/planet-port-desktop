@@ -2,7 +2,58 @@ use crate::api_client::{discover, GuiError};
 use crate::SharedState;
 use planet_port_api::endpoints;
 use serde_json::{json, Value};
+use std::time::Duration;
 use tauri::Manager;
+
+/// GitHub releases 列表拉取超时(与 api_client 常规请求同口径)
+const GITHUB_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// GitHub Releases 里 GUI 最新稳定版号(剥 planet-port-gui/v 前缀)。
+/// releases/latest 是全仓混合口径,组件 tag 必须列表过滤;prerelease
+/// 过滤与 install.sh auto-latest 同口径
+pub(crate) fn parse_latest_gui_release(body: &str) -> Option<String> {
+    let arr: Vec<serde_json::Value> = serde_json::from_str(body).ok()?;
+    arr.iter()
+        .filter(|r| r.get("prerelease").and_then(|v| v.as_bool()) == Some(false))
+        .find_map(|r| {
+            let tag = r.get("tag_name")?.as_str()?;
+            tag.strip_prefix("planet-port-gui/v").map(str::to_string)
+        })
+}
+
+/// 手动触发的 GUI 更新检查:ureq 走 api.github.com(gh 同源路径,本机
+/// 网络可达性最好);超时 10s,失败如实回传中文错误,前端弹窗呈现。
+/// 请求构造贴 api_client.rs 的 http::Request + agent.run 惯用法;
+/// (async) 派生独立线程——公网拉取最长 10s,同步默认跑主线程会冻 UI
+#[tauri::command(async)]
+pub fn check_gui_update() -> Result<String, String> {
+    const URL: &str =
+        "https://api.github.com/repos/planet-port/planet-port-desktop/releases?per_page=30";
+    // http_status_as_error(false):限流/不存在等非 2xx 仍拿到响应体,
+    // 由下方状态码分支转成带码位的中文错误,而非英文 http status 文案
+    let agent = ureq::Agent::new_with_config(
+        ureq::config::Config::builder()
+            .http_status_as_error(false)
+            .timeout_global(Some(GITHUB_TIMEOUT))
+            .build(),
+    );
+    let req = ureq::http::Request::builder()
+        .method("GET")
+        .uri(URL)
+        .header("User-Agent", "planet-port-gui")
+        .header("Accept", "application/vnd.github+json")
+        .body(Vec::new())
+        .map_err(|e| format!("构造请求失败: {e}"))?;
+    let mut resp = agent.run(req).map_err(|e| format!("网络请求失败: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("GitHub 响应异常: HTTP {}", resp.status().as_u16()));
+    }
+    let body = resp
+        .body_mut()
+        .read_to_string()
+        .map_err(|e| format!("读取响应失败: {e}"))?;
+    parse_latest_gui_release(&body).ok_or_else(|| String::from("未找到稳定版发布"))
+}
 
 /// 心跳维护的在线/安装状态（webview 启动初期一次拉取）
 #[tauri::command]
@@ -228,4 +279,41 @@ pub fn add_official_planet(
     std::fs::write(&path, OFFICIAL_WORLD)
         .map_err(|e| GuiError::Usage { message: format!("write {}: {e}", path.display()) })?;
     add_planet(path.to_string_lossy().into_owned(), Some("ZeroTier".into()), icon, color)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_latest_gui_release;
+
+    #[test]
+    fn parse_latest_filters_prefix_and_prerelease() {
+        let body = r#"[
+          {"tag_name":"planet-port/v0.6.0","prerelease":false},
+          {"tag_name":"planet-port-gui/v0.6.0-beta.1","prerelease":true},
+          {"tag_name":"planet-portd/v0.5.1","prerelease":false},
+          {"tag_name":"planet-port-gui/v0.6.0","prerelease":false}
+        ]"#;
+        assert_eq!(parse_latest_gui_release(body).as_deref(), Some("0.6.0"));
+    }
+
+    #[test]
+    fn parse_latest_takes_first_match_in_order() {
+        let body = r#"[
+          {"tag_name":"planet-port-gui/v0.7.0","prerelease":false},
+          {"tag_name":"planet-port-gui/v0.6.0","prerelease":false}
+        ]"#;
+        assert_eq!(parse_latest_gui_release(body).as_deref(), Some("0.7.0"));
+    }
+
+    #[test]
+    fn parse_latest_none_when_no_stable_gui() {
+        let body = r#"[{"tag_name":"planet-port-gui/v0.7.0-beta.1","prerelease":true}]"#;
+        assert_eq!(parse_latest_gui_release(body), None);
+    }
+
+    #[test]
+    fn parse_latest_none_on_garbage() {
+        assert_eq!(parse_latest_gui_release("not json"), None);
+        assert_eq!(parse_latest_gui_release("[]"), None);
+    }
 }

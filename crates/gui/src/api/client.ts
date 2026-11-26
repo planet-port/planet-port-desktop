@@ -29,6 +29,8 @@ export const api = {
   /// 一键添加官方行星(Rust 内置官方 world 写盘后走常规 add,daemon 自动标 Official)
   addOfficialPlanet: (icon: string, color: string) => cmd('add_official_planet', { icon, color }),
   buildTime: () => cmd<string>('build_time'),
+  /// GUI 自身更新检查(Rust 侧拉 GitHub releases):成功=最新稳定版号
+  checkGuiUpdate: () => cmd<string>('check_gui_update'),
   removePlanet: (id: string) => cmd('remove_planet', { id }),
   enablePlanet: (id: string) => cmd('enable_planet', { id }),
   disablePlanet: (id: string) => cmd('disable_planet', { id }),

@@ -70,6 +70,7 @@ fn main() {
             commands::get_daemon_state,
             commands::get_cli_version,
             commands::get_installed_daemon_version,
+            commands::check_gui_update,
             bootstrap::embedded_manifest,
             bootstrap::start_install,
             commands::get_status,

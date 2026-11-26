@@ -293,7 +293,14 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         }
         menu.append(&PredefinedMenuItem::separator(app)?)?;
     }
-    // 底部一组:打开主窗口 + 退出;添加类操作(加入网络/行星)回主窗口做
+    // 底部一组:检查更新 + 打开主窗口 + 退出;添加类操作(加入网络/行星)回主窗口做
+    menu.append(&MenuItem::with_id(
+        app,
+        "checkupdate",
+        tr(&lang, "检查更新", "Check for updates"),
+        true,
+        None::<&str>,
+    )?)?;
     menu.append(&MenuItem::with_id(
         app,
         "open",
@@ -372,6 +379,11 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
         "copy" => {
             use tauri_plugin_clipboard_manager::ClipboardExt;
             let _ = app.clipboard().write_text(parts[1..].join("|"));
+        }
+        // 检查更新:先开主窗口再让前端弹窗呈现结果(检查逻辑在前端,复用版本比较)
+        "checkupdate" => {
+            show_main(app);
+            let _ = app.emit("check-update", ());
         }
         "open" => show_main(app),
         "quit" => app.exit(0),
