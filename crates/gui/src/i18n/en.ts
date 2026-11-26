@@ -8,6 +8,12 @@ export default {
     done: 'Done', import: 'Import', copy: 'Copy', copied: 'Copied',
   },
   icon: { title: 'Choose Icon', graphic: 'Graphic', color: 'Color', randomColor: 'Random color' },
+  app: {
+    /// Startup version-drift toast (embedded manifest vs installed binaries)
+    verToastUpgrade: 'Upgrade available: {{detail}}',
+    verToastCompat: 'Installed version is newer than embedded — possible compatibility issues: {{detail}}',
+    openSettings: 'Open Settings',
+  },
   settings: {
     title: 'Settings', language: 'Language', appearance: 'Appearance', about: 'About', buildTime: 'Build time',
     theme: { light: 'Light', dark: 'Dark', system: 'System' },

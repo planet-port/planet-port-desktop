@@ -8,6 +8,12 @@ export default {
     done: '完成', import: '导入', copy: '复制', copied: '已复制',
   },
   icon: { title: '选择图标', graphic: '图形', color: '底色', randomColor: '随机底色' },
+  app: {
+    /// 启动版本差异检测 toast(内嵌 manifest vs 磁盘已装)
+    verToastUpgrade: '检测到可升级：{{detail}}',
+    verToastCompat: '已装版本新于应用内嵌，可能存在兼容问题：{{detail}}',
+    openSettings: '打开设置',
+  },
   settings: {
     title: '设置', language: '语言', appearance: '外观', about: '关于', buildTime: '构建时间',
     theme: { light: '浅色', dark: '深色', system: '跟随系统' },

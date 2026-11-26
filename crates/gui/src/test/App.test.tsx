@@ -2,9 +2,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { act } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from 'sonner';
 import App from '../App';
 import { ToastProvider } from '../components/Toaster';
 import { initTestI18n } from './i18n';
+import type { EmbeddedManifest } from '../api/types';
 
 // listen mock 把回调收集进 listeners，由测试侧手动触发事件
 const { invokeMock, listeners } = vi.hoisted(() => ({
@@ -50,6 +52,36 @@ function emit(event: string, payload: unknown) {
   });
 }
 
+/// toast 断言锚点:自绘内容根元素带 kind(ok/error)类,文案包在其 span 子元素内
+/// (见 ui-x/Toaster 头注释)
+async function findToast(text: string | RegExp, kind: 'ok' | 'error') {
+  const el = await screen.findByText(text);
+  expect(el.parentElement).toHaveClass(kind);
+  return el;
+}
+
+/// 版本差异检测三探针定向 mock:其余命令沿用 beforeEach 的页面级兜底
+function mockVersionProbes(manifest: EmbeddedManifest | null, installedDaemon: string, installedCli: string) {
+  invokeMock.mockImplementation((cmd: string) => {
+    switch (cmd) {
+      case 'get_daemon_state':
+        return Promise.resolve(daemonState);
+      case 'get_status':
+        return Promise.resolve({ planets: [] });
+      case 'get_networks':
+        return Promise.resolve({ networks: [] });
+      case 'embedded_manifest':
+        return Promise.resolve(manifest);
+      case 'get_installed_daemon_version':
+        return Promise.resolve(installedDaemon);
+      case 'get_cli_version':
+        return Promise.resolve(installedCli);
+      default:
+        return Promise.resolve(null);
+    }
+  });
+}
+
 function renderApp() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
   return render(
@@ -67,6 +99,11 @@ beforeAll(async () => {
 
 beforeEach(() => {
   listeners.clear();
+  // sonner 的 toast 队列挂在模块级 store,不随组件卸载清空:每例前清队,
+  // 防上一例的 toast 文案/动作按钮混入下一例断言(visibleToasts=99 且 4s 才自动消失)
+  act(() => {
+    toast.dismiss();
+  });
   daemonState = { online: true, installed: true, daemonVersion: null };
   invokeMock.mockReset();
   invokeMock.mockImplementation((cmd: string) => {
@@ -146,7 +183,23 @@ describe('App 单页布局', () => {
     renderApp();
     await screen.findAllByText('daemon 在线');
     emit('tray-error', '托盘动作失败：network_not_found');
-    expect(await screen.findByText('托盘动作失败：network_not_found')).toHaveClass('error');
+    await findToast('托盘动作失败：network_not_found', 'error');
+  });
+
+  it('install-done 兜底 toast 常驻 App 层:设置抽屉未开也回报', async () => {
+    renderApp();
+    await screen.findAllByText('daemon 在线');
+    emit('install-done', undefined);
+    await findToast('daemon 安装完成', 'ok');
+  });
+
+  it('install-failed 兜底 toast:枚举原因映射文案,表外原因走通用失败', async () => {
+    renderApp();
+    await screen.findAllByText('daemon 在线');
+    emit('install-failed', 'install-exit-nonzero');
+    await findToast('安装程序退出码非零，请查看日志后重试。', 'error');
+    emit('install-failed', 'copy staging: ENOSPC');
+    await findToast('安装启动失败', 'error');
   });
 
   it('卸载后解除全部事件监听', async () => {
@@ -154,8 +207,47 @@ describe('App 单页布局', () => {
     await screen.findAllByText('daemon 在线');
     unmount();
     await act(async () => {});
-    for (const event of ['daemon-online', 'daemon-offline', 'navigate', 'tray-error']) {
+    for (const event of ['daemon-online', 'daemon-offline', 'navigate', 'tray-error', 'install-done', 'install-failed']) {
       expect(listeners.get(event), event).toHaveLength(0);
     }
+  });
+});
+
+describe('启动版本差异检测', () => {
+  const manifest: EmbeddedManifest = { daemon: '0.6.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
+
+  it('已装旧于内嵌 → 可升级 toast 带「打开设置」动作,点按开设置抽屉', async () => {
+    mockVersionProbes(manifest, '0.5.1', '0.5.1');
+    renderApp();
+    await screen.findAllByText('daemon 在线');
+    // detail 段按组件列出 已装 → 内嵌
+    await findToast(/检测到可升级：planet-portd 0\.5\.1 → 0\.6\.0 · planet-port 0\.5\.1 → 0\.6\.0/, 'ok');
+    fireEvent.click(screen.getByRole('button', { name: '打开设置' }));
+    expect(await screen.findByTestId('settings-drawer')).toBeInTheDocument();
+  });
+
+  it('已装新于内嵌 → compat 提示用 error 样式,无动作按钮', async () => {
+    mockVersionProbes(manifest, '0.6.1', '0.6.1');
+    renderApp();
+    await screen.findAllByText('daemon 在线');
+    await findToast(/已装版本新于应用内嵌，可能存在兼容问题/, 'error');
+    expect(screen.queryByRole('button', { name: '打开设置' })).not.toBeInTheDocument();
+  });
+
+  it('两侧同版 → 不弹版本 toast', async () => {
+    mockVersionProbes(manifest, '0.6.0', '0.6.0');
+    renderApp();
+    await screen.findAllByText('daemon 在线');
+    await act(async () => {}); // 冲刷版本检测微任务,排除异步未落的假阴性
+    expect(screen.queryByText(/检测到可升级/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/已装版本新于应用内嵌/)).not.toBeInTheDocument();
+  });
+
+  it('无内嵌 manifest(dev/未组包)→ 不弹版本 toast', async () => {
+    renderApp(); // beforeEach 兜底:embedded_manifest 等三探针均返回 null
+    await screen.findAllByText('daemon 在线');
+    await act(async () => {});
+    expect(screen.queryByText(/检测到可升级/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/已装版本新于应用内嵌/)).not.toBeInTheDocument();
   });
 });

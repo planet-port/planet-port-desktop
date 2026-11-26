@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getVersion } from '@tauri-apps/api/app';
-import { listen } from '@tauri-apps/api/event';
 import { api } from '../api/client';
 import type { EmbeddedManifest } from '../api/types';
 import BackgroundPickerSheet from './BackgroundPickerSheet';
@@ -11,7 +10,6 @@ import IdentitySection from './IdentitySection';
 import DrawerShell from './DrawerShell';
 import ReinstallDialog from './ReinstallDialog';
 import ThemeColorSheet from './ThemeColorSheet';
-import { useToast } from './Toaster';
 import { Button } from './ui-x/Button';
 import { backgroundUrl } from '../background';
 import { compareVersion, overallState } from '../lib/version';
@@ -60,7 +58,6 @@ function ValueRow({
 /// 滑出动画,动画结束(DrawerShell onClosed)才回调父层 onClose 卸载
 export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   const { t, i18n } = useTranslation();
-  const toast = useToast();
   const [open, setOpen] = useState(true);
   const close = () => setOpen(false);
   const [layer, setLayer] = useState<'none' | 'accent' | 'background' | 'lang' | 'theme'>('none');
@@ -78,13 +75,9 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   const [daemonInstalled, setDaemonInstalled] = useState(true);
   /// 已装 daemon 磁盘版本(spawn 探测):版本差异检测用,与 daemonVersion(运行中)口径不同
   const [installedDaemon, setInstalledDaemon] = useState<string | null>(null);
-  /// 重装弹窗开关;安装结果弹窗开着时由弹窗自显,兜底 toast 只在其已关时补
+  /// 重装弹窗开关(成败画面由弹窗自显;安装结果的兜底 toast 由 App 层常驻监听负责)
   const [reinstallOpen, setReinstallOpen] = useState(false);
-  const reinstallOpenRef = useRef(reinstallOpen);
-  useEffect(() => {
-    reinstallOpenRef.current = reinstallOpen;
-  }, [reinstallOpen]);
-  /// 已装版本/安装态三探针重拉:挂载首查 + 安装完成后刷新常驻文案
+  /// 已装版本/安装态三探针重拉:挂载首查 + 重装完成后(ReinstallDialog onDone)刷新常驻文案
   const refreshVersions = useCallback(() => {
     void api.daemonState().then(s => {
       setDaemonInstalled(s.installed);
@@ -106,26 +99,6 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!buildTime) void api.buildTime().then(setBuildTime).catch(() => setBuildTime('-'));
   }, [buildTime]);
-  useEffect(() => {
-    const failText = (r: string) =>
-      r === 'install-exit-nonzero' ? t('settings.failExit')
-        : r === 'daemon-timeout' ? t('settings.failTimeout')
-        : t('settings.failGeneric');
-    // 安装结果兜底监听(原 DaemonInstallRow 逻辑):取消等待后弹窗已关,后台
-    // 安装仍会落地结果,此处刷新版本并以 toast 告知
-    const unsubs = [
-      listen('install-done', () => {
-        refreshVersions();
-        if (!reinstallOpenRef.current) toast.ok(t('settings.installDone'));
-      }),
-      listen<string>('install-failed', e => {
-        if (!reinstallOpenRef.current) toast.error(failText(String(e.payload)));
-      }),
-    ].map(p => p.then(f => f));
-    return () => {
-      for (const u of unsubs) void u.then(f => f());
-    };
-  }, [refreshVersions, t, toast]);
   /// 行文案:已装 vX → 内嵌 vY;探测不到显示未探测到
   const verLine = (installed: string | null, embedded: string) =>
     `${installed ? t('settings.verInstalled', { v: installed }) : t('settings.verNotDetected')} → ${t('settings.verEmbedded', { v: embedded })}`;

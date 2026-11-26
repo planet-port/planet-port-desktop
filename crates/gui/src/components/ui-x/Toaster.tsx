@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 /// 内容 max-w 永不可达,故行内定 --width:380px 由容器直接承担)/ 文本可选;
 /// error 型 = danger 45% 混色边框 + danger 文字。
 /// kind('ok'/'error')以类名标在内容根元素上:测试锚点是「错误 toast 的文本
-/// 元素带 error 类」,基线 .toast 系已删,该类仅作语义标记。
+/// 元素向上取根元素带 error 类」,基线 .toast 系已删,该类仅作语义标记。
 /// 容器对译基线 .toasts(styles.css 已删):position bottom-right + offset 16px(右/下)、z-index 50
 /// (行内样式压掉 sonner 内置 z 999999999)、expand 常开 + gap 8px 还原基线
 /// 「全部纵排常显」;条目行内 left/width:auto 压掉 sonner 窄窗(≤600px)的
@@ -62,14 +62,29 @@ const toastKindClasses: Record<ToastKind, string> = {
     'border-[color:color-mix(in_srgb,var(--danger)_45%,transparent)] text-[color:var(--danger)]',
 };
 
-function ToastContent({ kind, text }: { kind: ToastKind; text: string }) {
-  return <div className={cn(toastContentClasses, toastKindClasses[kind], kind)}>{text}</div>;
+/// 可选动作按钮:启动版本检测的「打开设置」入口等,点击只执行回调不改 toast 态
+export type ToastAction = { label: string; onClick: () => void };
+
+function ToastContent({ kind, text, action }: { kind: ToastKind; text: string; action?: ToastAction }) {
+  return (
+    <div className={cn(toastContentClasses, toastKindClasses[kind], 'flex items-center gap-2.5', kind)}>
+      <span className="min-w-0">{text}</span>
+      {action && (
+        <button
+          className="shrink-0 cursor-pointer rounded-[4px] border border-[color:var(--border-h)] bg-transparent px-1.5 py-0.5 text-xs text-primary transition-colors duration-[120ms] ease-[ease] hover:bg-[var(--panel)]"
+          onClick={action.onClick}
+        >
+          {action.label}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /// 入队一条 toast(custom 型):内容由本层自绘,供 ToastProvider 薄层调用
-export function pushToast(kind: ToastKind, text: string) {
+export function pushToast(kind: ToastKind, text: string, action?: ToastAction) {
   toast.custom(
-    () => <ToastContent kind={kind} text={text} />,
+    () => <ToastContent kind={kind} text={text} action={action} />,
     // 行内 left/width 压掉 sonner 窄窗全宽规则(见头注释),保持右锚自适应宽
     { style: { left: 'auto', width: 'auto' } },
   );

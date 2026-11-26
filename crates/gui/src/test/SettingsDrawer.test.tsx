@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsDrawer from '../components/SettingsDrawer';
 import { ToastProvider } from '../components/Toaster';
@@ -232,11 +232,13 @@ describe('SettingsDrawer', () => {
     expect(screen.getByText(/覆盖安装 daemon 与 CLI/)).toBeInTheDocument();
   });
 
-  it('弹窗已关时 install-done 兜底:toast 提示并重拉已装版本刷新常驻文案', async () => {
+  it('重装完成(install-done 在弹窗开着时到达)→ 弹窗转成功态并经 onDone 重拉探测刷新常驻文案;兜底 toast 归 App 层,抽屉自身不再弹', async () => {
     mockManifest({ daemon: '0.7.0', cli: '0.6.0', target: 'aarch64-apple-darwin' }, '0.6.0');
     renderDrawer();
     expect(await screen.findByTestId('settings-install-block')).toBeInTheDocument();
     expect(screen.getByTestId('settings-ver-daemon').textContent).toContain('已装 0.6.0');
+    fireEvent.click(screen.getByTestId('settings-install-daemon'));
+    fireEvent.click(await screen.findByTestId('reinstall-confirm'));
     // 探测改回报新版本,模拟安装落盘后的磁盘状态
     invokeMock.mockImplementation((cmd: string) =>
       cmd === 'identity_get'
@@ -249,7 +251,9 @@ describe('SettingsDrawer', () => {
               ? Promise.resolve('0.7.0')
               : Promise.resolve(null));
     emit('install-done', undefined);
-    expect(await screen.findByText('daemon 安装完成')).toBeInTheDocument();
-    expect(screen.getByTestId('settings-ver-daemon').textContent).toContain('已装 0.7.0');
+    expect(await screen.findByTestId('reinstall-done')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('settings-ver-daemon').textContent).toContain('已装 0.7.0'));
+    // 本文件未挂 App:抽屉层不再自弹安装完成 toast(该职责在 App 层用例覆盖)
+    expect(screen.queryByText('daemon 安装完成')).not.toBeInTheDocument();
   });
 });

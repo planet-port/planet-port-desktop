@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { Settings } from 'lucide-react';
@@ -6,10 +6,12 @@ import { api } from './api/client';
 import logo from './assets/icon-1024.png';
 import AddNetworkDrawer from './components/AddNetworkDrawer';
 import AddPlanetDrawer from './components/AddPlanetDrawer';
+import { FAIL_REASON_KEYS } from './components/ReinstallDialog';
 import SettingsDrawer from './components/SettingsDrawer';
 import Statusbar from './components/Statusbar';
 import { useToast } from './components/Toaster';
 import Home from './pages/Home';
+import { compareVersion, overallState, type VersionRelation } from './lib/version';
 import { detectOs } from './platform';
 import { cn } from '@/lib/utils';
 
@@ -30,6 +32,39 @@ export default function App() {
   /// Windows/Linux 保持原生标题栏,不加留位
   const mac = useMemo(() => detectOs() === 'macos', []);
 
+  /// 启动一次性版本差异检测:内嵌 manifest vs 磁盘已装(spawn 探测)。
+  /// newer(已装新于内嵌)优先于 older;toast 只在启动弹一次,重装完成后
+  /// 的状态变化由设置抽屉常驻文案呈现,不再打扰
+  const versionChecked = useRef(false);
+  useEffect(() => {
+    if (versionChecked.current) return;
+    void Promise.all([api.embeddedManifest(), api.installedDaemonVersion(), api.cliVersion()])
+      .then(([manifest, instDaemon, instCli]) => {
+        versionChecked.current = true;
+        if (!manifest) return; // dev/未组包无内嵌资源,无从比对
+        const rd = compareVersion(instDaemon, manifest.daemon);
+        const rc = compareVersion(instCli, manifest.cli);
+        const overall = overallState(rd, rc);
+        if (overall !== 'upgrade' && overall !== 'compat') return;
+        const part = (name: string, rel: VersionRelation, a: string | null, b: string) =>
+          rel === 'older' || rel === 'newer' ? `${name} ${a} → ${b}` : null;
+        const detail = [part('planet-portd', rd, instDaemon, manifest.daemon), part('planet-port', rc, instCli, manifest.cli)]
+          .filter(Boolean)
+          .join(' · ');
+        if (overall === 'upgrade') {
+          toast.ok(t('app.verToastUpgrade', { detail }), {
+            label: t('app.openSettings'),
+            onClick: () => setDrawer({ kind: 'settings' }),
+          });
+        } else {
+          // compat 是风险告知,用 error 样式保证醒目
+          toast.error(t('app.verToastCompat', { detail }));
+        }
+      })
+      // 单项探测 reject 视为整体失败静默跳过:常驻文案(设置抽屉)仍会给未探测到的信息
+      .catch(() => {});
+  }, [toast, t]);
+
   useEffect(() => {
     void api.daemonState().then(s => setOnline(s.online));
     const unsubs = [
@@ -42,12 +77,18 @@ export default function App() {
       }),
       // 托盘动作失败提示(Rust 侧在后台线程执行,失败经此回传)
       listen<string>('tray-error', e => toast.error(e.payload)),
+      // 安装结果兜底 toast 常驻 App 层:设置抽屉开着时弹窗自显成败,双提示并存
+      // 是设计预期;抽屉已关(取消等待)后安装落地仍有回报。失败原因映射同
+      // ReinstallDialog,表外原因(含提权前 rejection)兜底 failGeneric
+      listen('install-done', () => toast.ok(t('settings.installDone'))),
+      listen<string>('install-failed', e =>
+        toast.error(t(FAIL_REASON_KEYS[String(e.payload)] ?? 'settings.failGeneric'))),
     ].map(p => p.then(f => f));
     // 每个 unlisten 必须真正执行,否则重复挂载后监听泄漏
     return () => {
       for (const p of unsubs) void p.then(f => f());
     };
-  }, [toast]);
+  }, [toast, t]);
 
   return (
     <div className="flex h-screen flex-col">

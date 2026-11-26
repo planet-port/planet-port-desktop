@@ -14,15 +14,16 @@ const DONE_CLOSE_MS = 1_500;
 type Phase = 'confirm' | 'waiting' | 'done' | 'failed' | 'timeout';
 
 /// install-failed 短枚举串(bootstrap.rs stage_and_spawn)→ 文案键;
-/// 不在表内(含提权前 rejection)走 failGeneric 并展示原始原因
-const FAIL_REASON_KEYS: Record<string, string> = {
+/// 不在表内(含提权前 rejection)走 failGeneric 并展示原始原因。
+/// App 层的安装结果兜底 toast 共用此表,避免两处映射漂移
+export const FAIL_REASON_KEYS: Record<string, string> = {
   'install-exit-nonzero': 'settings.failExit',
   'daemon-timeout': 'settings.failTimeout',
 };
 
 /// 重装 daemon 弹窗五阶段机:confirm → waiting → done/failed/timeout。
 /// 安装全程弹窗保持打开(等待中任何关闭路径 = 取消等待,提权进程后台继续,
-/// 结果由 SettingsDrawer 的 install-done/failed 兜底监听以 toast 回报);
+/// 结果由 App 层常驻的 install-done/failed 监听以 toast 回报);
 /// done 停留 1.5s 自动关;3 分钟无任何事件转超时问询(继续等待/取消等待)。
 export default function ReinstallDialog({
   open, embeddedDaemon, installed, onClose, onDone,
