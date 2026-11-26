@@ -5,9 +5,32 @@ import SettingsDrawer from '../components/SettingsDrawer';
 import { ToastProvider } from '../components/Toaster';
 import { initTestI18n } from './i18n';
 
-const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn<(cmd: string) => Promise<unknown>>() }));
+// install-done/failed 事件回调收集进 listeners 由测试侧触发(同 App.test.tsx 手法)
+const { invokeMock, listeners } = vi.hoisted(() => ({
+  invokeMock: vi.fn<(cmd: string) => Promise<unknown>>(),
+  listeners: new Map<string, Array<(e: { payload: unknown }) => void>>(),
+}));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn().mockResolvedValue('0.4.1') }));
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn((event: string, cb: (e: { payload: unknown }) => void) => {
+    const arr = listeners.get(event) ?? [];
+    arr.push(cb);
+    listeners.set(event, arr);
+    return Promise.resolve(() => {
+      const list = listeners.get(event);
+      if (!list) return;
+      const i = list.indexOf(cb);
+      if (i >= 0) list.splice(i, 1);
+    });
+  }),
+}));
+
+function emit(event: string, payload: unknown) {
+  act(() => {
+    for (const cb of listeners.get(event) ?? []) cb({ payload });
+  });
+}
 
 /// 抽屉壳 DOM 锚点(Radix Dialog 原语 + ui-x/Sheet 封装层)
 const mask = () => document.querySelector('[data-slot="sheet-overlay"]');
@@ -32,6 +55,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  listeners.clear();
   invokeMock.mockReset();
   invokeMock.mockImplementation((cmd: string) =>
     cmd === 'identity_get'
@@ -197,5 +221,35 @@ describe('SettingsDrawer', () => {
     expect(await screen.findByText('节点身份')).toBeInTheDocument();
     expect(screen.queryByTestId('settings-install-block')).not.toBeInTheDocument();
     expect(screen.queryByTestId('settings-install-daemon')).not.toBeInTheDocument();
+  });
+
+  it('点安装按钮打开重装确认弹窗(默认关闭,确认态含覆盖安装说明)', async () => {
+    mockManifest({ daemon: '0.7.0', cli: '0.6.0', target: 'aarch64-apple-darwin' }, '0.6.0');
+    renderDrawer();
+    expect(screen.queryByTestId('reinstall-dialog')).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId('settings-install-daemon'));
+    expect(await screen.findByTestId('reinstall-dialog')).toBeInTheDocument();
+    expect(screen.getByText(/覆盖安装 daemon 与 CLI/)).toBeInTheDocument();
+  });
+
+  it('弹窗已关时 install-done 兜底:toast 提示并重拉已装版本刷新常驻文案', async () => {
+    mockManifest({ daemon: '0.7.0', cli: '0.6.0', target: 'aarch64-apple-darwin' }, '0.6.0');
+    renderDrawer();
+    expect(await screen.findByTestId('settings-install-block')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-ver-daemon').textContent).toContain('已装 0.6.0');
+    // 探测改回报新版本,模拟安装落盘后的磁盘状态
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === 'identity_get'
+        ? Promise.resolve(identity)
+        : cmd === 'get_cli_version'
+          ? Promise.resolve('0.7.0')
+          : cmd === 'embedded_manifest'
+            ? Promise.resolve({ daemon: '0.7.0', cli: '0.6.0', target: 'aarch64-apple-darwin' })
+            : cmd === 'get_installed_daemon_version'
+              ? Promise.resolve('0.7.0')
+              : Promise.resolve(null));
+    emit('install-done', undefined);
+    expect(await screen.findByText('daemon 安装完成')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-ver-daemon').textContent).toContain('已装 0.7.0');
   });
 });

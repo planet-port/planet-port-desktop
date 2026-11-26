@@ -23,6 +23,11 @@ export default {
     failGeneric: '安装启动失败',
     retry: '重试',
     installing: '正在安装，请留意系统提权弹窗…',
+    /// 重装弹窗(ReinstallDialog)专用键
+    reinstallDesc: '将使用内嵌 v{{version}} 覆盖安装 daemon 与 CLI，期间服务会重启、网络瞬断。',
+    installTimeout: '安装耗时异常，可能仍在后台进行。',
+    keepWaiting: '继续等待', stopWaiting: '取消等待',
+    installSuccess: '安装完成',
   },
   identity: {
     section: '节点身份',

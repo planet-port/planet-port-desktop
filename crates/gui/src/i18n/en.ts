@@ -24,6 +24,11 @@ export default {
     failGeneric: 'Failed to start the install',
     retry: 'Retry',
     installing: 'Installing — watch for the system elevation prompt…',
+    /// ReinstallDialog-specific keys
+    reinstallDesc: 'Embedded v{{version}} will overwrite-install the daemon and CLI. The service restarts and the network drops briefly.',
+    installTimeout: 'Taking unusually long — the install may still be running in the background.',
+    keepWaiting: 'Keep waiting', stopWaiting: 'Stop waiting',
+    installSuccess: 'Installed',
   },
   identity: {
     section: 'Node identity',
