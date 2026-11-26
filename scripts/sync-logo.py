@@ -121,6 +121,8 @@ def ios(s: dict[str, str]) -> None:
     appicon = os.path.join(assets, "AppIcon.appiconset")
     copy(s["main1024"], os.path.join(appicon, "icon_1024.png"))
     for name, size in IOS_ICON_SIZES.items():
+        if name == "icon_1024.png":
+            continue  # icon_1024 走上方 copy 直拷,重采样会破坏直拷语义
         resize(s["main1024"], os.path.join(appicon, name), size)
     copy(s["main1024"], os.path.join(assets, "PlanetPortLogo.imageset", "planetportlogo.png"))
     webp(s["main1024"], os.path.join(repo, "docs", "logo.webp"), 1024)
