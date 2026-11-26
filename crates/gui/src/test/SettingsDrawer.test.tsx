@@ -8,10 +8,6 @@ import { initTestI18n } from './i18n';
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn<(cmd: string) => Promise<unknown>>() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn().mockResolvedValue('0.4.1') }));
-// daemon 安装行挂了 Tauri 事件监听:jsdom 无 IPC,返回空退订的 no-op mock
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(() => Promise.resolve(() => {})),
-}));
 
 /// 抽屉壳 DOM 锚点(Radix Dialog 原语 + ui-x/Sheet 封装层)
 const mask = () => document.querySelector('[data-slot="sheet-overlay"]');
@@ -46,6 +42,21 @@ beforeEach(() => {
   localStorage.removeItem('theme');
   mockMatchMedia(false);
 });
+
+/// 底部安装区用例的 invoke 定向:内嵌 manifest(非 null 时安装区渲染)与
+/// 已装 daemon 磁盘版本探测值
+function mockManifest(manifest: { daemon: string; cli: string; target: string } | null, installedDaemon: string | null) {
+  invokeMock.mockImplementation((cmd: string) =>
+    cmd === 'identity_get'
+      ? Promise.resolve(identity)
+      : cmd === 'get_cli_version'
+        ? Promise.resolve('0.6.0')
+        : cmd === 'embedded_manifest'
+          ? Promise.resolve(manifest)
+          : cmd === 'get_installed_daemon_version'
+            ? Promise.resolve(installedDaemon)
+            : Promise.resolve(null));
+}
 
 // SettingsDrawer 自身无查询,但内嵌 IdentitySection 走 useQuery/useQueryClient,须挂 Provider。
 // 组件为瞬时型(App 条件渲染挂载,内部自持 open),不再收 open prop
@@ -155,5 +166,36 @@ describe('SettingsDrawer', () => {
     expect(screen.getByText('Settings')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('lang-zh')); // 还原
     expect(screen.getByText('设置')).toBeInTheDocument();
+  });
+
+  it('底部安装区:已装/内嵌两行常驻,daemon 旧于内嵌时状态语为升级,按钮为全宽 primary', async () => {
+    mockManifest({ daemon: '0.7.0', cli: '0.6.0', target: 'aarch64-apple-darwin' }, '0.6.0');
+    renderDrawer();
+    expect(await screen.findByTestId('settings-install-block')).toBeInTheDocument();
+    // planet-portd 行:已装探测值 + 内嵌值两段同现
+    const daemonLine = screen.getByTestId('settings-ver-daemon');
+    expect(daemonLine.textContent).toContain('已装 0.6.0');
+    expect(daemonLine.textContent).toContain('内嵌 0.7.0');
+    expect(screen.getByTestId('settings-ver-cli').textContent).toContain('内嵌 0.6.0');
+    expect(screen.getByTestId('settings-version-state').textContent).toBe('有组件可升级');
+    const btn = screen.getByTestId('settings-install-daemon');
+    expect(btn).toHaveAttribute('data-variant', 'primary');
+    expect(btn.className).toContain('w-full');
+    // daemonState 探测失败按已装处理 → 重装文案
+    expect(btn.textContent).toContain('重新安装');
+  });
+
+  it('两侧同版时安装区状态语为一致', async () => {
+    mockManifest({ daemon: '0.6.0', cli: '0.6.0', target: 'aarch64-apple-darwin' }, '0.6.0');
+    renderDrawer();
+    await screen.findByTestId('settings-install-block');
+    expect(screen.getByTestId('settings-version-state').textContent).toBe('版本一致');
+  });
+
+  it('无内嵌资源(manifest 为 null)时底部安装区整块不渲染', async () => {
+    renderDrawer();
+    expect(await screen.findByText('节点身份')).toBeInTheDocument();
+    expect(screen.queryByTestId('settings-install-block')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings-install-daemon')).not.toBeInTheDocument();
   });
 });

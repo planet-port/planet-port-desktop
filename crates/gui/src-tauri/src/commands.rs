@@ -21,6 +21,14 @@ pub fn get_cli_version() -> Option<String> {
     crate::api_client::installed_cli_version()
 }
 
+/// 已装 daemon 版本(spawn 探测,离线可用):版本差异检测比对的是磁盘
+/// 二进制,与心跳 /version(运行中版本)口径不同——重装覆盖磁盘、旧进程
+/// 未重启时两者会短暂不一致
+#[tauri::command]
+pub fn get_installed_daemon_version() -> Option<String> {
+    crate::api_client::installed_daemon_version()
+}
+
 #[tauri::command]
 pub fn get_status() -> Result<Value, GuiError> {
     discover()?.get_json(endpoints::status())

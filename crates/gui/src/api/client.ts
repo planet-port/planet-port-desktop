@@ -12,6 +12,9 @@ async function cmd<T>(name: string, args?: Record<string, unknown>): Promise<T> 
 
 export const api = {
   daemonState: () => cmd<DaemonState>('get_daemon_state'),
+  /// 已装 daemon 二进制版本(spawn 探测):版本差异检测用,与 daemonState
+  /// .daemonVersion(在线走 /version)口径不同
+  installedDaemonVersion: () => cmd<string | null>('get_installed_daemon_version'),
   /// 已装 cli 二进制版本:未装/探测失败为 null,前端回退内嵌 manifest.cli
   cliVersion: () => cmd<string | null>('get_cli_version'),
   /// 内嵌安装资源清单:null = 无内嵌资源,前端退回手动引导

@@ -15,6 +15,9 @@ export default {
     background: 'Background', bgPick: 'Choose image', bgClear: 'Clear background',
     installDaemon: 'Install daemon', reinstallDaemon: 'Reinstall daemon',
     installDone: 'Daemon installed',
+    verInstalled: 'Installed {{v}}', verEmbedded: 'Embedded {{v}}', verNotDetected: 'not detected',
+    verStateUpgrade: 'Upgrade available',
+    verStateCompat: 'Newer than embedded — possible compatibility issues', verStateEven: 'Up to date',
     /// Reused keys from the removed offline guide page (install/reinstall failure and retry)
     failExit: 'The installer exited non-zero. Check the logs and retry.',
     failTimeout: 'Install finished but the daemon did not come online in time. Check the logs and retry.',

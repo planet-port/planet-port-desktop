@@ -80,6 +80,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_daemon_state,
             commands::get_cli_version,
+            commands::get_installed_daemon_version,
             bootstrap::embedded_manifest,
             bootstrap::start_install,
             commands::get_status,

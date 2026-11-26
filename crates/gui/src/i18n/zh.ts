@@ -15,6 +15,8 @@ export default {
     background: '背景', bgPick: '选择图片', bgClear: '清除背景',
     installDaemon: '安装 daemon', reinstallDaemon: '重新安装 daemon',
     installDone: 'daemon 安装完成',
+    verInstalled: '已装 {{v}}', verEmbedded: '内嵌 {{v}}', verNotDetected: '未探测到',
+    verStateUpgrade: '有组件可升级', verStateCompat: '已装版本新于内嵌，可能存在兼容问题', verStateEven: '版本一致',
     /// 原离线引导页 guide.* 复用键(安装/重装失败提示与重试)
     failExit: '安装程序退出码非零，请查看日志后重试。',
     failTimeout: '安装已完成但服务未在预期时间内上线，请查看日志后重试。',
