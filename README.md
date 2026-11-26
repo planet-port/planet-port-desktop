@@ -16,6 +16,12 @@
 
 CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 基于 Tauri 2（托盘常驻），桌面安装包随 tag 发布：macOS dmg（Apple Silicon / Intel）、Windows NSIS、Linux AppImage。daemon + CLI 已覆盖全部功能，GUI 不开、隧道照跑。
 
+> **macOS 安装提示**：dmg 尚未做 Developer ID 签名与公证，macOS 15+ 对下载来的未签名应用会提示"已损坏，无法打开"。执行以下命令解除 Gatekeeper 隔离后即可正常打开：
+>
+> ```bash
+> sudo xattr -rd com.apple.quarantine "/Applications/Planet Port.app"
+> ```
+
 ### 系统支持与最低版本
 
 产物形态由 cargo-dist 生成（命名 `planet-port-<target>.tar.xz`，Windows 为 `planet-port-x86_64-pc-windows-msvc.zip`；预编译二进制 + 安装脚本，后续按系统补 deb / MSI 等安装包）：
