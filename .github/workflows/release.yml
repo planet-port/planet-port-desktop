@@ -356,6 +356,7 @@ jobs:
 
   # 套装组装：cli 归档注入最新稳定 daemon 后重传；homebrew tap 由本 job 维护
   # (dist 生成的公式 checksum 不含注入后归档，故 homebrew 发布从 dist 剥离)。
+  # 重传后按新归档重算聚合 sha256.sum，否则 dist 首传的聚合仍是注入前 hash。
   # 依赖 host 完成(Release 已建)后才可 clobber 资产;仅 cli tag 触发。
   suite:
     # always() 同 gui job:cli 正常链 build job 必跑,此处仅防御同类 skip 传染
@@ -394,6 +395,9 @@ jobs:
             [ -n "$inner" ] && { mv "$inner"/* "$1/" && rmdir "$inner"; }
             return 0
           }
+          # 注入后归档 hash 留一份在内存里,收尾重算聚合 sha256.sum 用
+          # (tar 循环会删掉归档本体,tap step 只剩 .sha256 文件可读)
+          SUITE_FILES=(); SUITE_SHA=()
           for T in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
             gh release download "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --pattern "planet-port-${T}.tar.xz" --clobber
             gh release download "$DAEMON_TAG"      --repo "${{ github.repository }}" --pattern "planet-portd-${T}.tar.xz" --clobber
@@ -403,6 +407,7 @@ jobs:
             OUT="planet-port-${T}.tar.xz"
             (cd cli && tar -cJf "../$OUT" .)
             sha256sum "$OUT" > "${OUT}.sha256"
+            SUITE_FILES+=("$OUT"); SUITE_SHA+=("$(awk '{print $1}' "${OUT}.sha256")")
             gh release upload "$GITHUB_REF_NAME" "$OUT" "${OUT}.sha256" --clobber
             rm -rf cli dm "$OUT"
           done
@@ -419,7 +424,29 @@ jobs:
           rm -f "$OUT"
           (cd cli && zip -qr "../$OUT" .)
           sha256sum "$OUT" > "${OUT}.sha256"
+          SUITE_FILES+=("$OUT"); SUITE_SHA+=("$(awk '{print $1}' "${OUT}.sha256")")
           gh release upload "$GITHUB_REF_NAME" "$OUT" "${OUT}.sha256" --clobber
+          # 聚合校验文件重算:dist 首传的 sha256.sum 记录的是注入前归档 hash,
+          # suite clobber 重传后即陈旧(v0.6.0 线上五条全不匹配,2026-11-26 终审),
+          # 用 sha256sum -c 的用户必失败。逐行只替换套装归档条目的 hash:行格式
+          # (`<hash> *<file>`,sha256sum 二进制标记)、行序与未重传的 source.tar.gz
+          # 行都保持 dist 原样;某条目未恰好命中一行即中止,绝不带陈旧条目重传
+          if gh release download "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --pattern "sha256.sum" --clobber; then
+            for i in "${!SUITE_FILES[@]}"; do
+              F="${SUITE_FILES[$i]}"; H="${SUITE_SHA[$i]}"
+              awk -v f="$F" -v h="$H" '
+                NF == 2 && ($2 == f || $2 == "*"f) { $1 = h; hit++ }
+                { print }
+                END { if (hit != 1) exit 1 }
+              ' sha256.sum > sha256.sum.next \
+                || { echo "sha256.sum 中 ${F} 未恰好命中一行，中止以免留下陈旧条目" >&2; exit 1; }
+              mv sha256.sum.next sha256.sum
+            done
+            gh release upload "$GITHUB_REF_NAME" sha256.sum --clobber
+          else
+            # dist 未产聚合文件时无事可修,不为此挂掉套装链
+            echo "Release 上无 sha256.sum，跳过聚合重算"
+          fi
       - name: Update homebrew tap
         env:
           TAP_TOKEN: ${{ secrets.DIST_RELEASE_TOKEN }}
