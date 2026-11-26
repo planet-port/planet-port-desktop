@@ -70,6 +70,8 @@ def resize(src: str, dst: str, size: int) -> None:
 
 def webp(src: str, dst: str, size: int) -> None:
     im = Image.open(src).convert("RGBA")
+    if im.width != im.height:
+        sys.exit(f"源图非正方形: {src} {im.size}")
     im = im.resize((size, size), Image.LANCZOS)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     im.save(dst, "WEBP", quality=90)
