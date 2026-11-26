@@ -1,8 +1,27 @@
-/// 首启向导纯逻辑:版本比较与自动安装区判定(独立于组件,便于单测)
-/// 与 CLI install.rs version_lt 同语义
+/// 版本比较与内嵌/已装差异判定(纯函数,便于单测)。
+/// versionLt 与 CLI install.rs version_lt 同语义,自 pages/setup.ts 迁入
+/// (SetupWizard 随离线引导页移除,首启向导语境不复存在)
 
-export type InstallPhase = 'idle' | 'installing' | 'failed';
+export type VersionRelation = 'older' | 'newer' | 'equal' | 'unknown';
 
+/// 单组件比对:null = 任一侧探测不到,如实标 unknown 不猜
+export function compareVersion(installed: string | null, embedded: string | null): VersionRelation {
+  if (!installed || !embedded) return 'unknown';
+  if (installed === embedded) return 'equal';
+  return versionLt(installed, embedded) ? 'older' : 'newer';
+}
+
+/// 整体状态:newer(已装新于内嵌,GUI 未经该组合测试)优先于 older(可升级);
+/// 双 unknown 无从判定 → silent(调用方不提示);其余组合落 even
+export type OverallVersionState = 'upgrade' | 'compat' | 'even' | 'silent';
+export function overallState(daemon: VersionRelation, cli: VersionRelation): OverallVersionState {
+  if (daemon === 'newer' || cli === 'newer') return 'compat';
+  if (daemon === 'older' || cli === 'older') return 'upgrade';
+  if (daemon === 'unknown' && cli === 'unknown') return 'silent';
+  return 'even';
+}
+
+// ↓↓↓ 自 pages/setup.ts 原样迁入,实现不动 ↓↓↓
 export interface VersionTriple {
   core: [number, number, number];
   beta: number;
@@ -38,21 +57,4 @@ export function versionLt(a: string, b: string): boolean {
   }
   if (pa.beta !== pb.beta) return pa.beta < pb.beta;
   return pa.dev && !pb.dev;
-}
-
-/// 自动安装区显隐判定:
-/// - 无内嵌资源(manifest=null)→ 不显示,走手动引导;
-/// - 未安装 → 显示「立即安装」;
-/// - 已装但拿不到已装版本号 → 按幂等升级处理,仍显示;
-/// - 已装且版本不低于内嵌版本 → 不显示(直接用手动「启动服务」引导)
-/// - 已装且内嵌版本更高才显示升级区
-export function needInstall(
-  manifest: { daemon: string } | null,
-  installed: boolean,
-  installedVersion: string | null,
-): boolean {
-  if (manifest === null) return false;
-  if (!installed) return true;
-  if (!installedVersion) return true;
-  return versionLt(installedVersion, manifest.daemon);
 }

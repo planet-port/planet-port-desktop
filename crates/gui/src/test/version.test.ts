@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { needInstall, versionLt } from '../pages/setup';
+import { compareVersion, overallState, versionLt } from '../lib/version';
 
 /// 与 CLI install.rs version_lt 同语义:正式版 > 一切 beta;同 beta 号时 -dev 最低;
 /// 非常规输入逐段退化为 0;相等返回 false
-describe('versionLt', () => {
+describe('versionLt(自 setup.ts 迁移,用例原样)', () => {
   it('正式版点分比较:0.4.1 < 0.4.2', () => {
     expect(versionLt('0.4.1', '0.4.2')).toBe(true);
   });
@@ -45,31 +45,31 @@ describe('versionLt', () => {
   });
 });
 
-/// 自动安装区显隐判定:无内嵌资源不显示;未装显示;已装但无已装版本号按幂等升级显示;
-/// 已装且有版本号时按 versionLt 判升级
-describe('needInstall', () => {
-  const m = { daemon: '0.5.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
-
-  it('manifest 为 null(无内嵌资源)不出现自动安装区', () => {
-    expect(needInstall(null, false, null)).toBe(false);
-    expect(needInstall(null, true, '0.4.0')).toBe(false);
+describe('compareVersion', () => {
+  it('任一侧为 null → unknown', () => {
+    expect(compareVersion(null, '0.5.1')).toBe('unknown');
+    expect(compareVersion('0.5.1', null)).toBe('unknown');
   });
-
-  it('未安装即显示自动安装区', () => {
-    expect(needInstall(m, false, null)).toBe(true);
+  it('相等字符串 → equal', () => expect(compareVersion('0.5.1', '0.5.1')).toBe('equal'));
+  it('已装旧于内嵌 → older(含 beta 序)', () => {
+    expect(compareVersion('0.5.1', '0.6.0')).toBe('older');
+    expect(compareVersion('0.6.0-beta.1', '0.6.0')).toBe('older');
   });
+  it('已装新于内嵌 → newer', () => expect(compareVersion('0.6.1', '0.6.0')).toBe('newer'));
+});
 
-  it('已装但拿不到已装版本号:按幂等升级处理,仍显示', () => {
-    expect(needInstall(m, true, null)).toBe(true);
+describe('overallState', () => {
+  it('双 unknown → silent', () => expect(overallState('unknown', 'unknown')).toBe('silent'));
+  it('newer 优先于 older(混合时报兼容)', () => {
+    expect(overallState('newer', 'older')).toBe('compat');
+    expect(overallState('older', 'newer')).toBe('compat');
   });
-
-  it('已装版本低于内嵌版本(含 beta 形态)显示升级区', () => {
-    expect(needInstall(m, true, '0.4.9')).toBe(true);
-    expect(needInstall(m, true, '0.5.0-beta.1')).toBe(true);
+  it('任一 older → upgrade', () => {
+    expect(overallState('older', 'equal')).toBe('upgrade');
+    expect(overallState('unknown', 'older')).toBe('upgrade');
   });
-
-  it('已装版本不低于内嵌版本时不显示', () => {
-    expect(needInstall(m, true, '0.5.0')).toBe(false);
-    expect(needInstall(m, true, '0.5.1')).toBe(false);
+  it('其余 → even', () => {
+    expect(overallState('equal', 'equal')).toBe('even');
+    expect(overallState('equal', 'unknown')).toBe('even');
   });
 });
