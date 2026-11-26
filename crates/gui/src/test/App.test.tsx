@@ -213,50 +213,42 @@ describe('App 单页布局', () => {
   });
 });
 
-describe('启动版本差异检测', () => {
+describe('启动版本差异探测(被动提示)', () => {
   const manifest: EmbeddedManifest = { daemon: '0.6.0', cli: '0.6.0', target: 'aarch64-apple-darwin' };
 
-  it('已装旧于内嵌 → 可升级 toast 带「打开设置」动作,点按开设置抽屉', async () => {
-    mockVersionProbes(manifest, '0.5.1', '0.5.1');
+  /// 页面渲染 + 冲刷版本探测微任务,排除异步未落的假阴性
+  async function renderAndFlush() {
     renderApp();
-    await screen.findAllByText('daemon 在线');
-    // detail 段按组件列出 已装 → 内嵌
-    await findToast(/检测到可升级：planet-portd 0\.5\.1 → 0\.6\.0 · planet-port 0\.5\.1 → 0\.6\.0/, 'ok');
-    fireEvent.click(screen.getByRole('button', { name: '打开设置' }));
-    expect(await screen.findByTestId('settings-drawer')).toBeInTheDocument();
-  });
-
-  it('单侧差异:仅 daemon 旧于内嵌(cli 同版)→ detail 只含 planet-portd 一段', async () => {
-    mockVersionProbes(manifest, '0.5.1', '0.6.0');
-    renderApp();
-    await screen.findAllByText('daemon 在线');
-    await findToast(/^检测到可升级：planet-portd 0\.5\.1 → 0\.6\.0$/, 'ok');
-    // 同版的 planet-port 不进 detail 段(planet-portd 自身不会误配该正则)
-    expect(screen.queryByText(/planet-port \d/)).not.toBeInTheDocument();
-  });
-
-  it('已装新于内嵌 → compat 提示用 error 样式,无动作按钮', async () => {
-    mockVersionProbes(manifest, '0.6.1', '0.6.1');
-    renderApp();
-    await screen.findAllByText('daemon 在线');
-    await findToast(/已装版本新于应用内嵌，可能存在兼容问题/, 'error');
-    expect(screen.queryByRole('button', { name: '打开设置' })).not.toBeInTheDocument();
-  });
-
-  it('两侧同版 → 不弹版本 toast', async () => {
-    mockVersionProbes(manifest, '0.6.0', '0.6.0');
-    renderApp();
-    await screen.findAllByText('daemon 在线');
-    await act(async () => {}); // 冲刷版本检测微任务,排除异步未落的假阴性
-    expect(screen.queryByText(/检测到可升级/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/已装版本新于应用内嵌/)).not.toBeInTheDocument();
-  });
-
-  it('无内嵌 manifest(dev/未组包)→ 不弹版本 toast', async () => {
-    renderApp(); // beforeEach 兜底:embedded_manifest 等三探针均返回 null
     await screen.findAllByText('daemon 在线');
     await act(async () => {});
-    expect(screen.queryByText(/检测到可升级/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/已装版本新于应用内嵌/)).not.toBeInTheDocument();
+  }
+
+  it('已装旧于内嵌 → 状态栏右下角渲染「可升级」', async () => {
+    mockVersionProbes(manifest, '0.5.1', '0.5.1');
+    await renderAndFlush();
+    expect(screen.getByTestId('statusbar-upgradable')).toHaveTextContent('可升级');
+  });
+
+  it('单侧差异:仅 daemon 旧于内嵌(cli 同版)→ 同样点亮', async () => {
+    mockVersionProbes(manifest, '0.5.1', '0.6.0');
+    await renderAndFlush();
+    expect(screen.getByTestId('statusbar-upgradable')).toBeInTheDocument();
+  });
+
+  it('已装新于内嵌(compat)→ 不渲染(被动化后无风险提示)', async () => {
+    mockVersionProbes(manifest, '0.6.1', '0.6.1');
+    await renderAndFlush();
+    expect(screen.queryByTestId('statusbar-upgradable')).not.toBeInTheDocument();
+  });
+
+  it('两侧同版 → 不渲染', async () => {
+    mockVersionProbes(manifest, '0.6.0', '0.6.0');
+    await renderAndFlush();
+    expect(screen.queryByTestId('statusbar-upgradable')).not.toBeInTheDocument();
+  });
+
+  it('无内嵌 manifest(dev/未组包)→ 不渲染', async () => {
+    await renderAndFlush(); // beforeEach 兜底:embedded_manifest 等三探针均返回 null
+    expect(screen.queryByTestId('statusbar-upgradable')).not.toBeInTheDocument();
   });
 });

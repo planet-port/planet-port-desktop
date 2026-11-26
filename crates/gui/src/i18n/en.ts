@@ -8,22 +8,15 @@ export default {
     done: 'Done', import: 'Import', copy: 'Copy', copied: 'Copied',
   },
   icon: { title: 'Choose Icon', graphic: 'Graphic', color: 'Color', randomColor: 'Random color' },
-  app: {
-    /// Startup version-drift toast (embedded manifest vs installed binaries)
-    verToastUpgrade: 'Upgrade available: {{detail}}',
-    verToastCompat: 'Installed version is newer than embedded — possible compatibility issues: {{detail}}',
-    openSettings: 'Open Settings',
-  },
+  statusbar: { upgradable: 'Update available' },
   settings: {
     title: 'Settings', language: 'Language', appearance: 'Appearance', about: 'About', buildTime: 'Build time',
     theme: { light: 'Light', dark: 'Dark', system: 'System' },
     accent: 'Accent color', accentCustom: 'Custom', accentDefault: 'Reset to default',
     background: 'Background', bgPick: 'Choose image', bgClear: 'Clear background',
-    installDaemon: 'Install daemon', reinstallDaemon: 'Reinstall daemon',
+    installDaemon: 'Install daemon', upgradeDaemon: 'Upgrade daemon', reinstallDaemon: 'Reinstall daemon',
     installDone: 'Daemon installed',
     verInstalled: 'Installed {{v}}', verEmbedded: 'Embedded {{v}}', verNotDetected: 'not detected',
-    verStateUpgrade: 'Upgrade available',
-    verStateCompat: 'Newer than embedded — possible compatibility issues', verStateEven: 'Up to date',
     /// Reused keys from the removed offline guide page (install/reinstall failure and retry)
     failExit: 'The installer exited non-zero. Check the logs and retry.',
     failTimeout: 'Install finished but the daemon did not come online in time. Check the logs and retry.',

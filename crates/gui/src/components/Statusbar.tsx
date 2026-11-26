@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
+import UpgradeMark from './UpgradeMark';
 
 /// 底部状态条(方案 B):窗口级全局计数概览。与 Home 共用 status/networks
 /// 查询键,缓存由 Home 的轮询保持新鲜,这里只读不设独立轮询。
 /// 旧 .statusbar/.s-div 规则对译:33px 恒定高、hairline 上边、mono 12px 灰字、
 /// 24px 水平留白;分隔竖线 1×12px
-export default function Statusbar() {
+export default function Statusbar({ upgradable = false }: { upgradable?: boolean }) {
   const { t } = useTranslation();
   const status = useQuery({ queryKey: ['status'], queryFn: api.status });
   const q = useQuery({ queryKey: ['networks', ''], queryFn: () => api.networks() });
@@ -23,6 +24,12 @@ export default function Statusbar() {
       <span>{t('home.sbNetworks', { count: nets.length })}</span>
       <i className="h-3 w-px flex-none bg-[var(--border)]" aria-hidden="true" />
       <span>{t('home.sbOnline', { count: online })}</span>
+      {upgradable && (
+        <span className="ml-auto inline-flex items-center gap-1 text-[var(--lamp)]" data-testid="statusbar-upgradable">
+          <UpgradeMark label={t('statusbar.upgradable')} />
+          {t('statusbar.upgradable')}
+        </span>
+      )}
     </footer>
   );
 }

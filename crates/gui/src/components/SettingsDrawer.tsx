@@ -11,9 +11,10 @@ import IdentitySection from './IdentitySection';
 import DrawerShell from './DrawerShell';
 import ReinstallDialog from './ReinstallDialog';
 import ThemeColorSheet from './ThemeColorSheet';
+import UpgradeMark from './UpgradeMark';
 import { Button } from './ui-x/Button';
 import { backgroundUrl } from '../background';
-import { compareVersion, overallState } from '../lib/version';
+import { compareVersion } from '../lib/version';
 import { setTheme, getTheme, type ThemeMode } from '../theme';
 import { switchLang } from '../i18n';
 
@@ -52,7 +53,7 @@ function ValueRow({
 
 /// 设置抽屉(布局参照 iOS PrefsView,即时生效无保存按钮):身份/语言/外观
 /// (模式+主题色行+背景行)/关于(gui/cli/daemon 三组件版本+Core 版本)/底部
-/// 安装区(已装 vs 内嵌两行+整体状态语+全宽安装按钮)。选项组件参照 iOS 设置:
+/// 安装区(已装 vs 内嵌两行+全宽安装按钮)。选项组件参照 iOS 设置:
 /// 值行(右侧当前值+›)进下级勾选页,不再用行内 seg。iOS 的 IPv6/多连接数/
 /// 按需连接为 VPN 层设置,mac daemon 无对应不做。
 /// 瞬时型弹层:由 App 条件渲染挂载,内部持有 open,onClose 只翻 state 走
@@ -90,9 +91,9 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     refreshVersions();
   }, [refreshVersions]);
-  // 弹窗被「取消等待」关掉后后台安装仍会落地:抽屉开着时经此翻新常驻文案,
-  // 消除「可升级」状态语与「安装完成」提示并存的困惑;报喜弹报归 App 层兜底
-  // 监听,此处只刷新不弹报
+  // 弹窗被「取消等待」关掉后后台安装仍会落地:抽屉开着时经此重拉探测,
+  // 让关于区箭头与安装按钮文案翻新到装后状态,避免滞留「可升级」;
+  // 报喜弹报归 App 层兜底监听,此处只刷新不弹报
   useEffect(() => {
     const p = listen('install-done', refreshVersions);
     return () => {
@@ -112,10 +113,6 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   /// 行文案:已装 vX → 内嵌 vY;探测不到显示未探测到
   const verLine = (installed: string | null, embedded: string) =>
     `${installed ? t('settings.verInstalled', { v: installed }) : t('settings.verNotDetected')} → ${t('settings.verEmbedded', { v: embedded })}`;
-  const verOverall = overallState(
-    compareVersion(installedDaemon, manifest?.daemon ?? null),
-    compareVersion(cliVersion, manifest?.cli ?? null),
-  );
   return (
     <>
       <DrawerShell open={open} onClose={close} onClosed={onClose} testId="settings-drawer">
@@ -159,13 +156,31 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
         <h4 className={groupTitle}>{t('settings.about')}</h4>
         <section className={sectionCard}>
           <div className={kvRow}><span className={kvLabel}>planet-port-gui</span><span className={monoValue}>{version || '-'}</span></div>
-          <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>planet-port</span><span className={monoValue}>{cliVersion || manifest?.cli || '-'}</span></div>
-          <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>planet-portd</span><span className={monoValue}>{daemonVersion || manifest?.daemon || '-'}</span></div>
+          <div className={`${kvRow} ${rowDivider}`}>
+            <span className={kvLabel}>planet-port</span>
+            <span className={monoValue}>
+              <span className="inline-flex items-center gap-1">
+                {cliVersion || manifest?.cli || '-'}
+                {/* 图标判据与显示值同源:cli 的探测即磁盘口径 */}
+                {compareVersion(cliVersion, manifest?.cli ?? null) === 'older' && <UpgradeMark label={t('statusbar.upgradable')} />}
+              </span>
+            </span>
+          </div>
+          <div className={`${kvRow} ${rowDivider}`}>
+            <span className={kvLabel}>planet-portd</span>
+            <span className={monoValue}>
+              <span className="inline-flex items-center gap-1">
+                {daemonVersion || manifest?.daemon || '-'}
+                {/* 图标判据用磁盘探测口径(installedDaemon),与运行中显示值不同源 */}
+                {compareVersion(installedDaemon, manifest?.daemon ?? null) === 'older' && <UpgradeMark label={t('statusbar.upgradable')} />}
+              </span>
+            </span>
+          </div>
           <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>ZeroTier Core</span><span className={monoValue}>{coreVersion ?? '-'}</span></div>
           <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>{t('settings.buildTime')}</span><span className={monoValue}>{buildTime || '-'}</span></div>
         </section>
-        {/* 安装区(抽屉底部独立块):版本差异常驻两行 + 整体状态语 + 全宽主题色
-            按钮;无内嵌资源(dev/未组包)整块不渲染(原 DaemonInstallRow 口径) */}
+        {/* 安装区(抽屉底部独立块):版本差异常驻两行 + 全宽安装按钮;
+            无内嵌资源(dev/未组包)整块不渲染(原 DaemonInstallRow 口径) */}
         {manifest && (
           <section className="mt-auto pt-4" data-testid="settings-install-block">
             <div className="mb-1.5 flex flex-col gap-0.5 px-1 text-xs font-mono text-[var(--muted)]">
@@ -175,11 +190,6 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
               <span data-testid="settings-ver-cli">
                 planet-port {verLine(cliVersion, manifest.cli)}
               </span>
-              {verOverall !== 'silent' && (
-                <span className="font-sans" data-testid="settings-version-state">
-                  {t(verOverall === 'upgrade' ? 'settings.verStateUpgrade' : verOverall === 'compat' ? 'settings.verStateCompat' : 'settings.verStateEven')}
-                </span>
-              )}
             </div>
             <Button
               variant="primary"
@@ -187,7 +197,11 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
               data-testid="settings-install-daemon"
               onClick={() => setReinstallOpen(true)}
             >
-              {daemonInstalled ? t('settings.reinstallDaemon') : t('settings.installDaemon')}
+              {!daemonInstalled
+                ? t('settings.installDaemon')
+                : compareVersion(installedDaemon, manifest.daemon) === 'older'
+                  ? t('settings.upgradeDaemon')
+                  : t('settings.reinstallDaemon')}
             </Button>
           </section>
         )}

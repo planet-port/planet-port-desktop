@@ -8,21 +8,15 @@ export default {
     done: '完成', import: '导入', copy: '复制', copied: '已复制',
   },
   icon: { title: '选择图标', graphic: '图形', color: '底色', randomColor: '随机底色' },
-  app: {
-    /// 启动版本差异检测 toast(内嵌 manifest vs 磁盘已装)
-    verToastUpgrade: '检测到可升级：{{detail}}',
-    verToastCompat: '已装版本新于应用内嵌，可能存在兼容问题：{{detail}}',
-    openSettings: '打开设置',
-  },
+  statusbar: { upgradable: '可升级' },
   settings: {
     title: '设置', language: '语言', appearance: '外观', about: '关于', buildTime: '构建时间',
     theme: { light: '浅色', dark: '深色', system: '跟随系统' },
     accent: '主题色', accentCustom: '自定义', accentDefault: '恢复默认',
     background: '背景', bgPick: '选择图片', bgClear: '清除背景',
-    installDaemon: '安装 daemon', reinstallDaemon: '重新安装 daemon',
+    installDaemon: '安装 daemon', upgradeDaemon: '升级 daemon', reinstallDaemon: '重新安装 daemon',
     installDone: 'daemon 安装完成',
     verInstalled: '已装 {{v}}', verEmbedded: '内嵌 {{v}}', verNotDetected: '未探测到',
-    verStateUpgrade: '有组件可升级', verStateCompat: '已装版本新于内嵌，可能存在兼容问题', verStateEven: '版本一致',
     /// 原离线引导页 guide.* 复用键(安装/重装失败提示与重试)
     failExit: '安装程序退出码非零，请查看日志后重试。',
     failTimeout: '安装已完成但服务未在预期时间内上线，请查看日志后重试。',

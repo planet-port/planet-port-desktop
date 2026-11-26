@@ -11,7 +11,7 @@ import SettingsDrawer from './components/SettingsDrawer';
 import Statusbar from './components/Statusbar';
 import { useToast } from './components/Toaster';
 import Home from './pages/Home';
-import { compareVersion, overallState, type VersionRelation } from './lib/version';
+import { compareVersion, overallState } from './lib/version';
 import { detectOs } from './platform';
 import { cn } from '@/lib/utils';
 
@@ -32,38 +32,24 @@ export default function App() {
   /// Windows/Linux 保持原生标题栏,不加留位
   const mac = useMemo(() => detectOs() === 'macos', []);
 
-  /// 启动一次性版本差异检测:内嵌 manifest vs 磁盘已装(spawn 探测)。
-  /// newer(已装新于内嵌)优先于 older;toast 只在启动弹一次,重装完成后
-  /// 的状态变化由设置抽屉常驻文案呈现,不再打扰
+  /// 启动一次性版本差异探测:内嵌 manifest vs 磁盘已装(spawn 探测)。
+  /// 被动化口径:只点亮状态栏右下角「可升级」,不弹 toast(用户定稿);
+  /// compat(已装新于内嵌)无动作,详细信息在设置抽屉版本行/图标呈现
   const versionChecked = useRef(false);
+  const [upgradable, setUpgradable] = useState(false);
   useEffect(() => {
     if (versionChecked.current) return;
     void Promise.all([api.embeddedManifest(), api.installedDaemonVersion(), api.cliVersion()])
       .then(([manifest, instDaemon, instCli]) => {
         versionChecked.current = true;
         if (!manifest) return; // dev/未组包无内嵌资源,无从比对
-        const rd = compareVersion(instDaemon, manifest.daemon);
-        const rc = compareVersion(instCli, manifest.cli);
-        const overall = overallState(rd, rc);
-        if (overall !== 'upgrade' && overall !== 'compat') return;
-        const part = (name: string, rel: VersionRelation, a: string | null, b: string) =>
-          rel === 'older' || rel === 'newer' ? `${name} ${a} → ${b}` : null;
-        const detail = [part('planet-portd', rd, instDaemon, manifest.daemon), part('planet-port', rc, instCli, manifest.cli)]
-          .filter(Boolean)
-          .join(' · ');
-        if (overall === 'upgrade') {
-          toast.ok(t('app.verToastUpgrade', { detail }), {
-            label: t('app.openSettings'),
-            onClick: () => setDrawer({ kind: 'settings' }),
-          });
-        } else {
-          // compat 是风险告知,用 error 样式保证醒目
-          toast.error(t('app.verToastCompat', { detail }));
-        }
+        setUpgradable(
+          overallState(compareVersion(instDaemon, manifest.daemon), compareVersion(instCli, manifest.cli)) === 'upgrade',
+        );
       })
-      // 单项探测 reject 视为整体失败静默跳过:常驻文案(设置抽屉)仍会给未探测到的信息
+      // 单项探测 reject 视为整体失败静默跳过:状态栏保持不提示
       .catch(() => {});
-  }, [toast, t]);
+  }, []);
 
   useEffect(() => {
     void api.daemonState().then(s => setOnline(s.online));
@@ -137,7 +123,7 @@ export default function App() {
       </header>
       <main className="flex min-w-0 flex-1 flex-col">
         <Home online={online} onAddNetwork={planet => setDrawer({ kind: 'addNet', planet })} />
-        <Statusbar />
+        <Statusbar upgradable={upgradable} />
       </main>
       {/* 三个抽屉均为瞬时型:内部自持 open 走滑出动画,关动画结束才回调
           onClose 清 drawer 状态,故这里条件渲染保持不变;settings 离线也可开

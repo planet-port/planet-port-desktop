@@ -192,7 +192,21 @@ describe('SettingsDrawer', () => {
     expect(screen.getByText('设置')).toBeInTheDocument();
   });
 
-  it('底部安装区:已装/内嵌两行常驻,daemon 旧于内嵌时状态语为升级,按钮为全宽 primary', async () => {
+  it('关于区:cli 与 daemon 磁盘版本均旧于内嵌 → 两行值列均带可升级箭头', async () => {
+    mockManifest({ daemon: '0.7.0', cli: '0.7.0', target: 'aarch64-apple-darwin' }, '0.6.0');
+    renderDrawer();
+    expect(await screen.findByTestId('settings-install-block')).toBeInTheDocument();
+    const marks = screen.getAllByLabelText('可升级');
+    expect(marks).toHaveLength(2);
+    // 箭头分别落在 planet-port 与 planet-portd 两行值列(cli 行在前;
+    // 'planet-port' 是 'planet-portd' 的前缀,须排除包含误判)
+    const rowOf = (el: HTMLElement) => el.closest('div')?.textContent ?? '';
+    expect(rowOf(marks[0])).toContain('planet-port');
+    expect(rowOf(marks[0])).not.toContain('planet-portd');
+    expect(rowOf(marks[1])).toContain('planet-portd');
+  });
+
+  it('底部安装区:已装/内嵌两行常驻,状态语行不再存在,daemon 旧于内嵌时按钮为升级文案', async () => {
     mockManifest({ daemon: '0.7.0', cli: '0.6.0', target: 'aarch64-apple-darwin' }, '0.6.0');
     renderDrawer();
     expect(await screen.findByTestId('settings-install-block')).toBeInTheDocument();
@@ -201,19 +215,24 @@ describe('SettingsDrawer', () => {
     expect(daemonLine.textContent).toContain('已装 0.6.0');
     expect(daemonLine.textContent).toContain('内嵌 0.7.0');
     expect(screen.getByTestId('settings-ver-cli').textContent).toContain('内嵌 0.6.0');
-    expect(screen.getByTestId('settings-version-state').textContent).toBe('有组件可升级');
+    // 整体状态语已废(升级信息收敛到关于区箭头/状态栏),行不存在
+    expect(screen.queryByTestId('settings-version-state')).not.toBeInTheDocument();
     const btn = screen.getByTestId('settings-install-daemon');
     expect(btn).toHaveAttribute('data-variant', 'primary');
     expect(btn.className).toContain('w-full');
-    // daemonState 探测失败按已装处理 → 重装文案
-    expect(btn.textContent).toContain('重新安装');
+    // daemonState 探测失败按已装处理;磁盘版本旧于内嵌 → 升级文案
+    expect(btn.textContent).toBe('升级 daemon');
+    // daemon 磁盘旧于内嵌 → planet-portd 行带箭头;cli 同版无箭头
+    expect(screen.getAllByLabelText('可升级')).toHaveLength(1);
   });
 
-  it('两侧同版时安装区状态语为一致', async () => {
+  it('两侧同版 → 无状态语、无可升级箭头,按钮为重装文案', async () => {
     mockManifest({ daemon: '0.6.0', cli: '0.6.0', target: 'aarch64-apple-darwin' }, '0.6.0');
     renderDrawer();
     await screen.findByTestId('settings-install-block');
-    expect(screen.getByTestId('settings-version-state').textContent).toBe('版本一致');
+    expect(screen.queryByTestId('settings-version-state')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('可升级')).not.toBeInTheDocument();
+    expect(screen.getByTestId('settings-install-daemon').textContent).toBe('重新安装 daemon');
   });
 
   it('无内嵌资源(manifest 为 null)时底部安装区整块不渲染', async () => {
