@@ -158,6 +158,60 @@ describe('ReinstallDialog', () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 
+  it('超时问询开着时来 install-progress → 退回等待并重挂兜底计时', async () => {
+    await setup();
+    confirm();
+    act(() => {
+      vi.advanceTimersByTime(180_000);
+    });
+    expect(screen.getByTestId('reinstall-timeout')).toBeInTheDocument();
+    // 进度事件证明后端还活着:退回等待,兜底计时从头再挂
+    emit('install-progress', undefined);
+    expect(screen.getByTestId('reinstall-waiting')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(179_999);
+    });
+    expect(screen.queryByTestId('reinstall-timeout')).not.toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.getByTestId('reinstall-timeout')).toBeInTheDocument();
+  });
+
+  it('open=false 翻 true 重入回确认态:等待兜底计时随 cleanup 清除', async () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    const onDone = vi.fn();
+    const { rerender } = render(
+      <ReinstallDialog open embeddedDaemon="0.7.0" installed onClose={onClose} onDone={onDone} />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(16);
+    });
+    await act(async () => {});
+    confirm();
+    expect(screen.getByTestId('reinstall-waiting')).toBeInTheDocument();
+    // 关:cleanup 清兜底计时并解绑监听,退出动画(250ms)走完整树卸载
+    rerender(<ReinstallDialog open={false} embeddedDaemon="0.7.0" installed onClose={onClose} onDone={onDone} />);
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(screen.queryByTestId('reinstall-dialog')).not.toBeInTheDocument();
+    // 再开:一律回确认态,不残留等待画面
+    rerender(<ReinstallDialog open embeddedDaemon="0.7.0" installed onClose={onClose} onDone={onDone} />);
+    act(() => {
+      vi.advanceTimersByTime(16);
+    });
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: '确定' })).toBeInTheDocument();
+    expect(screen.queryByTestId('reinstall-waiting')).not.toBeInTheDocument();
+    // 旧计时已清:重开后推进满 180s 不转超时
+    act(() => {
+      vi.advanceTimersByTime(180_000);
+    });
+    expect(screen.queryByTestId('reinstall-timeout')).not.toBeInTheDocument();
+  });
+
   it('startInstall reject already in progress → 保持等待态,兜底计时不受影响', async () => {
     startInstallMock.mockRejectedValue('install already in progress');
     await setup();

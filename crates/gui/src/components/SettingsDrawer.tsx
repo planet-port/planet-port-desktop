@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getVersion } from '@tauri-apps/api/app';
+import { listen } from '@tauri-apps/api/event';
 import { api } from '../api/client';
 import type { EmbeddedManifest } from '../api/types';
 import BackgroundPickerSheet from './BackgroundPickerSheet';
@@ -88,6 +89,15 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   }, []);
   useEffect(() => {
     refreshVersions();
+  }, [refreshVersions]);
+  // 弹窗被「取消等待」关掉后后台安装仍会落地:抽屉开着时经此翻新常驻文案,
+  // 消除「可升级」状态语与「安装完成」提示并存的困惑;报喜弹报归 App 层兜底
+  // 监听,此处只刷新不弹报
+  useEffect(() => {
+    const p = listen('install-done', refreshVersions);
+    return () => {
+      void p.then(f => f());
+    };
   }, [refreshVersions]);
   // cli/daemon 未装(探测为 null)时回退内嵌 manifest 双版本
   useEffect(() => {

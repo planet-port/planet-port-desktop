@@ -14,8 +14,8 @@ describe('offline', () => {
 
   it('首页常驻:顶栏设置可见,添加行星禁用(不再整页替换为引导页)', async () => {
     // 设置常显(安装入口在内);添加行星依赖 daemon,离线禁用。
-    // 给心跳首探(3s 周期)离线确认留余量
     await browser.$('[data-testid="topbar-settings"]').waitForDisplayed({ timeout: 20000 });
+    // 给心跳首探(3s 周期)离线确认留余量
     await expect(browser.$('[data-testid="topbar-add-planet"]')).not.toBeEnabled();
   });
 

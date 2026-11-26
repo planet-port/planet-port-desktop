@@ -62,17 +62,29 @@ const toastKindClasses: Record<ToastKind, string> = {
     'border-[color:color-mix(in_srgb,var(--danger)_45%,transparent)] text-[color:var(--danger)]',
 };
 
-/// 可选动作按钮:启动版本检测的「打开设置」入口等,点击只执行回调不改 toast 态
+/// 可选动作按钮:启动版本检测的「打开设置」入口等。点击 = 消费完即撤条目
+/// (见 pushToast 注释),回调只管业务侧(如开抽屉),toast 态由封装层接管
 export type ToastAction = { label: string; onClick: () => void };
 
-function ToastContent({ kind, text, action }: { kind: ToastKind; text: string; action?: ToastAction }) {
+function ToastContent({
+  kind, text, action, dismiss,
+}: {
+  kind: ToastKind;
+  text: string;
+  action?: ToastAction;
+  /// 点击动作按钮时先撤条目再执行回调;无动作按钮的条目不传
+  dismiss?: () => void;
+}) {
   return (
     <div className={cn(toastContentClasses, toastKindClasses[kind], 'flex items-center gap-2.5', kind)}>
       <span className="min-w-0">{text}</span>
       {action && (
         <button
-          className="shrink-0 cursor-pointer rounded-[4px] border border-[color:var(--border-h)] bg-transparent px-1.5 py-0.5 text-xs text-primary transition-colors duration-[120ms] ease-[ease] hover:bg-[var(--panel)]"
-          onClick={action.onClick}
+          className="shrink-0 cursor-pointer rounded-[4px] border border-[color:var(--border-h)] bg-transparent px-1.5 py-0.5 text-xs text-primary transition-colors duration-[120ms] ease-[ease] hover:bg-[var(--panel-2)]"
+          onClick={() => {
+            dismiss?.();
+            action.onClick();
+          }}
         >
           {action.label}
         </button>
@@ -81,10 +93,20 @@ function ToastContent({ kind, text, action }: { kind: ToastKind; text: string; a
   );
 }
 
-/// 入队一条 toast(custom 型):内容由本层自绘,供 ToastProvider 薄层调用
+/// 入队一条 toast(custom 型):内容由本层自绘,供 ToastProvider 薄层调用。
+/// 动作按钮点击即撤条目:sonner 悬停于 toast 区会暂停计时,不主动 dismiss
+/// 会让已处理的提示滞留远超 4s;id 由 custom 的渲染函数回传(渲染晚于
+/// toast.custom 返回,闭包取用时已有值)
 export function pushToast(kind: ToastKind, text: string, action?: ToastAction) {
   toast.custom(
-    () => <ToastContent kind={kind} text={text} action={action} />,
+    id => (
+      <ToastContent
+        kind={kind}
+        text={text}
+        action={action}
+        dismiss={action ? () => toast.dismiss(id) : undefined}
+      />
+    ),
     // 行内 left/width 压掉 sonner 窄窗全宽规则(见头注释),保持右锚自适应宽
     { style: { left: 'auto', width: 'auto' } },
   );

@@ -226,6 +226,15 @@ describe('启动版本差异检测', () => {
     expect(await screen.findByTestId('settings-drawer')).toBeInTheDocument();
   });
 
+  it('单侧差异:仅 daemon 旧于内嵌(cli 同版)→ detail 只含 planet-portd 一段', async () => {
+    mockVersionProbes(manifest, '0.5.1', '0.6.0');
+    renderApp();
+    await screen.findAllByText('daemon 在线');
+    await findToast(/^检测到可升级：planet-portd 0\.5\.1 → 0\.6\.0$/, 'ok');
+    // 同版的 planet-port 不进 detail 段(planet-portd 自身不会误配该正则)
+    expect(screen.queryByText(/planet-port \d/)).not.toBeInTheDocument();
+  });
+
   it('已装新于内嵌 → compat 提示用 error 样式,无动作按钮', async () => {
     mockVersionProbes(manifest, '0.6.1', '0.6.1');
     renderApp();
