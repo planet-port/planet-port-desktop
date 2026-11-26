@@ -90,7 +90,11 @@ export default function App() {
       // 安装结果兜底 toast 常驻 App 层:设置抽屉开着时弹窗自显成败,双提示并存
       // 是设计预期;抽屉已关(取消等待)后安装落地仍有回报。失败原因映射同
       // ReinstallDialog,表外原因(含提权前 rejection)兜底 failGeneric
-      listen('install-done', () => toast.ok(t('settings.installDone'))),
+      // 装完即置 false:磁盘此刻必等于内嵌,否则抽屉箭头已灭而状态栏滞留可升级同屏矛盾
+      listen('install-done', () => {
+        setUpgradable(false);
+        toast.ok(t('settings.installDone'));
+      }),
       listen<string>('install-failed', e =>
         toast.error(t(FAIL_REASON_KEYS[String(e.payload)] ?? 'settings.failGeneric'))),
       // 托盘「检查更新」:Rust 侧已先 show_main,这里只触发检查流程(结果弹窗)

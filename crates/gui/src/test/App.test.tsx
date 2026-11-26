@@ -255,6 +255,15 @@ describe('启动版本差异探测(被动提示)', () => {
     await renderAndFlush(); // beforeEach 兜底:embedded_manifest 等三探针均返回 null
     expect(screen.queryByTestId('statusbar-upgradable')).not.toBeInTheDocument();
   });
+
+  it('install-done 后状态栏可升级提示清除:装完磁盘必等于内嵌,置 false 恒正确', async () => {
+    mockVersionProbes(manifest, '0.5.1', '0.5.1');
+    await renderAndFlush();
+    expect(screen.getByTestId('statusbar-upgradable')).toBeInTheDocument();
+    emit('install-done', undefined);
+    await act(async () => {});
+    expect(screen.queryByTestId('statusbar-upgradable')).not.toBeInTheDocument();
+  });
 });
 
 describe('GUI 更新检查(手动触发:托盘事件/关于区入口)', () => {

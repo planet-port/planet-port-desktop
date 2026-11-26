@@ -68,8 +68,13 @@ beforeEach(() => {
 });
 
 /// 底部安装区用例的 invoke 定向:内嵌 manifest(非 null 时安装区渲染)与
-/// 已装 daemon 磁盘版本探测值
-function mockManifest(manifest: { daemon: string; cli: string; target: string } | null, installedDaemon: string | null) {
+/// 已装 daemon 磁盘版本探测值;daemonInstalled 缺省不拦 get_daemon_state,
+/// 探测落 null 按组件缺省已装口径,只有「未装」用例显式传 false
+function mockManifest(
+  manifest: { daemon: string; cli: string; target: string } | null,
+  installedDaemon: string | null,
+  daemonInstalled?: boolean,
+) {
   invokeMock.mockImplementation((cmd: string) =>
     cmd === 'identity_get'
       ? Promise.resolve(identity)
@@ -79,7 +84,9 @@ function mockManifest(manifest: { daemon: string; cli: string; target: string } 
           ? Promise.resolve(manifest)
           : cmd === 'get_installed_daemon_version'
             ? Promise.resolve(installedDaemon)
-            : Promise.resolve(null));
+            : cmd === 'get_daemon_state' && daemonInstalled !== undefined
+              ? Promise.resolve({ online: false, installed: daemonInstalled, daemonVersion: null })
+              : Promise.resolve(null));
 }
 
 // SettingsDrawer 自身无查询,但内嵌 IdentitySection 走 useQuery/useQueryClient,须挂 Provider。
@@ -202,6 +209,11 @@ describe('SettingsDrawer', () => {
     expect(await screen.findByTestId('settings-install-block')).toBeInTheDocument();
     const marks = screen.getAllByLabelText('可升级');
     expect(marks).toHaveLength(2);
+    // 规格要求 aria-label + title 双标注:lucide-react 类型不再收 title 属性,
+    // 悬停提示走 SVG 原生 <title> 子元素
+    for (const mark of marks) {
+      expect(mark.querySelector('title')).toHaveTextContent('可升级');
+    }
     // 箭头分别落在 planet-port 与 planet-portd 两行值列(cli 行在前;
     // 'planet-port' 是 'planet-portd' 的前缀,须排除包含误判)
     const rowOf = (el: HTMLElement) => el.closest('div')?.textContent ?? '';
@@ -237,6 +249,15 @@ describe('SettingsDrawer', () => {
     expect(screen.queryByTestId('settings-version-state')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('可升级')).not.toBeInTheDocument();
     expect(screen.getByTestId('settings-install-daemon').textContent).toBe('重新安装 daemon');
+  });
+
+  it('daemon 未装(daemonState.installed=false)→ 按钮为安装文案', async () => {
+    // 未装时磁盘探测为 null,安装态是文案唯一判据(版本比对落 unknown 不影响)
+    mockManifest({ daemon: '0.6.0', cli: '0.6.0', target: 'aarch64-apple-darwin' }, null, false);
+    renderDrawer();
+    await screen.findByTestId('settings-install-block');
+    expect(screen.getByTestId('settings-install-daemon').textContent).toBe('安装 daemon');
+    expect(screen.queryByLabelText('可升级')).not.toBeInTheDocument();
   });
 
   it('无内嵌资源(manifest 为 null)时底部安装区整块不渲染', async () => {
