@@ -7,7 +7,6 @@ mod heartbeat;
 mod tray;
 
 use std::sync::Mutex;
-use tauri::Manager;
 
 /// 全局共享态：探活结论（heartbeat 任务维护，Task 4）+ 托盘语言
 pub struct GuiState {
@@ -62,19 +61,9 @@ fn main() {
         .setup(|app| {
             tray::init(app.handle())?;
             heartbeat::spawn(app.handle().clone());
-            // 关窗 = 隐藏到托盘,不退出进程(spec §5.4)
-            let win = app.get_webview_window("main").unwrap();
-            let w = win.clone();
-            win.on_window_event(move |e| {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = e {
-                    api.prevent_close();
-                    let _ = w.hide();
-                    // 关窗后藏 Dock 图标(仅 macOS):应用退居托盘,Dock 不再占位;
-                    // show_main 拉起窗口时恢复。Windows/Linux 无此概念不受影响
-                    #[cfg(target_os = "macos")]
-                    let _ = w.app_handle().set_dock_visibility(false);
-                }
-            });
+            // 关窗即退出:不拦截 CloseRequested,走 tauri 默认「最后一个
+            // 窗口关闭即退出进程」(托盘随之消失);窗口异常关闭而进程仍
+            // 存活的场景由下方 RunEvent::Reopen 兜底拉回
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -110,6 +99,16 @@ fn main() {
             commands::add_official_planet,
             build_time
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // macOS 点 Dock 图标:tao 委托在无可见窗口时返回 NO(系统零动作),
+            // 窗口恢复完全仰赖此事件——异常关窗进程仍存活时点图标可拉回
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                tray::show_main(app);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }
