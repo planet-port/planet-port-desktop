@@ -88,10 +88,15 @@ if [ "${PLANET_LOCAL_BINS:-}" = "1" ]; then
   fi
 else
   command -v gh >/dev/null || { echo "缺 gh CLI(拉取 release 资产需登录态)" >&2; exit 1; }
-  DAEMON_TAG="$(resolve_latest_tag 'planet-portd/v' false)"
-  CLI_TAG="$(resolve_latest_tag 'planet-port/v' false)"
-  [ -n "$DAEMON_TAG" ] || { echo "未找到 planet-portd 稳定 release,先发 daemon" >&2; exit 1; }
-  [ -n "$CLI_TAG" ] || { echo "未找到 planet-port 稳定 release,先发 cli" >&2; exit 1; }
+  # 本次构建为 beta 发版(ref 带 -beta.)时放宽到最新含 prerelease,与
+  # suite job 口径一致——首个稳定版发布前 beta 链路否则无资产可嵌;
+  # 正式版与本地构建始终取最新稳定
+  ALLOW=false
+  case "${GITHUB_REF_NAME:-}" in *-beta.*) ALLOW=true ;; esac
+  DAEMON_TAG="$(resolve_latest_tag 'planet-portd/v' "$ALLOW")"
+  CLI_TAG="$(resolve_latest_tag 'planet-port/v' "$ALLOW")"
+  [ -n "$DAEMON_TAG" ] || { echo "未找到 planet-portd release,先发 daemon" >&2; exit 1; }
+  [ -n "$CLI_TAG" ] || { echo "未找到 planet-port release,先发 cli" >&2; exit 1; }
   fetch_assets "$DAEMON_TAG" "$TRIPLE" planet-portd
   fetch_assets "$CLI_TAG" "$TRIPLE" planet-port
   DAEMON_VER="${DAEMON_TAG#planet-portd/v}"
