@@ -3480,7 +3480,7 @@ dependencies = [
 
 [[package]]
 name = "planet-port-gui"
-version = "0.7.0"
+version = "0.7.1-dev"
 dependencies = [
  "chrono",
  "planet-port-api",
