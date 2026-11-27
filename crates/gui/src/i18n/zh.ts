@@ -115,7 +115,7 @@ export default {
     join: '加入网络',
     allPlanets: '全部 planet',
     id: '网络 ID', name: '名称', statusLabel: '状态', ips: '分配地址', iface: '接口',
-    conflict: '冲突',
+    conflict: 'IP段冲突',
     joined: '已加入',
     empty: '尚未加入任何网络',
     settingsTitle: '网络设置 · {{id}}',

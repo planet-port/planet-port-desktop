@@ -15,11 +15,12 @@ import { pickDisplayAddr } from '../lib/addr';
 /// 不可点还抬亮会给出「能点」的暗示。
 /// IP 行为可复制值(小号图标);IP 只显示一个(IPv4 优先),复制与显示一致
 /// (2026-11-24 口径)。连接中间态/错误态无 IP 可显,状态文字占用 IP 位:
-/// 纯文字仅颜色区分(等待=黄/失败=红),不加边框底色等修饰(2026-11-27 口径);
-/// 冲突与设备异常可伴随 IP 在网,仍走黄 badge 承载。
+/// 纯文字仅颜色区分(等待/冲突=黄/失败=红),不加边框底色等修饰(2026-11-27
+/// 口径);冲突同为 IP 位纯文字(冲突可伴随 IP 在网,信息让位状态);设备
+/// 异常保留黄 badge 承载。
 /// 旧 .netcard 系规则对译:veil 卡面 + hairline 边 + --radius 圆角,hover 抬
 /// --panel-2 底亮边;泊位灯 8px 方灯(ok=青光带 4px glow);值行 mono 12px 省略;
-/// IP 占位降透明;冲突徽章 34% 状态色边;spinner 0.8s 转(keyframes 由
+/// IP 占位降透明;设备异常徽章 34% 状态色边;spinner 0.8s 转(keyframes 由
 /// animate-spin 触发 Tailwind 自带 spin,时长对齐基线 0.8s)
 export default function NetworkCard({
   row,
@@ -50,7 +51,6 @@ export default function NetworkCard({
   /// 设备层失败(daemon 合成:核心 OK 但本地 feth/地址/路由没建起来,数据面
   /// 不通):黄灯警示不降透明,与 conflict 同色系;详情走诊断面板事件流
   const deviceError = row.status === 'DEVICE_ERROR';
-  const badge = row.conflict || deviceError;
   return (
     <section
       data-testid="network-card"
@@ -99,16 +99,18 @@ export default function NetworkCard({
           {row.nwid}
         </span>
         <div className="flex w-full items-center gap-2">
-          {awaiting || failed ? (
-            // 连接中间态/错误态:无 IP 可显,状态文字占用 IP 位,纯文字仅
-            // 颜色区分,不加修饰。min-h-7 对齐 CopyableValue 盒高,两态卡片
-            // 行距节奏一致(缺了它整卡变矮、第三行基线错位)
+          {awaiting || failed || row.conflict ? (
+            // 连接中间态/错误态/冲突:状态文字占用 IP 位,纯文字仅颜色区分,
+            // 不加修饰(冲突可伴随 IP 在网,信息让位状态,详情走 title)。
+            // min-h-7 对齐 CopyableValue 盒高,两态卡片行距节奏一致(缺了它
+            // 整卡变矮、第三行基线错位)
             <span
               className={`inline-flex min-h-7 min-w-0 items-center truncate font-mono text-xs leading-none tracking-[0.1px] ${
-                awaiting ? 'text-[var(--warn)]' : 'text-[var(--danger)]'
+                awaiting || row.conflict ? 'text-[var(--warn)]' : 'text-[var(--danger)]'
               }`}
+              title={row.conflict ?? undefined}
             >
-              {t(`networks.statusMap.${row.status}`)}
+              {row.conflict ? t('networks.conflict') : t(`networks.statusMap.${row.status}`)}
             </span>
           ) : (
             <CopyableValue
@@ -125,12 +127,11 @@ export default function NetworkCard({
             <span className="ml-auto flex-none font-mono text-xs leading-none text-[var(--muted)]">{row.interface}</span>
           )}
         </div>
-        {badge && (
+        {deviceError && (
           <span
             className="mt-0.5 inline-flex items-center rounded-full border border-[color:color-mix(in_srgb,var(--warn)_34%,transparent)] px-[9px] py-[3px] font-mono text-xs leading-none text-[var(--warn)]"
-            title={row.conflict ?? undefined}
           >
-            {row.conflict ? t('networks.conflict') : t('networks.statusMap.DEVICE_ERROR')}
+            {t('networks.statusMap.DEVICE_ERROR')}
           </span>
         )}
       </div>
