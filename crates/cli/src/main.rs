@@ -95,14 +95,12 @@ enum Command {
     /// Show one joined network's full detail (IP / routes / DNS / routeViaZeroTier)
     #[command(name = "networkinfo")]
     Networkinfo { nwid: String },
-    /// Join a network
+    /// Connect a network (restores previous local config if it was disconnected)
     Join { nwid: String },
-    /// Leave a network
+    /// Disconnect a network (keeps local config for quick re-join)
     Leave { nwid: String },
-    /// Connect a disconnected network (restore its previous local config)
-    Connect { nwid: String },
-    /// Disconnect a joined network (keep records for quick restore)
-    Disconnect { nwid: String },
+    /// Remove a network completely (detach if joined and delete all local records)
+    Remove { nwid: String },
     /// Share a network: QR code in terminal + copy network id to clipboard
     Share { nwid: String },
     /// Set client-side config: routeViaZeroTier / dnsMode / customDns / alias
@@ -257,8 +255,7 @@ fn planet_need(cmd: &Command) -> PlanetNeed {
         Command::Events { .. } => PlanetNeed::Events,
         Command::Join { .. }
         | Command::Leave { .. }
-        | Command::Connect { .. }
-        | Command::Disconnect { .. }
+        | Command::Remove { .. }
         | Command::Share { .. }
         | Command::Set { .. }
         | Command::Get { .. }
@@ -336,8 +333,7 @@ fn dispatch(
         Command::Listmoons => cmd::query::listmoons(client, query_filter, json),
         Command::Join { nwid } => cmd::mutate::join(client, nwid, planet_flag, json),
         Command::Leave { nwid } => cmd::mutate::leave(client, nwid, planet_flag, json),
-        Command::Connect { nwid } => cmd::mutate::connect(client, nwid, planet_flag, json),
-        Command::Disconnect { nwid } => cmd::mutate::disconnect(client, nwid, planet_flag, json),
+        Command::Remove { nwid } => cmd::mutate::remove(client, nwid, planet_flag, json),
         Command::Share { nwid } => cmd::share::share(client, nwid, planet_flag, json),
         Command::Set { nwid, values } => cmd::mutate::set(client, nwid, values, planet_flag, json),
         Command::Alias { nwid, name } => cmd::mutate::alias(client, nwid, name, planet_flag, json),

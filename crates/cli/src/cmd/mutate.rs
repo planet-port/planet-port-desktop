@@ -35,6 +35,7 @@ pub fn join(client: &Client, nwid: &str, planet: &Option<String>, json: bool) ->
     Ok(())
 }
 
+/// 网络断开:脱离网络但保留本地配置与名字快照,join 可恢复;彻底删除走 remove
 pub fn leave(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
     // 无显式 --planet 时按 nwid 跨行星唯一定位:只挂在一个 planet 上就直接
     // 离开(零参数用法定向到唯一落点),挂多个 planet 则 409 列候选要求
@@ -42,31 +43,28 @@ pub fn leave(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -
     // 非法 nwid 与名字输入不在此路径解析,透传 daemon 维持原报错。
     let planet = match planet {
         Some(p) => Some(p.clone()),
-        None => resolve_leave_planet(client, nwid)?,
+        None => resolve_local_planet(client, nwid)?,
     };
     let resp = client.post_empty(&endpoints::network_leave(nwid, planet.as_deref()))?;
     ok(client, "leave", &planet, json, &resp);
     Ok(())
 }
 
-/// 网络连接(与 join 的区别:恢复断开前的本地配置);planet 级启停是
-/// `planet enable/disable`,两者对象不同,勿混
-pub fn connect(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
-    let resp = client.post_empty(&endpoints::network_connect(nwid, planet.as_deref()))?;
-    ok(client, "connect", planet, json, &resp);
+/// 网络彻底删除:在网先脱离,清除全部本地记录(含断开记忆),列表不再显示
+pub fn remove(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
+    // 与 leave 同款跨行星唯一定位:零参数用法定向到唯一落点
+    let planet = match planet {
+        Some(p) => Some(p.clone()),
+        None => resolve_local_planet(client, nwid)?,
+    };
+    let resp = body_or_ok(client.delete(&endpoints::network_remove(nwid, planet.as_deref()))?);
+    ok(client, "remove", &planet, json, &resp);
     Ok(())
 }
 
-/// 网络断开:脱离网络但保留记录(id/配置/名字快照),connect 或 join 可恢复
-pub fn disconnect(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
-    let resp = client.post_empty(&endpoints::network_disconnect(nwid, planet.as_deref()))?;
-    ok(client, "disconnect", planet, json, &resp);
-    Ok(())
-}
-
-/// 跨行星解析 leave 的落点 planet:唯一命中返回其 id;未挂返回 None
+/// 跨行星解析本地记录的落点 planet(leave/remove 共用):唯一命中返回其 id;未挂返回 None
 /// (透传 daemon 报 404);多行星同挂 409 networkAmbiguous 列候选。
-fn resolve_leave_planet(client: &Client, nwid: &str) -> Result<Option<String>, CliError> {
+fn resolve_local_planet(client: &Client, nwid: &str) -> Result<Option<String>, CliError> {
     let norm = match norm_nwid(nwid) {
         Ok(n) => n,
         Err(_) => return Ok(None),

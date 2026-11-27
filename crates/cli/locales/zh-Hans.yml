@@ -144,4 +144,4 @@
   cli.listmoons.noMoons: "(无 moon)"
   # ---- networkinfo 行星未运行提示 ----
   cli.networkinfo.stoppedPlanet: "提示: 所属行星未运行(已禁用或空闲停止),以下仅为登记配置; 名称/IP/设备等动态字段需行星运行后可见, planet-port planet enable 可拉起"
-  cli.networkinfo.disconnectedNet: "提示: 该网络已断开(保留本地配置),以下仅为断开前登记配置; 名称/IP/设备等动态字段需 planet-port connect 恢复后可见"
+  cli.networkinfo.disconnectedNet: "提示: 该网络已断开(保留本地配置),以下仅为断开前登记配置; 名称/IP/设备等动态字段需 planet-port join 恢复后可见"
