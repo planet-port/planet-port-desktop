@@ -700,26 +700,51 @@ async fn detach_and_idle(st: &AppState, rt: &Arc<PlanetRuntime>, nwid_u: u64) ->
 
 // ---- POST /networks/{nwid}/leave ----
 
+/// 断开(表层与 zt leave 同名,语义为用户层"断开"):复用断开核心动作,
+/// net_local → net_detached 迁移保留本地配置与名字快照,join 可恢复。
+/// 彻底删除走 DELETE /networks/{nwid}(remove)
 pub async fn net_leave(
     State(st): State<AppState>,
     Path(nwid): Path<String>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiErr> {
-    // 定位不要求 running:禁用记录可能在 idle 停机的 planet 上,无核心
-    // 也要能删(registry 锁在 resolve_planet_entry 内短持)
+    // 定位不要求 running:stopped planet 上的网络也能断开(纯记录迁移)
     let (pid, entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
     let rt = runtime_of(&st, &pid);
     // nwid 解析:核心在 → nwid / 已加入名 / 断开区快照名;核心不在 →
-    // nwid / 断开区快照名(net_local 无名字信息)
+    // nwid / 断开区快照名
     let nwid_u = match &rt {
         Some(rt) => resolve_nwid_ext(rt, &entry, &nwid)?,
         None => resolve_detached_nwid(&entry, &nwid)?,
     };
-    // net_local 与 net_detached 记录一并删除(持久层):leave 的目标态是
-    // "彻底不在网络里"——含断开记忆;重新 join 按控制器默认配置重来。
-    // 放在幂等分支之前,顺带清理"运行时已退但记录残留"的半态
+    disconnect_network_inner(&st, &pid, nwid_u, None).await?;
+    Ok(Json(json!({"result": "ok"})))
+}
+
+// ---- DELETE /networks/{nwid} ----
+
+/// 彻底删除:在网先脱离(记录迁入断开区),随后清除 net_local 与
+/// net_detached 全部记录;列表不再显示,重新 join 按控制器默认配置重来。
+/// 幂等:两区皆无记录 → 成功
+pub async fn net_remove(
+    State(st): State<AppState>,
+    Path(nwid): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiErr> {
+    let (pid, entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
+    let rt = runtime_of(&st, &pid);
+    let nwid_u = match &rt {
+        Some(rt) => resolve_nwid_ext(rt, &entry, &nwid)?,
+        None => resolve_detached_nwid(&entry, &nwid)?,
+    };
+    let key = format!("{nwid_u:016x}");
+    // 在网或 net_local 仍有记录 → 先走断开收尾(底层脱离 + 记录迁移);
+    // 断开区记录直接落下方删除
+    let joined = rt.as_ref().is_some_and(|r| r.networks().iter().any(|c| c.nwid == nwid_u));
+    if joined || entry.net_local.contains_key(&key) {
+        disconnect_network_inner(&st, &pid, nwid_u, None).await?;
+    }
     {
-        let key = format!("{nwid_u:016x}");
         let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
             let hit = e.net_local.remove(&key).is_some() | e.net_detached.remove(&key).is_some();
@@ -730,22 +755,7 @@ pub async fn net_leave(
             }
         }
     }
-    // 无核心:记录清除即目标态达成(planet stopped,无从也无须核心脱离)
-    let Some(rt) = rt else {
-        st.events.push(&pid, "leave", &format!("cleared {nwid} records (planet stopped)"));
-        return Ok(Json(json!({"result": "ok"})));
-    };
-    rt.net_local
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .remove(&nwid_u);
-    // 未加入 → 幂等成功(leave 的目标态就是"不在网络里",已达成)
-    if !rt.networks().iter().any(|c| c.nwid == nwid_u) {
-        st.events.push(&rt.planet_id, "leave", &format!("not joined {nwid} (idempotent)"));
-        return Ok(Json(json!({"result": "ok", "idempotent": true})));
-    }
-    detach_and_idle(&st, &rt, nwid_u).await?;
-    st.events.push(&rt.planet_id, "leave", &format!("left {nwid}"));
+    st.events.push(&pid, "networkRemoved", &format!("removed {nwid_u:016x}"));
     Ok(Json(json!({"result": "ok"})))
 }
 
@@ -858,166 +868,6 @@ pub(crate) async fn disconnect_network_inner(
         .remove(&nwid_u);
     detach_and_idle(st, &rt, nwid_u).await?;
     Ok(())
-}
-
-/// 断开:记录 net_local → net_detached 迁移,底层脱离网络(即原 zt 的
-/// leave;差异是保留本地配置与名字快照,连接/join 可恢复)
-pub async fn net_disconnect(
-    State(st): State<AppState>,
-    Path(nwid): Path<String>,
-    Query(q): Query<HashMap<String, String>>,
-) -> Result<Json<Value>, ApiErr> {
-    // 定位不要求 running(stopped planet 上的网络也能断开:纯记录迁移)
-    let (pid, _entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
-    // nwid 解析:核心在 → nwid/已加入网络名(resolve_nwid);核心不在 → 仅
-    // nwid(stopped 无核心快照,按名定位退化为仅 nwid——规格明确)
-    let nwid_u = match runtime_of(&st, &pid) {
-        Some(rt) => resolve_nwid(&rt, &nwid)?,
-        None => parse_nwid(&nwid).map_err(|_| {
-            err(
-                StatusCode::NOT_FOUND,
-                "networkNotFound",
-                &format!("network \"{nwid}\" not found (planet stopped; address by id)"),
-                None,
-            )
-        })?,
-    };
-    disconnect_network_inner(&st, &pid, nwid_u, None).await?;
-    Ok(Json(json!({"result": "ok"})))
-}
-
-// ---- POST /networks/{nwid}/connect ----
-
-/// 连接:断开区记录回迁 net_local 并 re-join,恢复断开前的本地配置。
-/// planet 未运行则拉起(start_planet 按 net_local 全量恢复);已运行则
-/// 直接 join。恢复失败不回滚:记录已在 net_local,boot/join 自动重试
-/// (对齐 boot 恢复容错)。幂等:已在加入态 → 成功
-pub async fn net_connect(
-    State(st): State<AppState>,
-    Path(nwid): Path<String>,
-    Query(q): Query<HashMap<String, String>>,
-) -> Result<Json<Value>, ApiErr> {
-    let (pid, entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
-    if !entry.enabled {
-        return Err(err(
-            StatusCode::CONFLICT,
-            "planetDisabled",
-            &format!(
-                "planet \"{}\" is disabled; enable it first",
-                crate::api_planet::name_of(&entry)
-            ),
-            None,
-        ));
-    }
-    // nwid 解析:合法 nwid 直用;否则按断开区 name 快照(不区分大小写)——
-    // 断开的网络不在核心快照里,名字只活在快照中
-    let nwid_u = match parse_nwid(&nwid) {
-        Ok(v) => v,
-        Err(_) => {
-            let hits: Vec<(&String, &NetDetached)> = entry
-                .net_detached
-                .iter()
-                .filter(|(_, nd)| {
-                    nd.name
-                        .as_deref()
-                        .is_some_and(|n| n.eq_ignore_ascii_case(nwid.trim()))
-                })
-                .collect();
-            match hits.as_slice() {
-                [(k, _)] => u64::from_str_radix(k, 16)
-                    .map_err(|_| internal(format!("invalid detached nwid key \"{k}\"")))?,
-                [] => {
-                    return Err(err(
-                        StatusCode::NOT_FOUND,
-                        "networkNotFound",
-                        &format!("network \"{nwid}\" not found (by id or name)"),
-                        None,
-                    ))
-                }
-                many => {
-                    return Err(err(
-                        StatusCode::CONFLICT,
-                        "networkAmbiguous",
-                        &format!("network name \"{nwid}\" matches {} networks", many.len()),
-                        Some(
-                            many.iter()
-                                .map(|(k, nd)| format!("{k} ({})", nd.name.clone().unwrap_or_default()))
-                                .collect(),
-                        ),
-                    ))
-                }
-            }
-        }
-    };
-    let key = format!("{nwid_u:016x}");
-    // 幂等:未在断开区时,加入态(net_local 有记录)→ 目标态已达成;
-    // 但 planet 停机时目标态只是「记录在」而网络实际不可用(典型入口:
-    // connect 拉起失败后重试,记录已回迁)——补拉起做实,与 join 行为一致,
-    // 也与断开幂等补脱离同构(幂等不豁免把目标态落地);
-    // 两区皆无 → 404
-    if !entry.net_detached.contains_key(&key) {
-        if entry.net_local.contains_key(&key) {
-            if runtime_of(&st, &pid).is_none() {
-                runtime::start_planet(&st, &pid)
-                    .await
-                    .map_err(|m| err(StatusCode::INTERNAL_SERVER_ERROR, "startFailed", &m, None))?;
-            }
-            st.events.push(&pid, "networkConnected", &format!("already connected {nwid} (idempotent)"));
-            return Ok(Json(json!({"result": "ok", "idempotent": true})));
-        }
-        return Err(err(
-            StatusCode::NOT_FOUND,
-            "networkNotFound",
-            &format!("network \"{nwid}\" not disconnected or joined on this planet"),
-            None,
-        ));
-    }
-    // 回迁(持久层)
-    let nl = {
-        let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let e = reg
-            .planets
-            .iter_mut()
-            .find(|e| e.id == pid)
-            .ok_or_else(|| internal(format!("planet \"{pid}\" disappeared")))?;
-        let nd = e
-            .net_detached
-            .remove(&key)
-            .ok_or_else(|| internal(format!("detached entry \"{key}\" disappeared")))?;
-        // 同 nwid 双区残留(理论不可达)以 net_local 为准:or_insert 不覆盖
-        e.net_local.entry(key).or_insert(nd.local.clone());
-        if let Err(e) = reg.save(&st.config_dir) {
-            eprintln!("[net] registry 写盘失败: {e}");
-        }
-        nd.local
-    };
-    st.events.push(&pid, "networkConnected", &format!("connected {nwid}"));
-    // 已运行 → 镜像 + re-join;未运行 → 拉起(start_planet 按 net_local
-    // 灌镜像并 re-join,天然覆盖恢复)
-    if let Some(rt) = runtime_of(&st, &pid) {
-        rt.net_local
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(nwid_u, nl);
-        let rt2 = Arc::clone(&rt);
-        tokio::task::spawn_blocking(move || rt2.node_join(nwid_u))
-            .await
-            .map_err(|e| internal(format!("join 任务失败: {e}")))?
-            .map_err(|e| {
-                // 失败不回滚:记录已回迁 net_local,下次 boot/join 重试
-                err(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "joinFailed",
-                    &format!("re-join {nwid} failed: {e}"),
-                    None,
-                )
-            })?;
-    } else {
-        runtime::start_planet(&st, &pid)
-            .await
-            .map_err(|m| err(StatusCode::INTERNAL_SERVER_ERROR, "startFailed", &m, None))?;
-    }
-    Ok(Json(json!({"result": "ok"})))
 }
 
 // ---- POST /networks/{nwid}(set)----
@@ -1190,8 +1040,6 @@ pub fn router() -> Router<AppState> {
         .route("/networks", get(networks_list))
         .route("/networks/{nwid}/join", post(net_join))
         .route("/networks/{nwid}/leave", post(net_leave))
-        .route("/networks/{nwid}/disconnect", post(net_disconnect))
-        .route("/networks/{nwid}/connect", post(net_connect))
-        .route("/networks/{nwid}", post(net_set))
+        .route("/networks/{nwid}", post(net_set).delete(net_remove))
         .route("/events", get(events))
 }
