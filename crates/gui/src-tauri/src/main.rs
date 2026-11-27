@@ -8,6 +8,8 @@ mod tray;
 
 use std::sync::Mutex;
 
+use tauri::Manager;
+
 /// 全局共享态：探活结论（heartbeat 任务维护，Task 4）+ 托盘语言
 pub struct GuiState {
     pub online: bool,
@@ -62,10 +64,21 @@ fn main() {
         .setup(|app| {
             tray::init(app.handle())?;
             heartbeat::spawn(app.handle().clone());
-            // 关窗即退出:不拦截 CloseRequested,走 tauri 默认「最后一个
-            // 窗口关闭即退出进程」(托盘随之消失);窗口异常关闭而进程仍
-            // 存活的场景由下方 RunEvent::Reopen 兜底拉回
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // 关窗驻留托盘:拦截 CloseRequested 只隐藏窗口(不销毁、进程不退
+            // 出,托盘保活);macOS 同时转 Accessory 隐藏 Dock 图标,仅剩托盘
+            // 入口。彻底退出只有两条路:托盘菜单「退出」(app.exit)或 macOS
+            // 应用菜单/Dock 右键 Quit(Cmd-Q,走 ExitRequested 不经过此处)
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+                #[cfg(target_os = "macos")]
+                let _ = window
+                    .app_handle()
+                    .set_activation_policy(tauri::ActivationPolicy::Accessory);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_daemon_state,

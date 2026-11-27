@@ -435,8 +435,11 @@ fn notify_error(app: &AppHandle, e: &crate::api_client::GuiError) {
 }
 
 /// 拉起主窗口(Dock 图标点击 / 托盘菜单「打开主窗口」/ single_instance
-/// 二次启动共用):最小化态先还原再 show+focus
+/// 二次启动共用):最小化态先还原再 show+focus;macOS 关窗驻留时 Dock 图标
+/// 已转 Accessory(见 main.rs CloseRequested),此处恢复 Regular 让图标归位
 pub fn show_main(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     if let Some(w) = app.get_webview_window("main") {
         if w.is_minimized().unwrap_or(false) {
             let _ = w.unminimize();
