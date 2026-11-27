@@ -120,8 +120,9 @@ export default function SettingsDrawer({
     if (!buildTime) void api.buildTime().then(setBuildTime).catch(() => setBuildTime('-'));
   }, [buildTime]);
   /// 行文案:已装 vX → 内嵌 vY;探测不到显示未探测到
-  const verLine = (installed: string | null, embedded: string) =>
-    `${installed ? t('settings.verInstalled', { v: installed }) : t('settings.verNotDetected')} → ${t('settings.verEmbedded', { v: embedded })}`;
+  /// (2026-11-27 产品口径:安装区版本提示行隐藏,文案函数随块注释保留)
+  // const verLine = (installed: string | null, embedded: string) =>
+  //   `${installed ? t('settings.verInstalled', { v: installed }) : t('settings.verNotDetected')} → ${t('settings.verEmbedded', { v: embedded })}`;
   return (
     <>
       <DrawerShell open={open} onClose={close} onClosed={onClose} testId="settings-drawer">
@@ -207,18 +208,19 @@ export default function SettingsDrawer({
           <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>ZeroTier Core</span><span className={monoValue}>{coreVersion ?? '-'}</span></div>
           <div className={`${kvRow} ${rowDivider}`}><span className={kvLabel}>{t('settings.buildTime')}</span><span className={monoValue}>{buildTime || '-'}</span></div>
         </section>
-        {/* 安装区(抽屉底部独立块):版本差异常驻两行 + 全宽安装按钮;
+        {/* 安装区(抽屉底部独立块):全宽安装按钮;
             无内嵌资源(dev/未组包)整块不渲染(原 DaemonInstallRow 口径) */}
         {manifest && (
           <section className="mt-auto pt-4" data-testid="settings-install-block">
-            <div className="mb-1.5 flex flex-col gap-0.5 px-1 text-xs font-mono text-[var(--muted)]">
+            {/* 2026-11-27 产品口径:版本差异提示行不再展示,仅保留按钮(隐藏≠删除) */}
+            {/* <div className="mb-1.5 flex flex-col gap-0.5 px-1 text-xs font-mono text-[var(--muted)]">
               <span data-testid="settings-ver-daemon">
                 planet-portd {verLine(installedDaemon, manifest.daemon)}
               </span>
               <span data-testid="settings-ver-cli">
                 planet-port {verLine(cliVersion, manifest.cli)}
               </span>
-            </div>
+            </div> */}
             <Button
               variant="primary"
               block

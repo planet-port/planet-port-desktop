@@ -222,15 +222,13 @@ describe('SettingsDrawer', () => {
     expect(rowOf(marks[1])).toContain('planet-portd');
   });
 
-  it('底部安装区:已装/内嵌两行常驻,状态语行不再存在,daemon 旧于内嵌时按钮为升级文案', async () => {
+  it('底部安装区:版本提示行已隐藏,daemon 旧于内嵌时按钮为升级文案', async () => {
     mockManifest({ daemon: '0.7.0', cli: '0.6.0', target: 'aarch64-apple-darwin' }, '0.6.0');
     renderDrawer();
     expect(await screen.findByTestId('settings-install-block')).toBeInTheDocument();
-    // planet-portd 行:已装探测值 + 内嵌值两段同现
-    const daemonLine = screen.getByTestId('settings-ver-daemon');
-    expect(daemonLine.textContent).toContain('已装 0.6.0');
-    expect(daemonLine.textContent).toContain('内嵌 0.7.0');
-    expect(screen.getByTestId('settings-ver-cli').textContent).toContain('内嵌 0.6.0');
+    // 2026-11-27 产品口径:已装/内嵌提示行不再展示(代码注释保留)
+    expect(screen.queryByTestId('settings-ver-daemon')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings-ver-cli')).not.toBeInTheDocument();
     // 整体状态语已废(升级信息收敛到关于区箭头/状态栏),行不存在
     expect(screen.queryByTestId('settings-version-state')).not.toBeInTheDocument();
     const btn = screen.getByTestId('settings-install-daemon');
@@ -280,7 +278,6 @@ describe('SettingsDrawer', () => {
     mockManifest({ daemon: '0.7.0', cli: '0.6.0', target: 'aarch64-apple-darwin' }, '0.6.0');
     renderDrawer();
     expect(await screen.findByTestId('settings-install-block')).toBeInTheDocument();
-    expect(screen.getByTestId('settings-ver-daemon').textContent).toContain('已装 0.6.0');
     fireEvent.click(screen.getByTestId('settings-install-daemon'));
     fireEvent.click(await screen.findByTestId('reinstall-confirm'));
     // 探测改回报新版本,模拟安装落盘后的磁盘状态
@@ -296,7 +293,6 @@ describe('SettingsDrawer', () => {
               : Promise.resolve(null));
     emit('install-done', undefined);
     expect(await screen.findByTestId('reinstall-done')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId('settings-ver-daemon').textContent).toContain('已装 0.7.0'));
     // 本文件未挂 App:抽屉层不再自弹安装完成 toast(该职责在 App 层用例覆盖)
     expect(screen.queryByText('daemon 安装完成')).not.toBeInTheDocument();
   });
