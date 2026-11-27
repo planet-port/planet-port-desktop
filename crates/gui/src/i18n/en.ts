@@ -39,6 +39,7 @@ export default {
     installTimeout: 'Taking unusually long — the install may still be running in the background.',
     keepWaiting: 'Keep waiting', stopWaiting: 'Stop waiting',
     installSuccess: 'Installed',
+    skipInstall: 'Skip for now',
   },
   identity: {
     section: 'Node identity',

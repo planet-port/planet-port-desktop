@@ -8,6 +8,7 @@ import logo from './assets/icon-1024.png';
 import AddNetworkDrawer from './components/AddNetworkDrawer';
 import AddPlanetDrawer from './components/AddPlanetDrawer';
 import { FAIL_REASON_KEYS } from './components/ReinstallDialog';
+import BootInstallGate from './components/BootInstallGate';
 import SettingsDrawer from './components/SettingsDrawer';
 import Statusbar from './components/Statusbar';
 import { useToast } from './components/Toaster';
@@ -75,8 +76,16 @@ export default function App() {
     });
   }, []);
 
+  /// 启动安装门:daemon 未装(token 文件级判定,不受 spawn 版本探测失败
+  /// 干扰)且携带内嵌资源 → 全屏等待自动安装,不询问;装好落门直接进首页
+  const [bootInstall, setBootInstall] = useState(false);
   useEffect(() => {
-    void api.daemonState().then(s => setOnline(s.online));
+    void api.daemonState().then(s => {
+      setOnline(s.online);
+      if (!s.installed) {
+        void api.embeddedManifest().then(m => { if (m) setBootInstall(true); }).catch(() => {});
+      }
+    });
     const unsubs = [
       listen('daemon-online', () => setOnline(true)),
       listen('daemon-offline', () => setOnline(false)),
@@ -170,6 +179,9 @@ export default function App() {
           onCheckUpdate={runUpdateCheck}
         />
       )}
+      {/* 启动安装门:覆盖全屏(含标题栏),装好/放弃即落;App 层 install-done
+          toast 与门并存(成功瞬时不扰),失败时门内已示原因,toast 为双保险 */}
+      {bootInstall && <BootInstallGate onFinished={() => setBootInstall(false)} />}
       {/* 检查更新弹窗:updateDlg 非空即开(检查中就先开,checking 态弹窗内自显) */}
       {updateDlg && (
         <UpdateDialog

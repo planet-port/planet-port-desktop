@@ -39,6 +39,7 @@ export default {
     installTimeout: '安装耗时异常，可能仍在后台进行。',
     keepWaiting: '继续等待', stopWaiting: '取消等待',
     installSuccess: '安装完成',
+    skipInstall: '暂不安装',
   },
   identity: {
     section: '节点身份',
