@@ -91,7 +91,7 @@
 - [ ] join 加入网络 → set 自定义配置(routeViaZeroTier/dnsMode)→ leave → listnetworks 出 DISCONNECTED 行(name 用快照,动态字段 —)
 - [ ] join 再次加入 → 配置恢复(routeViaZeroTier/dnsMode 不变,不报错)
 - [ ] leave 后 net_local 清空 → planet idle 停机;join 自动拉起并 re-join
-- [ ] 重复 leave 幂等成功;未登记网络 leave/remove 404;planet disabled 下 leave/remove 报 409 planetDisabled
+- [ ] 重复 leave 幂等成功;未登记网络 leave 404;planet disabled 下 leave 报 409 planetDisabled;remove 仅在在网/本地有记录时报 409(仅断开区记录或未登记 nwid 时直接成功),按名字未命中 404
 - [ ] remove 在网网络 → 先脱离再删记录;listnetworks 不再显示;重新 join 按控制器默认配置
 - [ ] remove 断开区记录 → 直接删除,列表不再显示
 - [ ] STOPPED planet:leave 仅记录迁移(按名定位走断开区快照)

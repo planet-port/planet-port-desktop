@@ -213,7 +213,7 @@ Windows 上 `install` 同样可用:把同目录三件套(planet-port.exe / plane
 ## 行为说明
 
 - 单操作成功输出为简式并带 planet 落点,如 `gozi25(3530253632) 200 join OK`(定位链②③生效时用户看不到目标,回执自报家门;落点拿不到时退化为 `200 join OK`);`moon import` 为 `201 moon import OK`;网络 `leave` / `remove` 同款风格(如 `smoke(3530253632) 200 leave OK`)。
-- 变更类 `-j` 输出真实响应体:join/leave/orbit 为 `{"result":"ok"}`(幂等重入时附 `"idempotent":true`),remove 与 deorbit(204 空体)代以 `{"result":"ok"}`,不再是 `null`。
+- 变更类 `-j` 输出真实响应体:join 为 `{"result":"ok"}`(幂等重入时附 `"idempotent":true`),leave/orbit 为 `{"result":"ok"}`;remove 为 200 JSON 体、deorbit 为 204 空体兜底,两者输出均为 `{"result":"ok"}`,不再是 `null`。
 - 网络断开是**记忆而非删除**:断开的网络在 listnetworks(DISCONNECTED 占位行)、networkinfo / get / share 均可见可查,`join` 恢复,`remove` 清除;断开的网络 `set` 报 404。
 - 文本模式时间戳本地化(`events` TS、`planet show` 修订时间、`share` 过期时间);`-j` 一律保留原始 epoch(游标/脚本语义不变)。
 - `dump -j` 为结构化对象(`planet`/`networks`/`peers`/`events` 各取自对应 JSON 端点),不再是被 quote 一层的 JSON 字符串;`listnetworks` / `listpeers` / `listmoons` 的 `-j` 为分组结构 `planets[]`,各带对应条目数组与该行星 status/online。

@@ -218,8 +218,11 @@ smoke(3530253632) 200 remove OK
 
 口径:`leave` = 断开(设备面拆除 + DNS 还原,id / 本地配置 / 名字快照迁入断开
 区,net_local 清空时 idle 停机);`remove` = 彻底删除(在网先脱离,net_local +
-net_detached 全清,列表不再显示)。幂等:重复 leave / 无记录 remove 均成功;
-未登记网络 404 `networkNotFound`;planet 禁用时 409 `planetDisabled`。
+net_detached 全清,列表不再显示)。幂等:重复 leave / 无记录 remove(含未登
+记 nwid)均成功。错误口径分列:`leave` 未登记网络 404 `networkNotFound`,
+planet 禁用时 409 `planetDisabled`;`remove` 仅按**名字**定位未命中时 404
+`networkNotFound`,409 `planetDisabled` 仅在在网或 net_local 有记录需收尾
+脱离时触发(disabled planet 上仅存断开区记录时 remove 直接成功)。
 `join` 命中断开区自动恢复配置。
 
 ### share — 网络分享(终端二维码 + 剪贴板)◇
