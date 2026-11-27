@@ -86,15 +86,15 @@
 | `planet remove <p> -j`(无 `--yes`) | 拒绝执行:`error: --json requires --yes for remove (confirmation prompt would corrupt stdout)`,exit=2(交互确认拒绝才是 exit=130) |
 | `install -j`(版本差异且无 `--yes`) | 同款约束:`error: --json requires --yes for install when version differs …`,exit=2 |
 
-## 网络连接断开(2026-11-22 命令面;2026-11-27 起禁用/启用概念移除,改为 connect/disconnect)
+## 网络连接断开(2026-11-27 语义合并:join=连接,leave=断开,remove=彻底删除)
 
-- [ ] disconnect → listnetworks 出 DISCONNECTED 行(name 用快照,动态字段 —)→ connect 恢复原配置(routeViaZeroTier/dnsMode 不变)
-- [ ] disconnect 后 net_local 清空 → planet idle 停机;connect 自动拉起并 re-join
-- [ ] 重复 disconnect 幂等成功;未登记网络 disconnect/connect 404;已加入态 connect 幂等成功
-- [ ] join 命中断开网络 → 自动恢复(等价 connect,不报错)
-- [ ] STOPPED planet:disconnect 仅记录迁移(按名定位退化为仅 nwid);connect 按断开区 name 快照定位
-- [ ] leave 清两区(net_local 与 net_detached),不强制 planet running
-- [ ] planet disabled 下 connect/disconnect 报 409 planetDisabled
+- [ ] join 加入网络 → set 自定义配置(routeViaZeroTier/dnsMode)→ leave → listnetworks 出 DISCONNECTED 行(name 用快照,动态字段 —)
+- [ ] join 再次加入 → 配置恢复(routeViaZeroTier/dnsMode 不变,不报错)
+- [ ] leave 后 net_local 清空 → planet idle 停机;join 自动拉起并 re-join
+- [ ] 重复 leave 幂等成功;未登记网络 leave/remove 404;planet disabled 下 leave/remove 报 409 planetDisabled
+- [ ] remove 在网网络 → 先脱离再删记录;listnetworks 不再显示;重新 join 按控制器默认配置
+- [ ] remove 断开区记录 → 直接删除,列表不再显示
+- [ ] STOPPED planet:leave 仅记录迁移(按名定位走断开区快照)
 - [ ] `planet add`/`planet remove` 新路径;旧顶层入口报未知命令
 - [ ] share:终端二维码(扫出 16hex 纯文本)+ 网络 ID 已复制;无显示环境降级提示不报错
 - [ ] 网络命令定位规范:单登记自动选中;≥2 登记无 --planet/use 报 409 列候选

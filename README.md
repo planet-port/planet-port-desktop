@@ -42,7 +42,7 @@ CLI 与 GUI 都是 `planet-portd` daemon 的薄客户端；GUI 基于 Tauri 2（
 
 - **多 Planet 管理**：官方与多份私有 Planet 同机并存，每 planet 独立数据目录；身份按全局 identityMode（默认共享）共享或独立；本地文件 / URL 导入，别名、启停、导出、临时分享链接一站管理；join / leave、跨 planet 聚合查询（网络 / peers / moons）
 - **默认路由与 DNS 自由掌控**：`routeViaZeroTier` 开关、`dnsMode=none|network|custom`，全部陈述式配置，脚本友好
-- **网络连接/断开与分享**：`disconnect` 断开网络但保留本地配置与名字快照（列表以 DISCONNECTED 占位行可见），`connect` 一键恢复原 route/DNS 配置（join 命中断开的网络自动恢复）；`share` 终端二维码 + 网络 ID 剪贴板，扫码即填
+- **网络连接/断开与分享**：`leave` 断开网络但保留本地配置与名字快照（列表以 DISCONNECTED 占位行可见），`join` 一键恢复原 route/DNS 配置（命中断开区自动恢复），`remove` 彻底删除记录；`share` 终端二维码 + 网络 ID 剪贴板，扫码即填
 - **Moon 支持**：orbit / deorbit / 导入 `.moon` 文件
 - **UDP 三通道降级**：主口 9993 优先；UDP 被滤时自动换绑副口（随机 20000-65499，离线 120s 触发），仍无直连 60s 自动建 TCP 隧道兜底，恢复后 30s 内自动回 UDP
 - **TCP 兜底 relay**：`planet set-relay` 按 planet 配置 TCP 兜底中继（需部署官方 tcp-proxy），与三通道降级配合兜住 UDP 全被滤的严苛网络

@@ -2,7 +2,7 @@
 
 `planet-port` 是 planet-portd 守护进程的 CLI。命令命名对齐 `zerotier-cli`
 (info / listpeers / listnetworks / join / leave / set / dump / orbit / deorbit);
-在此基础上,网络级 connect / disconnect / share 为顶层命令,行星管理
+在此基础上,网络级 join / leave / remove / share 为顶层命令,行星管理
 (add / remove / list / show / rename / set-relay / enable / disable / export /
 share)统一走 `planet` 子命令,均不与 zerotier-cli 现有命令冲突。
 
@@ -10,7 +10,7 @@ share)统一走 `planet` 子命令,均不与 zerotier-cli 现有命令冲突。
 
 | 组 | 判据 | 命令 |
 |---|---|---|
-| [网络命令](#网络命令需指定网络) | 使用时需指定网络 | networkinfo / join / leave / connect / disconnect / set / get / share |
+| [网络命令](#网络命令需指定网络) | 使用时需指定网络 | networkinfo / join / leave / remove / set / get / share |
 | [行星命令](#行星命令操作对象为行星或行星下资源) | 操作对象为行星或行星下资源 | planet 子命令(add / remove / list / show / rename / enable / disable / set-relay / export / share)、use、orbit / deorbit / listmoons / moon import |
 | [应用命令](#应用命令跨行星聚合与应用生命周期) | 跨行星聚合视图与应用生命周期 | info / listnetworks / listpeers / dump / events / identity / install / service |
 
@@ -50,7 +50,7 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 
 ## planet 定位链
 
-变更类命令(join / leave / connect / disconnect / set / get / networkinfo / share / orbit / deorbit / dump / moon import)必须落到
+变更类命令(join / leave / remove / set / get / networkinfo / share / orbit / deorbit / dump / moon import)必须落到
 **恰好一个** planet 实例,按以下顺序解析:
 
 | 优先级 | 来源 | 说明 |
@@ -83,21 +83,20 @@ CLI 文案支持简体中文(zh-Hans,源语言)/ 繁体中文(zh-Hant)/ 英语(e
 | ① 显式参数 | `--planet <name\|id>` | **强制覆盖②③** | 自动化脚本 |
 
 登记 ≥2 个 planet 且无 ②① 时报 `409` 列候选,不猜;新命令
-connect / disconnect / share 遵循同款。
+remove / share 遵循同款。
 
 `<nwid>` 参数同样接受已加入网络的**名字**(不区分大小写;含空格/中文的名字
 直接引号包裹即可),同名多条报 409 列候选;`join` 只认 nwid——未加入的网络
-名字无从得知;`leave` 无显式 `--planet` 时按 nwid 跨行星唯一定位:只挂一个
-行星直接离开,挂多个行星报 409 列候选要求显式指定。
+名字无从得知;`leave` / `remove` 无显式 `--planet` 时按 nwid 跨行星唯一定位:只挂一个
+行星直接执行,挂多个行星报 409 列候选要求显式指定。
 
 | 命令 | 说明 |
 |---|---|
-| `networkinfo <nwid>` | 单网络详情视图:planet 落点、状态、MAC、设备名、mtu、assigned IP、managed routes、DNS 三件套、routeViaZeroTier 一屏可见;`<nwid>` 同样接受网络名;行星未运行时不拒绝,展示 registry 登记配置的 STOPPED 占位详情并 stderr 反馈动态字段缺失原因;网络已断开时展示断开前登记配置(DISCONNECTED 占位详情)并 stderr 提示可用 `connect` 恢复;`-j` 输出完整 NetworkEntry |
-| `join <nwid>` | 加入网络;**幂等**:对已加入网络重复 join 静默成功(`{"result":"ok","idempotent":true}`),批量脚本可重入;命中断开区(已 disconnect 的网络)时自动走恢复路径,**等价 connect、不报错** |
-| `leave <nwid>` | 退出网络;**幂等**:未加入时重复 leave 静默成功;**同时清除本地配置记录**(net_local),重启/重新上线不会被 re-join 复活;**断开记忆(net_detached)一并清除**;不再要求 planet 运行(断开记录可能存在于 idle 停机的 planet 上) |
-| `connect <nwid>` | 连接已断开网络:断开区记录回迁 net_local 后 re-join,**恢复断开前的本地配置**(routeViaZeroTier / DNS 三件套原样);planet 未运行时按派生规则自动拉起;**幂等**:已加入网络重复 connect 静默成功;名字定位走**断开区快照**(planet stopped 态下断开的网络快照仍在断开区,connect 不受影响) |
-| `disconnect <nwid>` | 断开已加入网络:脱离(设备面拆除 + DNS 还原)并把 id / 本地配置 / 名字快照迁入断开区;该 planet 的 net_local 因此清空时按派生规则 idle 停机;**幂等**:重复 disconnect 静默成功;planet 本身被禁用时报 `409 planetDisabled` |
-| `set <nwid> <k>=<v>...` | 客户端本地配置:`routeViaZeroTier=0\|1`(非 0/1 退出码 2)、`dnsMode=none\|network\|custom`、`customDns=<逗号分隔>`;未知 key 或不带任何 k=v 退出码 2;zerotier-cli 旧 key(`allowDefault`/`allowManaged`/`allowDNS`)报错时提示等价 key 映射;对断开的网络报 404(一期不做「断开期间预改配置」,先 connect 再改) |
+| `networkinfo <nwid>` | 单网络详情视图:planet 落点、状态、MAC、设备名、mtu、assigned IP、managed routes、DNS 三件套、routeViaZeroTier 一屏可见;`<nwid>` 同样接受网络名;行星未运行时不拒绝,展示 registry 登记配置的 STOPPED 占位详情并 stderr 反馈动态字段缺失原因;网络已断开时展示断开前登记配置(DISCONNECTED 占位详情)并 stderr 提示可用 `join` 恢复;`-j` 输出完整 NetworkEntry |
+| `join <nwid>` | 连接网络;**幂等**:对已加入网络重复 join 静默成功(`{"result":"ok","idempotent":true}`),批量脚本可重入;命中断开区(已 leave 的网络)时自动恢复**断开前的本地配置**(routeViaZeroTier / DNS 三件套原样),不报错;planet 未运行时按派生规则自动拉起;名字定位走**断开区快照**(planet stopped 态下断开的网络快照仍在断开区,join 不受影响) |
+| `leave <nwid>` | 断开网络:脱离(设备面拆除 + DNS 还原)并把 id / 本地配置 / 名字快照迁入断开区;该 planet 的 net_local 因此清空时按派生规则 idle 停机;**幂等**:重复 leave 静默成功;planet 本身被禁用时报 `409 planetDisabled` |
+| `remove <nwid>` | 彻底删除:在网先脱离,清除全部本地记录(net_local 与断开记忆 net_detached),列表不再显示;重新 join 按控制器默认配置重来;**幂等**:无记录时 remove 静默成功;跨行星唯一定位同 `leave` |
+| `set <nwid> <k>=<v>...` | 客户端本地配置:`routeViaZeroTier=0\|1`(非 0/1 退出码 2)、`dnsMode=none\|network\|custom`、`customDns=<逗号分隔>`;未知 key 或不带任何 k=v 退出码 2;zerotier-cli 旧 key(`allowDefault`/`allowManaged`/`allowDNS`)报错时提示等价 key 映射;对断开的网络报 404(一期不做「断开期间预改配置」,先 join 再改) |
 | `get <nwid> <key>` | 读单个网络配置值(脚本友好):key 取 NetworkEntry 的 camelCase 字段——`nwid`/`name`/`status`/`conflict`/`type`/`mac`/`mtu`/`assignedAddrs`/`managedRoutes`/`dnsServers`/`routeViaZeroTier`/`routeViaLocked`/`dnsMode`/`customDns`;字符串裸输出,数组/对象紧凑 JSON;未知 key 退出码 2(同样带旧 key 映射提示) |
 | `share <nwid>` | 分享网络:终端输出二维码 + 网络名 + 网络 ID,并把网络 ID 复制到系统剪贴板(无显示服务器等不支持环境降级提示手动复制,不报错中断);二维码内容为网络 ID 16 位 hex **纯文本**(与 App 内扫码填 ID 互逆,非 URL),纠错级别 M,对齐 iOS 版规范;任何网络状态(ACTIVE / STOPPED / DISCONNECTED)可用,名称用快照或 nwid;`-j` 输出完整 NetworkEntry(二维码/剪贴板属展示层) |
 
@@ -107,7 +106,7 @@ connect / disconnect / share 遵循同款。
 
 本组操作行星本身或行星下资源(moon 等)。**注意命名空间隔离:
 `planet enable` / `planet disable` 作用于行星(持久开关,决定实例是否可运行),
-与网络命令组的顶层 `connect` / `disconnect`(作用于单个网络)对象不同。**
+与网络命令组的顶层 `remove`(作用于单个网络)对象不同。**
 
 ### planet 管理(子命令)
 
@@ -213,9 +212,9 @@ Windows 上 `install` 同样可用:把同目录三件套(planet-port.exe / plane
 
 ## 行为说明
 
-- 单操作成功输出为简式并带 planet 落点,如 `gozi25(3530253632) 200 join OK`(定位链②③生效时用户看不到目标,回执自报家门;落点拿不到时退化为 `200 join OK`);`moon import` 为 `201 moon import OK`;网络 `disconnect` / `connect` 同款风格(如 `smoke(3530253632) 200 disconnect OK`)。
-- 变更类 `-j` 输出真实响应体:join/leave/connect/disconnect/orbit 为 `{"result":"ok"}`(幂等重入时附 `"idempotent":true`),remove/deorbit(204 空体)代以 `{"result":"ok"}`,不再是 `null`。
-- 网络断开是**记忆而非删除**:断开的网络在 listnetworks(DISCONNECTED 占位行)、networkinfo / get / share 均可见可查,`connect` 或 `join` 恢复,`leave` 清除;断开的网络 `set` 报 404。
+- 单操作成功输出为简式并带 planet 落点,如 `gozi25(3530253632) 200 join OK`(定位链②③生效时用户看不到目标,回执自报家门;落点拿不到时退化为 `200 join OK`);`moon import` 为 `201 moon import OK`;网络 `leave` / `remove` 同款风格(如 `smoke(3530253632) 200 leave OK`)。
+- 变更类 `-j` 输出真实响应体:join/leave/orbit 为 `{"result":"ok"}`(幂等重入时附 `"idempotent":true`),remove 与 deorbit(204 空体)代以 `{"result":"ok"}`,不再是 `null`。
+- 网络断开是**记忆而非删除**:断开的网络在 listnetworks(DISCONNECTED 占位行)、networkinfo / get / share 均可见可查,`join` 恢复,`remove` 清除;断开的网络 `set` 报 404。
 - 文本模式时间戳本地化(`events` TS、`planet show` 修订时间、`share` 过期时间);`-j` 一律保留原始 epoch(游标/脚本语义不变)。
 - `dump -j` 为结构化对象(`planet`/`networks`/`peers`/`events` 各取自对应 JSON 端点),不再是被 quote 一层的 JSON 字符串;`listnetworks` / `listpeers` / `listmoons` 的 `-j` 为分组结构 `planets[]`,各带对应条目数组与该行星 status/online。
 - 定位类 409(`planetAmbiguous`/`noPlanetRunning`)在人话层改写为 `--planet` 指引 + 候选列表(跟随 CLI 语言);其余 API 错误原样透传 `error <code>: <message>`。

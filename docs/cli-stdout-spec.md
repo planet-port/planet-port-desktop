@@ -77,7 +77,7 @@ RELAY 显示 TCP 兜底 relay **配置态**(`planet set-relay` 所设完整地�
 覆盖**全部登记行星**(不只在线的);多 managed IP 在 MANAGED-IPS 列内逐行堆叠;
 NAME 列为融合显示名:**alias > 控制器名(netconf/缓存)> nwid**(见 alias 命令);
 停止/禁用行星下的网络以 STOPPED 占位行展示(名称/MAC 等动态字段为 —);
-已断开(disconnect)的网络以 **DISCONNECTED 占位行**保留可见(name 用断开
+已断开(leave)的网络以 **DISCONNECTED 占位行**保留可见(name 用断开
 时快照,动态字段 `—`)——断开的网络是用户资产,不从列表消失;组内排序
 ACTIVE → STOPPED → DISCONNECTED;`--planet`(别名:id/name/worldId)只看指定行星:
 
@@ -201,29 +201,26 @@ gozi25(3530253632) 200 leave OK
 { "idempotent": true, "result": "ok" }
 ```
 
-### connect / disconnect — 网络连接/断开 ◇
+### leave / remove — 断开 / 彻底删除 ◇
 
 文本模式单行回执,与变更类同款带行星落点:
 
 ```
-smoke(3530253632) 200 disconnect OK
-smoke(3530253632) 200 connect OK
+smoke(3530253632) 200 leave OK
+smoke(3530253632) 200 remove OK
 ```
 
-`-j`(幂等重入附 idempotent):
+`-j`:
 
 ```json
 { "result": "ok" }
-{ "idempotent": true, "result": "ok" }
 ```
 
-口径:`disconnect` = 脱离(设备面拆除 + DNS 还原)并把 id / 本地配置 / 名字快照
-迁入断开记忆区,net_local 清空时该 planet 按派生规则 idle 停机;`connect` =
-记录回迁 + planet 未运行自动拉起 + re-join,**恢复断开前的
-routeViaZeroTier / DNS 本地配置**。幂等:重复 disconnect / 已加入网络重复
-connect 均成功附 `"idempotent":true`;未登记网络 404 `networkNotFound`;
-planet 本身被禁用时 409 `planetDisabled`。`join` 命中断开区等价 connect;
-断开的网络 `set` 报 404;断开的网络可 networkinfo / get / share 查询。
+口径:`leave` = 断开(设备面拆除 + DNS 还原,id / 本地配置 / 名字快照迁入断开
+区,net_local 清空时 idle 停机);`remove` = 彻底删除(在网先脱离,net_local +
+net_detached 全清,列表不再显示)。幂等:重复 leave / 无记录 remove 均成功;
+未登记网络 404 `networkNotFound`;planet 禁用时 409 `planetDisabled`。
+`join` 命中断开区自动恢复配置。
 
 ### share — 网络分享(终端二维码 + 剪贴板)◇
 
@@ -254,7 +251,7 @@ gozi25(3530253632) 200 set OK
 
 `-j`:`{ "result": "ok" }`。生效时机为下一轮控制器 netconf 下发。对断开
 (DISCONNECTED)网络报 404 `networkNotFound`(一期不做「断开期间预改配置」,
-先 connect 再改)。
+先 join 再改)。
 
 ### alias — 网络显示别名 ▣(格式同上)
 
@@ -265,7 +262,7 @@ gozi25(3530253632) 200 alias OK
 `alias <nwid|name> [name]`:设/清网络显示别名,与 `set <nwid> alias=...`
 同一通道。别名即时生效,展示优先级 **alias > 控制器名(netconf/缓存)>
 nwid**,各端(卡片/托盘/CLI 按名定位)一致;控制器名不受影响,清除即回落。
-缺省或空名 = 清除。生命周期随网络本地配置:disconnect/connect 保留,leave 清除。
+缺省或空名 = 清除。生命周期随网络本地配置:leave/join 保留,remove 清除。
 `-j`:同 set 真实响应体。
 
 ### get — 读单个配置值(脚本友好)❇
@@ -361,7 +358,7 @@ gozi25(3530253632) 200 disable OK
 disable 无条件停且 join/boot 不再运行;enable 对有网络的 planet 按派生
 规则自动拉起。原顶层 `start`/`stop` 命令已移除;原顶层 `add`/`remove` 同步
 迁入 `planet` 子命令(不留兼容别名,旧顶层入口报未知命令)。注意:此处是
-**行星级**持久开关,与网络级连接/断开(`connect` / `disconnect`,作用于单个
+**行星级**持久开关,与网络级连接/断开(`leave` / `join`,作用于单个
 网络,回执 `{ "result": "ok" }`)对象不同,见上文「网络操作」。
 
 ### planet remove — 删除登记 ▣
