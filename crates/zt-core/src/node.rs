@@ -128,6 +128,12 @@ fn rc_to_err(what: &str, rc: zt::ZT_ResultCode) -> Result<(), NodeError> {
     Err(NodeError::InvalidArg(format!("{what} 返回错误码 {rc}")))
 }
 
+/// ZT_ResultCode 只有 100..1000 区间是 FATAL(核心不可继续用);1000+ 是
+/// 单次调用的普通错误(如 NETWORK_NOT_FOUND),丢弃该次输入即可,节点仍可用。
+fn is_fatal_rc(rc: zt::ZT_ResultCode) -> bool {
+    (100..1000).contains(&(rc as i32))
+}
+
 /// 对端信任层级角色(ZT_PeerRole)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PeerRole {
@@ -501,7 +507,7 @@ impl NodeHandle {
         // 启动即驱动一次:identity 生成/装载、planet 读入在此发生(对齐 Android)
         let mut dl: i64 = 0;
         let rc = unsafe { zt::ZT_Node_processBackgroundTasks(node, std::ptr::null_mut(), now_ms(), &mut dl) };
-        if rc as i32 >= 100 {
+        if is_fatal_rc(rc) {
             unsafe {
                 zt::ZT_Node_delete(node);
                 drop(Box::from_raw(inner));
@@ -913,6 +919,8 @@ unsafe fn run_driver(mut d: Driver) {
     // POLLERR/POLLNVAL 日志去重:状态保持时只报一次,避免忙转刷屏
     #[cfg(not(windows))]
     let mut poll_reported = [false; 3];
+    // processVirtualNetworkFrame 普通错误(非 FATAL)的 stderr 去重,同上
+    let mut pvnf_err_reported = false;
     loop {
         let now = now_ms();
         if d.deadline <= now {
@@ -922,7 +930,7 @@ unsafe fn run_driver(mut d: Driver) {
             };
             // 核心 deadline 恒为将来时刻(下限 ZT_CORE_TIMER_TASK_GRANULARITY),防御性钳制
             d.deadline = if dl > now { dl } else { now + 1 };
-            if rc as i32 >= 100 {
+            if is_fatal_rc(rc) {
                 call_sink(&mut d.sink, &inner.running, "on_event", |s| {
                     s.on_event(NodeEvent::Fatal(format!("核心致命错误 rc={rc}")))
                 });
@@ -1173,13 +1181,23 @@ unsafe fn run_driver(mut d: Driver) {
             if dl > 0 && dl < d.deadline {
                 d.deadline = dl;
             }
-            if rc as i32 >= 100
-                && call_sink(&mut d.sink, &inner.running, "on_event", |s| {
-                    s.on_event(NodeEvent::Fatal(format!("processVirtualNetworkFrame rc={rc}")))
-                })
-                .is_none()
-            {
-                return;
+            if rc != zt::ZT_ResultCode_ZT_RESULT_OK {
+                if is_fatal_rc(rc) {
+                    if call_sink(&mut d.sink, &inner.running, "on_event", |s| {
+                        s.on_event(NodeEvent::Fatal(format!("processVirtualNetworkFrame rc={rc}")))
+                    })
+                    .is_none()
+                    {
+                        return;
+                    }
+                } else if !pvnf_err_reported {
+                    // 普通错误(如 leave/销毁后在途帧的 NETWORK_NOT_FOUND):
+                    // 丢弃该帧即可,节点仍可用;按状态去重打 stderr 便于排查。
+                    eprintln!("[node] processVirtualNetworkFrame 丢弃一帧 rc={rc}(网络已不在核心内)");
+                    pvnf_err_reported = true;
+                }
+            } else {
+                pvnf_err_reported = false;
             }
         }
         // 组播订阅:每 5000ms 对本机每个 IPv4 订阅 (ffffffffffff, ADI=IPv4 主机序)
