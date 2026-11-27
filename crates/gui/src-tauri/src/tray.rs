@@ -296,7 +296,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             }
             net.append(&PredefinedMenuItem::separator(app)?)?;
             // 连接 toggle:在网态(除 DISCONNECTED/STOPPED 外,含等待授权/被拒)→
-            // 断开(disconnect),断开/占位→连接(connect),判据同前端 NetworkCard
+            // leave 断开(保留配置),断开/占位→join(命中断开区自动恢复配置),
+            // 判据同前端 Home onToggle
             let on = status != "DISCONNECTED" && status != "STOPPED";
             net.append(&MenuItem::with_id(
                 app,
@@ -363,17 +364,18 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 refresh(&app); // 立即反映;下次心跳会再校准
             });
         }
-        // 网络连接 toggle:连接(connect) / 断开(disconnect),HTTP 动作同走后台线程
+        // 网络 toggle:on→off 走 leave 断开(保留配置),off→on 走 join 恢复;
+        // HTTP 动作同走后台线程
         "netconnect" | "netdisconnect" if parts.len() == 3 => {
-            let connect = parts[0] == "netconnect";
+            let on = parts[0] == "netdisconnect";
             let app = app.clone();
             let nwid = parts[2].to_string();
             let planet = parts[1].to_string();
             std::thread::spawn(move || {
-                let r = if connect {
-                    commands::connect_network(nwid, Some(planet))
+                let r = if on {
+                    commands::leave_network(nwid, Some(planet))
                 } else {
-                    commands::disconnect_network(nwid, Some(planet))
+                    commands::join_network(nwid, Some(planet))
                 };
                 if let Err(e) = r {
                     notify_error(&app, &e);

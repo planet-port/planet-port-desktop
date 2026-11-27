@@ -113,7 +113,6 @@ export default {
     id: 'Network ID', name: 'Name', statusLabel: 'Status', ips: 'Assigned addrs', iface: 'Interface',
     conflict: 'Conflict',
     settings: 'Settings', leave: 'Leave',
-    leaveConfirm: 'Leave this network?',
     joined: 'Joined',
     empty: 'No networks joined',
     settingsTitle: 'Network settings · {{id}}',
@@ -128,8 +127,8 @@ export default {
     routeToggleHint: 'Click to toggle target/via', directRoute: 'Direct route',
     dnsFooter: 'DNS changes apply immediately', dnsPending: 'Pending from network', copyIps: 'Click to copy IPs',
     deleteNetwork: 'Delete Network',
-    deleteConfirm: 'Delete network {{id}}? This leaves the network without affecting others.',
-    left: 'Left network',
+    deleteConfirm: 'Delete network {{id}}? This removes all local records (config included) permanently.',
+    removed: 'Network removed',
     disconnectedHint: 'Network disconnected (local config kept); connect to edit',
     /// Status code map: enums = daemon runtime::status_name full set + local
     /// STOPPED (placeholder entries of non-running planets) + daemon-synthesized

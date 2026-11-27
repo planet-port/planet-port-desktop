@@ -158,13 +158,11 @@ pub fn join_network(nwid: String, planet: Option<String>) -> Result<Value, GuiEr
 pub fn leave_network(nwid: String, planet: Option<String>) -> Result<Value, GuiError> {
     discover()?.post_empty(&endpoints::network_leave(&nwid, planet.as_deref()))
 }
+/// 彻底删除网络(DELETE /networks/{nwid}):daemon 返回 {"result":"ok"} 体,
+/// 与 remove_planet 同走 delete + parse;断开(保留配置)走 leave_network
 #[tauri::command]
-pub fn connect_network(nwid: String, planet: Option<String>) -> Result<Value, GuiError> {
-    discover()?.post_empty(&endpoints::network_connect(&nwid, planet.as_deref()))
-}
-#[tauri::command]
-pub fn disconnect_network(nwid: String, planet: Option<String>) -> Result<Value, GuiError> {
-    discover()?.post_empty(&endpoints::network_disconnect(&nwid, planet.as_deref()))
+pub fn remove_network(nwid: String, planet: Option<String>) -> Result<Value, GuiError> {
+    discover()?.delete(&endpoints::network_remove(&nwid, planet.as_deref()))
 }
 #[tauri::command]
 pub fn set_network(nwid: String, planet: Option<String>, body: Value) -> Result<Value, GuiError> {

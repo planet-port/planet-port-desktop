@@ -37,8 +37,8 @@ export const api = {
   networks: (planet?: string) => cmd<{ networks: NetworkEntry[] }>('get_networks', { planet: planet ?? null }),
   joinNetwork: (nwid: string, planet?: string) => cmd('join_network', { nwid, planet: planet ?? null }),
   leaveNetwork: (nwid: string, planet?: string) => cmd('leave_network', { nwid, planet: planet ?? null }),
-  connectNetwork: (nwid: string, planet?: string) => cmd('connect_network', { nwid, planet: planet ?? null }),
-  disconnectNetwork: (nwid: string, planet?: string) => cmd('disconnect_network', { nwid, planet: planet ?? null }),
+  /// 彻底删除(与 leave 断开保留配置不同):详情抽屉「删除网络」专用
+  removeNetwork: (nwid: string, planet?: string) => cmd('remove_network', { nwid, planet: planet ?? null }),
   setNetwork: (
     nwid: string,
     body: { routeViaZeroTier?: boolean; dnsMode?: string; customDns?: string[] },

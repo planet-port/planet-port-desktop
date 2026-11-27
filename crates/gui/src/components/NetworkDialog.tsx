@@ -35,7 +35,7 @@ function formatMac(mac: string): string {
 /// (IPv4 优先排序,2026-11-24 口径) +
 /// 托管路由(target↔via 点击切换,直连不可切) + DNS(模式即点即生效,custom 槽
 /// 失焦且合法时自动应用,network 模式只读展示下发服务器) + routeVia 开关 +
-/// 居中红字删除(=leave)。广播/桥接两行不做(daemon NetworkEntry 未暴露)
+/// 居中红字删除(=remove 彻底删除,断开保留配置走卡片开关)。广播/桥接两行不做(daemon NetworkEntry 未暴露)
 export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEntry; onClose: () => void; onDone: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -110,9 +110,9 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
     apply.mutate({ routeViaZeroTier: next }, { onError: () => setRouteVia(!next) });
   };
   const del = useMutation({
-    mutationFn: () => api.leaveNetwork(row.nwid, row.planet),
+    mutationFn: () => api.removeNetwork(row.nwid, row.planet),
     onSuccess: () => {
-      toast.ok(t('networks.left'));
+      toast.ok(t('networks.removed'));
       onDone();
       setConfirmDel(false);
       close();

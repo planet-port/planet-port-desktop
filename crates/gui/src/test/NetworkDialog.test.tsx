@@ -119,12 +119,12 @@ describe('NetworkDialog 网络详情', () => {
     expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('删除网络:确认后 leave_network', async () => {
+  it('删除网络:确认后 remove_network', async () => {
     renderDialog();
     fireEvent.click(await screen.findByText('删除网络'));
     fireEvent.click(await screen.findByText('删除网络', { selector: '[data-testid="confirm-dialog"] [data-variant="danger"]' }));
-    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('leave_network', { nwid: '5cf54f1815588318', planet: '3530253632' }));
-    expect(await screen.findByText('已离开网络')).toBeInTheDocument();
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('remove_network', { nwid: '5cf54f1815588318', planet: '3530253632' }));
+    expect(await screen.findByText('已删除网络')).toBeInTheDocument();
   });
 
   it('ID 行 CopyableValue:点击复制写剪贴板(图标反馈,不发 toast)', async () => {

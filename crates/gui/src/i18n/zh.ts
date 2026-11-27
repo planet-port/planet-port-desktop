@@ -116,7 +116,6 @@ export default {
     id: '网络 ID', name: '名称', statusLabel: '状态', ips: '分配地址', iface: '接口',
     conflict: '冲突',
     settings: '设置', leave: '离开',
-    leaveConfirm: '确定离开该网络？',
     joined: '已加入',
     empty: '尚未加入任何网络',
     settingsTitle: '网络设置 · {{id}}',
@@ -131,8 +130,8 @@ export default {
     routeToggleHint: '点击在 target/via 间切换', directRoute: '直连路由',
     dnsFooter: 'DNS 修改立即生效', dnsPending: '等待网络下发', copyIps: '点击复制 IP',
     deleteNetwork: '删除网络',
-    deleteConfirm: '删除网络 {{id}}？将离开该网络（leave），不影响其他网络。',
-    left: '已离开网络',
+    deleteConfirm: '删除网络 {{id}}?将彻底删除本地记录（含配置），不再显示。',
+    removed: '已删除网络',
     disconnectedHint: '网络已断开（保留本地配置），连接后可编辑',
     /// 状态码映射:枚举 = daemon runtime::status_name 全量 + 本地合成 STOPPED
     /// (非运行 planet 的占位条目)+ daemon 合成 DISCONNECTED(net_detached
