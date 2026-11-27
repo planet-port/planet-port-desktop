@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "version": "0.5.9",
+  "version": "0.7.0",
   "productName": "Planet Port",
   "identifier": "com.planetport.desktop",
   "build": {
