@@ -195,11 +195,13 @@ gozi25(3530253632) 200 join OK
 gozi25(3530253632) 200 leave OK
 ```
 
-`-j`(幂等重入附 idempotent):
+`-j` 仅 **join** 幂等重入附 `idempotent` 字段:
 
 ```json
 { "idempotent": true, "result": "ok" }
 ```
+
+`leave` 幂等成功但不附字段,恒返回 `{"result":"ok"}`(见下节样例)。
 
 ### leave / remove — 断开 / 彻底删除 ◇
 

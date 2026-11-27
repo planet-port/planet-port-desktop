@@ -759,9 +759,9 @@ pub async fn net_remove(
     Ok(Json(json!({"result": "ok"})))
 }
 
-// ---- POST /networks/{nwid}/disconnect ----
+// ---- leave/remove 共用的断开核心动作 ----
 
-/// 断开核心动作(net_disconnect handler 与冲突自动断开共用):net_local →
+/// 断开核心动作(net_leave 与冲突自动断开共用):net_local →
 /// net_detached 记录迁移(保留本地配置与名字快照,可携断开原因)+ 底层
 /// 脱离;net_local 清空则 idle 停机(派生规则同 leave 收尾)。planet 未
 /// 运行时无核心,仅做记录迁移。幂等:已在断开区 → 仅补做底层脱离

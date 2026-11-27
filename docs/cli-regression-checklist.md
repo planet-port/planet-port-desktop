@@ -44,7 +44,7 @@
 
 | 命令 | 预期 | 实测 | 结论 |
 |---|---|---|---|
-| `join/leave/orbit -j` | 真实响应体 | `{"result":"ok"}`(幂等时附 `"idempotent":true`);planet remove/deorbit 代 `{"result":"ok"}` | 通过 |
+| `join/leave/orbit -j` | 真实响应体 | `{"result":"ok"}`(幂等时附 `"idempotent":true`);planet remove/deorbit 代 `{"result":"ok"}` | 通过。批注:2026-11-27 起 leave 幂等不再附 idempotent 字段(仅 join 附) |
 | `dump -j` | 结构化对象 | `planet/networks/peers/events` 四键,`jq keys` 可用 | 通过 |
 | 双 running 下 `join`(无 --planet) | 人话歧义报错 | 本地化 `--planet` 指引 + 候选列表,exit=2;en/zh-Hant 同款 | 通过 |
 | 变更回执 | 带 planet 落点 | `gozi25(3530253632) 200 join OK` 样式 | 通过 |
@@ -57,7 +57,7 @@
 | `list -j` | 分组结构 | `planets[]` 各带 `networks[]`;listnetworks -j 保持平铺 | 通过 |
 | `info` STATUS | 三态对齐 list | 已连接/连接中/未连接(与 list 同口径) | 通过 |
 | `planet remove` 确认拒绝 | exit=130 | `已取消` + 130 | 通过 |
-| join/leave 幂等(daemon 侧) | 重复操作静默成功 | 新二进制安装后实测:重复 join 与 leave 未加入网络均 `200 ... OK` + `"idempotent":true`,exit=0 | 通过 |
+| join/leave 幂等(daemon 侧) | 重复操作静默成功 | 新二进制安装后实测:重复 join 与 leave 未加入网络均 `200 ... OK` + `"idempotent":true`,exit=0 | 通过。批注:2026-11-27 起 leave 幂等不再附 idempotent 字段(仅 join 附) |
 
 ## 2026-10-30 追加修复(现场问题驱动)
 

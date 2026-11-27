@@ -310,13 +310,15 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 true,
                 None::<&str>,
             )?)?;
-            net.append(&MenuItem::with_id(
-                app,
-                format!("net|{pid}|{nwid}"),
-                tr(&lang, "退出网络", "Leave network"),
-                true,
-                None::<&str>,
-            )?)?;
+            // 「退出网络」项与上方 toggle on→off 同为 leave_network,动作完全
+            // 重合,且托盘无删除入口所需的确认容器,故隐藏(非删除)。
+            // net.append(&MenuItem::with_id(
+            //     app,
+            //     format!("net|{pid}|{nwid}"),
+            //     tr(&lang, "退出网络", "Leave network"),
+            //     true,
+            //     None::<&str>,
+            // )?)?;
             menu.append(&net)?;
         }
         menu.append(&PredefinedMenuItem::separator(app)?)?;
@@ -350,20 +352,22 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
     let id = event.id().as_ref().to_string();
     let parts: Vec<&str> = id.split('|').collect();
     match parts[0] {
-        "net" if parts.len() == 3 => {
-            // 网络子菜单「退出网络」(leave);planet 维度随条目携带。
-            // 动作含同步 HTTP(超时 10s),必须在独立线程执行,否则冻结主线程/菜单;
-            // 结果(图标+菜单)与失败提示分别经 refresh 与 tray-error 事件回传
-            let app = app.clone();
-            let nwid = parts[2].to_string();
-            let planet = parts[1].to_string();
-            std::thread::spawn(move || {
-                if let Err(e) = commands::leave_network(nwid, Some(planet)) {
-                    notify_error(&app, &e);
-                }
-                refresh(&app); // 立即反映;下次心跳会再校准
-            });
-        }
+        // "net" 分支已隐藏:菜单项与 toggle on→off 同为 leave_network,动作完全
+        // 重合,且托盘无删除入口所需的确认容器(隐藏非删除,菜单项一并注释)
+        // "net" if parts.len() == 3 => {
+        //     // 网络子菜单「退出网络」(leave);planet 维度随条目携带。
+        //     // 动作含同步 HTTP(超时 10s),必须在独立线程执行,否则冻结主线程/菜单;
+        //     // 结果(图标+菜单)与失败提示分别经 refresh 与 tray-error 事件回传
+        //     let app = app.clone();
+        //     let nwid = parts[2].to_string();
+        //     let planet = parts[1].to_string();
+        //     std::thread::spawn(move || {
+        //         if let Err(e) = commands::leave_network(nwid, Some(planet)) {
+        //             notify_error(&app, &e);
+        //         }
+        //         refresh(&app); // 立即反映;下次心跳会再校准
+        //     });
+        // }
         // 网络 toggle:on→off 走 leave 断开(保留配置),off→on 走 join 恢复;
         // HTTP 动作同走后台线程
         "netconnect" | "netdisconnect" if parts.len() == 3 => {

@@ -112,7 +112,6 @@ export default {
     allPlanets: 'All planets',
     id: 'Network ID', name: 'Name', statusLabel: 'Status', ips: 'Assigned addrs', iface: 'Interface',
     conflict: 'Conflict',
-    settings: 'Settings', leave: 'Leave',
     joined: 'Joined',
     empty: 'No networks joined',
     settingsTitle: 'Network settings · {{id}}',
