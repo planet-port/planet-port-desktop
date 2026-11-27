@@ -85,9 +85,8 @@ pub struct NetLocal {
     pub dns_mode: String,
     pub custom_dns: Vec<String>,
     /// 网络名缓存:netconf 到名即更新(远端改名跟随),条目删除(leave)
-    /// 随本结构清除;STOPPED/DISABLED/netconf 无名时兜底展示,避免
-    /// 名称回退成 nwid(2026-11-24 口径;STOPPED/DISCONNECTED 为两区占位
-    /// 行状态词)
+    /// 随本结构清除;STOPPED/DISCONNECTED/netconf 无名时兜底展示,避免
+    /// 名称回退成 nwid(2026-11-24 口径;两者为两区占位行状态词)
     #[serde(default)]
     pub cached_name: Option<String>,
     /// 用户自定义别名(显示优先于控制器名/缓存名;CLI set/alias 命令

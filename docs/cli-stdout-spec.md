@@ -314,15 +314,15 @@ status    STOPPED
 ...
 ```
 
-网络本身已禁用(status=DISABLED)时**不拒绝**:展示禁用前登记配置并以
+网络已断开(status=DISCONNECTED)时**不拒绝**:展示断开前登记配置并以
 stderr 反馈恢复方式(mtu 等动态字段为 —,与 STOPPED 同款占位形态):
 
 ```
-# 提示: 该网络已禁用(脱离但保留本地配置),以下仅为禁用前登记配置; ...   ← stderr
+# 提示: 该网络已断开(保留本地配置),以下仅为断开前登记配置; ...   ← stderr
 network   aabbccddeeff0011
 planet    smoke(3530253632)
 name      家庭网络
-status    DISABLED
+status    DISCONNECTED
 mtu       —
 ...
 ```

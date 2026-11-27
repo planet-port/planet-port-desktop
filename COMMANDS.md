@@ -153,7 +153,7 @@ remove / share 遵循同款。
 | 命令 | 说明 |
 |---|---|
 | `info` | 所有 planet 聚合状态表(PLANET/ADDRESS/VERSION/STATUS/LATENCY/RELAY/NETWORKS);STATUS 三态口径:`未连接`(停止)/ `连接中`(running 但根不可达)/ `已连接`(running 且根可达);RELAY 列显示 TCP 兜底 relay **配置态**(`planet set-relay` 设置值,未配置为 `—`,隧道实时状态看 dump / `planet show`);NETWORKS 为网络数(运行中取实时 join 数,停止回退登记配置;禁用网络不算在用,与派生规则口径一致) |
-| `listnetworks [--planet]` | 按**全部登记行星**分组列出网络(不只在线的),行星头 `id (name) [三态]` 标注 `已连接/连接中/未连接`,无网络行星显示 `(无网络)`;`--planet` 过滤(支持 id/别名);多 managed IP 在 MANAGED-IPS 列内逐行堆叠(全量展示,不截断);停止/禁用行星下的已加入网络以 STOPPED 占位行保留可见;**已禁用网络以 DISABLED 占位行保留可见**(name 用禁用时快照,动态字段 `—`;排序 ACTIVE → STOPPED → DISABLED)——禁用网络是用户资产,不从列表消失;卡在 `AUTHENTICATION_REQUIRED` 时 stderr 提示去控制器放行 |
+| `listnetworks [--planet]` | 按**全部登记行星**分组列出网络(不只在线的),行星头 `id (name) [三态]` 标注 `已连接/连接中/未连接`,无网络行星显示 `(无网络)`;`--planet` 过滤(支持 id/别名);多 managed IP 在 MANAGED-IPS 列内逐行堆叠(全量展示,不截断);停止/禁用行星下的已加入网络以 STOPPED 占位行保留可见;网络无 DISABLED 状态(禁用是行星级概念,见 planet enable/disable),断开区记录以 DISCONNECTED 占位行保留可见(name 用断开时快照,动态字段 `—`)——已添加/已断开的网络是用户资产,不从列表消失;卡在 `AUTHENTICATION_REQUIRED` 时 stderr 提示去控制器放行 |
 | `listpeers [--planet]` | peers 按 planet 分组展示 |
 | `dump [--planet]` | **单一 planet** 状态 dump(networks/peers/events),不聚合;歧义时报候选列表 |
 | `events [--planet] [--limit N] [--follow]` | 事件日志表,定位与 dump 同款(**必须指定 planet**,仅登记 1 个行星时自动;显式指定已停止 planet 可查历史);`--limit` 默认 40;`--follow` 每 2s 轮询按 ts 游标增量输出,Ctrl-C 退出;daemon 断开/不可达时命令报错退出(exit 3),不会静默重连,长时挂着需自行拉起与保活 |
