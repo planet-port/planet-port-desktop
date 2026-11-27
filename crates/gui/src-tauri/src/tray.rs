@@ -23,6 +23,25 @@ fn tr(lang: &str, zh: &str, en: &str) -> String {
     if lang == "en" { en.to_string() } else { zh.to_string() }
 }
 
+/// daemon 网络状态码 → 菜单文案;口径同前端 i18n statusMap(zh.ts/en.ts),
+/// 改动须两处同步。daemon 断开态是 DISCONNECTED(断开区占位),「禁用」是
+/// planet 级概念,不与网络断开态混用。未知码裸显兜底
+fn status_label(lang: &str, status: &str) -> String {
+    match status {
+        "OK" => tr(lang, "正常", "OK"),
+        "REQUESTING_CONFIGURATION" => tr(lang, "请求配置", "Requesting config"),
+        "ACCESS_DENIED" => tr(lang, "未授权", "Access denied"),
+        "NOT_FOUND" => tr(lang, "不存在", "Not found"),
+        "PORT_ERROR" => tr(lang, "端口错误", "Port error"),
+        "CLIENT_TOO_OLD" => tr(lang, "客户端过旧", "Client too old"),
+        "AUTHENTICATION_REQUIRED" => tr(lang, "待认证", "Auth required"),
+        "STOPPED" => tr(lang, "已停止", "Stopped"),
+        "DISCONNECTED" => tr(lang, "断开", "Disconnected"),
+        "DEVICE_ERROR" => tr(lang, "设备异常", "Device error"),
+        other => other.to_string(),
+    }
+}
+
 fn s(v: &Value, k: &str) -> String {
     v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
 }
@@ -201,11 +220,18 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         )?)?;
         menu.append(&info)?;
         // 网络行:二级 = 基本信息(只读) + 离开网络(动作);状态点图标口径同前端
-        // NetworkCard:conflict 黄/OK 绿/其余灰(emoji 点的模板图标替代,自动深浅色)
+        // NetworkCard:conflict/等待/设备异常 黄、加入被拒 红、OK 绿、断开/占位灰
+        // (emoji 点的模板图标替代,自动深浅色)
         for n in networks.iter().filter(|n| s(n, "planet") == pid) {
-            let dot = if !s(n, "conflict").is_empty() {
+            let status = s(n, "status");
+            let dot = if !s(n, "conflict").is_empty() || status == "DEVICE_ERROR" || status == "REQUESTING_CONFIGURATION" {
                 NativeIcon::StatusPartiallyAvailable
-            } else if s(n, "status") == "OK" {
+            } else if matches!(
+                status.as_str(),
+                "ACCESS_DENIED" | "NOT_FOUND" | "PORT_ERROR" | "CLIENT_TOO_OLD" | "AUTHENTICATION_REQUIRED"
+            ) {
+                NativeIcon::StatusUnavailable
+            } else if status == "OK" {
                 NativeIcon::StatusAvailable
             } else {
                 NativeIcon::StatusNone
@@ -234,7 +260,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 app,
                 &net,
                 &mut ro_n,
-                format!("{}: {}", tr(&lang, "状态", "Status"), s(n, "status")),
+                format!("{}: {}", tr(&lang, "状态", "Status"), status_label(&lang, &status)),
             )?;
             ro(
                 app,
@@ -269,11 +295,12 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 )?)?;
             }
             net.append(&PredefinedMenuItem::separator(app)?)?;
-            // 启停 toggle:已连接(OK)→断开(disable),其余→连接(enable),判据同前端 NetworkCard
-            let on = s(n, "status") == "OK";
+            // 连接 toggle:在网态(除 DISCONNECTED/STOPPED 外,含等待授权/被拒)→
+            // 断开(disconnect),断开/占位→连接(connect),判据同前端 NetworkCard
+            let on = status != "DISCONNECTED" && status != "STOPPED";
             net.append(&MenuItem::with_id(
                 app,
-                if on { format!("netoff|{pid}|{nwid}") } else { format!("neton|{pid}|{nwid}") },
+                if on { format!("netdisconnect|{pid}|{nwid}") } else { format!("netconnect|{pid}|{nwid}") },
                 if on {
                     tr(&lang, "断开网络", "Disconnect network")
                 } else {
@@ -336,17 +363,17 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 refresh(&app); // 立即反映;下次心跳会再校准
             });
         }
-        // 网络启停 toggle:连接(enable) / 断开(disable),HTTP 动作同走后台线程
-        "neton" | "netoff" if parts.len() == 3 => {
-            let enable = parts[0] == "neton";
+        // 网络连接 toggle:连接(connect) / 断开(disconnect),HTTP 动作同走后台线程
+        "netconnect" | "netdisconnect" if parts.len() == 3 => {
+            let connect = parts[0] == "netconnect";
             let app = app.clone();
             let nwid = parts[2].to_string();
             let planet = parts[1].to_string();
             std::thread::spawn(move || {
-                let r = if enable {
-                    commands::enable_network(nwid, Some(planet))
+                let r = if connect {
+                    commands::connect_network(nwid, Some(planet))
                 } else {
-                    commands::disable_network(nwid, Some(planet))
+                    commands::disconnect_network(nwid, Some(planet))
                 };
                 if let Err(e) = r {
                     notify_error(&app, &e);

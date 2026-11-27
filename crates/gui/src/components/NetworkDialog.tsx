@@ -51,9 +51,9 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
   const [savedServers, setSavedServers] = useState(() => row.customDns.join(','));
   const [expandedRoutes, setExpandedRoutes] = useState<Set<number>>(new Set());
   const [showQR, setShowQR] = useState(false);
-  /// 禁用态:daemon 对禁用网络 set 报 404,编辑控件整体禁用,
+  /// 断开态:daemon 对断开区网络 set 报 404,编辑控件整体禁用,
   /// footer 提示恢复后可编辑(动态字段缺失靠占位行数据天然为 '—'/空)
-  const disabled = row.status === 'DISABLED';
+  const disconnected = row.status === 'DISCONNECTED';
   const [confirmDel, setConfirmDel] = useState(false);
   /// 网络二维码 = 网络 ID 纯文本(16 hex,与移动端扫码填 ID 互逆);
   /// data 身份须稳定——QRShareSheet 内部 useMemo 以 data 为依赖,内联编码会每渲染重置
@@ -81,7 +81,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
     });
   };
   const setMode = (m: string) => {
-    if (disabled || m === dnsMode) return;
+    if (disconnected || m === dnsMode) return;
     const prev = dnsMode;
     setDnsMode(m);
     const servers = m === 'custom' && slotsValid(slots) ? slotsToServers(slots) : null;
@@ -97,7 +97,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
   };
   /// custom 槽失焦:合法且有差异才应用(输入中间态不打请求)
   const applySlots = () => {
-    if (disabled || dnsMode !== 'custom' || !slotsValid(slots)) return;
+    if (disconnected || dnsMode !== 'custom' || !slotsValid(slots)) return;
     const servers = slotsToServers(slots);
     if (servers.join(',') === savedServers) return;
     apply.mutate({ dnsMode: 'custom', customDns: servers }, { onSuccess: () => setSavedServers(servers.join(',')) });
@@ -105,7 +105,7 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
   /// 开关即时生效:下一态由 Radix onCheckedChange(boolean) 给出(禁用态下
   /// 原件不触发点击,这里仍保留守卫兜底 routeViaLocked),失败回滚本地态
   const toggleRouteVia = (next: boolean) => {
-    if (disabled || row.routeViaLocked) return;
+    if (disconnected || row.routeViaLocked) return;
     setRouteVia(next);
     apply.mutate({ routeViaZeroTier: next }, { onError: () => setRouteVia(!next) });
   };
@@ -191,14 +191,14 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
         <section className="detail-section">
           <div className="seg">
             {(['none', 'network', 'custom'] as const).map(m => (
-              <button key={m} className={dnsMode === m ? 'active' : ''} disabled={disabled} onClick={() => setMode(m)}>{t(`dns.mode.${m}`)}</button>
+              <button key={m} className={dnsMode === m ? 'active' : ''} disabled={disconnected} onClick={() => setMode(m)}>{t(`dns.mode.${m}`)}</button>
             ))}
           </div>
           {dnsMode === 'custom' && (
             <div className="dns-slots">
               {(['v4a', 'v4b', 'v6a', 'v6b'] as const).map(k => (
                 <Input key={k} className="mono" placeholder={t(`dns.${k}`)} value={slots[k]}
-                  disabled={disabled}
+                  disabled={disconnected}
                   onChange={e => setSlots({ ...slots, [k]: e.target.value })}
                   onBlur={applySlots}
                   onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
@@ -218,10 +218,10 @@ export default function NetworkDialog({ row, onClose, onDone }: { row: NetworkEn
         <section className="detail-section">
           <div className="kv">
             <span>{t('join.routeVia')}</span>
-            <Switch checked={routeVia} onCheckedChange={toggleRouteVia} disabled={row.routeViaLocked || disabled} />
+            <Switch checked={routeVia} onCheckedChange={toggleRouteVia} disabled={row.routeViaLocked || disconnected} />
           </div>
           <p className="section-foot">
-            {disabled ? t('networks.disabledHint') : (row.routeViaLocked ? t('networks.routeViaLocked') : t('join.routeViaFooter'))}
+            {disconnected ? t('networks.disconnectedHint') : (row.routeViaLocked ? t('networks.routeViaLocked') : t('join.routeViaFooter'))}
           </p>
         </section>
         <section className="detail-section">

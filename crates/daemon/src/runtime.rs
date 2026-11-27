@@ -171,14 +171,38 @@ impl NodeSink for DaemonSink {
                 // 只在状态翻转时报事件,避免每次 ConfigUpdate 刷屏
                 match (&hit, had_conflict) {
                     (Some(h), false) => {
-                        self.events.push(&self.planet_id, "conflict", &h.message(nwid))
+                        self.events.push(&self.planet_id, "conflict", &h.message(nwid));
+                        // 相同网段仅允许一个激活:本网络是后到的(对方快照
+                        // 已在缓存),自动断开让位——复用 disable 内核,记录
+                        // 迁断开区(带冲突原因,占位行据此提示),可再启用。
+                        // 断开必须离开驱动线程 spawn 执行(node_leave 会与
+                        // 本线程互等,sink 红线),失败仅记录,下轮重扫兜底
+                        let app = self.app.clone();
+                        let pid = self.planet_id.clone();
+                        let level = h.level.clone();
+                        self.rt.spawn(async move {
+                            if let Err(e) =
+                                crate::api_net::disconnect_network_inner(&app, &pid, nwid, Some(level)).await
+                            {
+                                eprintln!("[conflict] 网络 {nwid:016x} 冲突自动断开失败: {e:?}");
+                            }
+                            rescan_conflicts(&app);
+                        });
                     }
-                    (None, true) => self.events.push(
-                        &self.planet_id,
-                        "conflict",
-                        &format!("网络 {nwid:016x} 网段冲突已消除"),
-                    ),
+                    (None, true) => {
+                        self.events.push(
+                            &self.planet_id,
+                            "conflict",
+                            &format!("网络 {nwid:016x} 网段冲突已消除"),
+                        );
+                    }
                     _ => {}
+                }
+                // 全局重扫让全部网络的冲突标记双向即时:新冲突对方立即标记、
+                // 消除后对方标记立即清除(各自等下次 netconf 会长期残留)
+                {
+                    let app = self.app.clone();
+                    self.rt.spawn(async move { rescan_conflicts(&app) });
                 }
                 if let Err(e) = r {
                     self.events.push(
@@ -381,8 +405,9 @@ impl DaemonSink {
         had
     }
 
-    /// 冲突扫描:本网络网段与其它 planet 的快照网段重叠 → subnet;
-    /// 重叠且同 IP → address(address 级优先)。写入 conflicts 表并返回命中。
+    /// 冲突扫描:本网络网段与全局快照(同行星其它网络 + 其它 planet)重叠
+    /// → subnet;重叠且同 IP → address(address 级优先)。写入 conflicts 表
+    /// 并返回命中。比对核心在自由函数 scan_hit(全局重扫共用)
     fn scan_conflicts(&self, nwid: u64, cfg: &NetConfig) -> Option<ConflictHit> {
         let subnets: Vec<IpNet> = cfg
             .assigned
@@ -391,44 +416,16 @@ impl DaemonSink {
             .chain(cfg.routes.iter().map(|r| r.target.clone()))
             .collect();
         let addrs: Vec<IpAddr> = cfg.assigned.iter().map(|a| a.addr).collect();
-        let cache = lock(&self.net_cache);
-        let mut found: Option<ConflictHit> = None;
-        for ((pid, _nid), snap) in cache.iter() {
-            // 只与其它 planet 比:同一网络经两个 planet 接入时网段/IP 冲突
-            // 最要紧,故不按 nwid 跳过,仅排除本 planet 自身的网络
-            if *pid == self.planet_id {
-                continue;
-            }
-            let nets: Vec<String> = subnets
-                .iter()
-                .filter(|s| snap.subnets.contains(*s))
-                .map(|s| format!("{}/{}", s.addr, s.prefix))
-                .collect();
-            if nets.is_empty() {
-                continue;
-            }
-            let level = if snap.addrs.iter().any(|a| addrs.contains(a)) {
-                "address"
-            } else {
-                "subnet"
-            };
-            let worse = found.as_ref().map(|f| f.level != "address").unwrap_or(true);
-            if worse {
-                found = Some(ConflictHit {
-                    level: level.to_string(),
-                    other_planet: snap.planet_name.clone(),
-                    other_planet_id: pid.clone(),
-                    subnets: nets,
-                });
-            }
-        }
-        drop(cache);
-        if let Some(h) = &found {
+        let hit = {
+            let cache = lock(&self.net_cache);
+            scan_hit(&cache, &self.planet_id, nwid, &subnets, &addrs)
+        };
+        if let Some(h) = &hit {
             lock(&self.conflicts).insert(nwid, h.level.clone());
         } else {
             lock(&self.conflicts).remove(&nwid);
         }
-        found
+        hit
     }
 
     /// 冲突标记清除(Down/Destroy 或冲突消除)
@@ -441,21 +438,130 @@ impl DaemonSink {
 struct ConflictHit {
     /// "subnet" | "address"
     level: String,
+    /// 对方是同行星网络(true)还是其它 planet(false):事件文案分叉
+    same_planet: bool,
     other_planet: String,
     other_planet_id: String,
+    /// 对方网络 nwid(同行星冲突指名到网)
+    other_nwid: u64,
     /// 重叠网段,"a.b.c.d/p"
     subnets: Vec<String>,
 }
 
 impl ConflictHit {
     fn message(&self, nwid: u64) -> String {
-        format!(
-            "网络 {nwid:016x} 与 planet \"{}\"({})网段冲突({}):{}",
-            self.other_planet,
-            self.other_planet_id,
-            self.level,
-            self.subnets.join(", ")
-        )
+        if self.same_planet {
+            format!(
+                "网络 {nwid:016x} 与同行星网络 {:016x} 网段冲突({}):{}",
+                self.other_nwid,
+                self.level,
+                self.subnets.join(", ")
+            )
+        } else {
+            format!(
+                "网络 {nwid:016x} 与 planet \"{}\"({})网段冲突({}):{}",
+                self.other_planet,
+                self.other_planet_id,
+                self.level,
+                self.subnets.join(", ")
+            )
+        }
+    }
+}
+
+/// 冲突比对核心:以给定网络的网段/IP 为源,与全局网段快照中其它网络
+/// (排除自身)比对。精确网段相等即 subnet 命中,同段且 IP 相同升级为
+/// address。sink 自扫与全局重扫共用,保证判定口径唯一
+fn scan_hit(
+    cache: &HashMap<(String, u64), NetSnapshot>,
+    self_pid: &str,
+    self_nwid: u64,
+    subnets: &[IpNet],
+    addrs: &[IpAddr],
+) -> Option<ConflictHit> {
+    let mut found: Option<ConflictHit> = None;
+    for ((pid, nid), snap) in cache.iter() {
+        if *pid == self_pid && *nid == self_nwid {
+            continue;
+        }
+        let nets: Vec<String> = subnets
+            .iter()
+            .filter(|s| snap.subnets.contains(*s))
+            .map(|s| format!("{}/{}", s.addr, s.prefix))
+            .collect();
+        if nets.is_empty() {
+            continue;
+        }
+        let level = if snap.addrs.iter().any(|a| addrs.contains(a)) {
+            "address"
+        } else {
+            "subnet"
+        };
+        let worse = found.as_ref().map(|f| f.level != "address").unwrap_or(true);
+        if worse {
+            found = Some(ConflictHit {
+                level: level.to_string(),
+                same_planet: pid == self_pid,
+                other_planet: snap.planet_name.clone(),
+                other_planet_id: pid.clone(),
+                other_nwid: *nid,
+                subnets: nets,
+            });
+        }
+    }
+    found
+}
+
+/// 全局冲突重扫:全部 planet 的活跃网络基于全局网段快照重算 conflicts 表。
+/// 任一网络 netconf 后调用——单网络自扫只覆盖自己,新冲突对方/断开后对方
+/// 的标记会残留,全局重扫让标记双向即时且自愈(不依赖各方下一次 netconf)
+pub(crate) fn rescan_conflicts(app: &AppState) {
+    let rts: Vec<Arc<PlanetRuntime>> = {
+        let map = app
+            .planets
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        map.values().cloned().collect()
+    };
+    let cache = lock(&app.net_cache);
+    for rt in rts {
+        if rt.stopping.load(Ordering::SeqCst) {
+            continue;
+        }
+        // node 锁(networks 快照)先收集完再写 conflicts:缩锁跨度,与
+        // handler 侧 planets→node 的取锁方向一致,不成环
+        let updates: Vec<(u64, Option<String>)> = rt
+            .networks()
+            .iter()
+            .map(|c| {
+                let subnets: Vec<IpNet> = c
+                    .assigned
+                    .iter()
+                    .cloned()
+                    .chain(c.routes.iter().map(|r| r.target.clone()))
+                    .collect();
+                let addrs: Vec<IpAddr> = c.assigned.iter().map(|a| a.addr).collect();
+                (
+                    c.nwid,
+                    scan_hit(&cache, &rt.planet_id, c.nwid, &subnets, &addrs)
+                        .map(|h| h.level),
+                )
+            })
+            .collect();
+        let mut marks = rt
+            .conflicts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for (nwid, level) in updates {
+            match level {
+                Some(l) => {
+                    marks.insert(nwid, l);
+                }
+                None => {
+                    marks.remove(&nwid);
+                }
+            }
+        }
     }
 }
 

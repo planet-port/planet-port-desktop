@@ -133,17 +133,19 @@ export default {
     deleteNetwork: '删除网络',
     deleteConfirm: '删除网络 {{id}}？将离开该网络（leave），不影响其他网络。',
     left: '已离开网络',
-    disabledHint: '网络已禁用（脱离但保留本地配置），恢复后可编辑',
+    disconnectedHint: '网络已断开（保留本地配置），连接后可编辑',
     /// 状态码映射:枚举 = daemon runtime::status_name 全量 + 本地合成 STOPPED
-    /// (非运行 planet 的占位条目)+ daemon 合成 DISABLED(net_disabled 注册表
-    /// 占位行)+ DEVICE_ERROR(核心 OK 但本地设备层失败,数据面不通);
-    /// 不能叫 status——同名词典叶子会挡住 i18next
-    /// 对 statusMap.* 的深层解析,徽标退化为裸码
+    /// (非运行 planet 的占位条目)+ daemon 合成 DISCONNECTED(net_detached
+    /// 注册表占位行,断开区记录仅可查询/启用/删除)+ DEVICE_ERROR(核心 OK
+    /// 但本地设备层失败,数据面不通);「禁用」是 planet 级概念,网络断开态
+    /// 一律叫 DISCONNECTED,两词不得混用;托盘 tray.rs status_label 与此处
+    /// 口径一致,改动须两处同步。不能叫 status——同名词典叶子会挡住
+    /// i18next 对 statusMap.* 的深层解析,徽标退化为裸码
     statusMap: {
       OK: '正常', REQUESTING_CONFIGURATION: '请求配置', ACCESS_DENIED: '未授权',
       NOT_FOUND: '不存在', PORT_ERROR: '端口错误', CLIENT_TOO_OLD: '客户端过旧',
       AUTHENTICATION_REQUIRED: '待认证', STOPPED: '已停止',
-      DISABLED: '已禁用', DEVICE_ERROR: '设备异常',
+      DISCONNECTED: '断开', DEVICE_ERROR: '设备异常',
     },
   },
   planets: {

@@ -130,18 +130,21 @@ export default {
     deleteNetwork: 'Delete Network',
     deleteConfirm: 'Delete network {{id}}? This leaves the network without affecting others.',
     left: 'Left network',
-    disabledHint: 'Network disabled (detached, local config kept); re-enable to edit',
+    disconnectedHint: 'Network disconnected (local config kept); connect to edit',
     /// Status code map: enums = daemon runtime::status_name full set + local
     /// STOPPED (placeholder entries of non-running planets) + daemon-synthesized
-    /// DISABLED (net_disabled registry placeholder rows) + DEVICE_ERROR (core
-    /// OK but local device-plane failure, no data path). Must not be named
-    /// status — a same-named dictionary leaf blocks i18next deep resolution of
-    /// statusMap.*, degrading badges to raw codes
+    /// DISCONNECTED (net_detached registry placeholder rows; disconnected-zone
+    /// records allow query/enable/delete only) + DEVICE_ERROR (core OK but
+    /// local device-plane failure, no data path). "Disabled" is a planet-level
+    /// concept; network detached state is always DISCONNECTED, the two words
+    /// must not be conflated. tray.rs status_label mirrors this map, keep both
+    /// in sync. Must not be named status — a same-named dictionary leaf blocks
+    /// i18next deep resolution of statusMap.*, degrading badges to raw codes
     statusMap: {
       OK: 'OK', REQUESTING_CONFIGURATION: 'Requesting config', ACCESS_DENIED: 'Access denied',
       NOT_FOUND: 'Not found', PORT_ERROR: 'Port error', CLIENT_TOO_OLD: 'Client too old',
       AUTHENTICATION_REQUIRED: 'Auth required', STOPPED: 'Stopped',
-      DISABLED: 'Disabled', DEVICE_ERROR: 'Device error',
+      DISCONNECTED: 'Disconnected', DEVICE_ERROR: 'Device error',
     },
   },
   planets: {

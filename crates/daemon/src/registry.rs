@@ -63,9 +63,10 @@ pub struct RegistryEntry {
     /// nwid hex → 本地网络配置
     #[serde(default)]
     pub net_local: HashMap<String, NetLocal>,
-    /// nwid hex → 禁用网络记忆(enable/join 恢复;leave 连此区一并清除)
-    #[serde(default)]
-    pub net_disabled: HashMap<String, NetDisabled>,
+    /// nwid hex → 断开网络记忆(connect/join 恢复;leave 连此区一并清除)。
+    /// 旧字段名 netDisabled(alias 兼容读取,写盘即淘汰)
+    #[serde(default, alias = "netDisabled")]
+    pub net_detached: HashMap<String, NetDetached>,
     #[serde(default)]
     pub moons: Vec<MoonRecord>,
     /// 该 planet 当前占用的 feth 设备名(dev 端);启动清扫孤儿用,
@@ -85,25 +86,31 @@ pub struct NetLocal {
     pub custom_dns: Vec<String>,
     /// 网络名缓存:netconf 到名即更新(远端改名跟随),条目删除(leave)
     /// 随本结构清除;STOPPED/DISABLED/netconf 无名时兜底展示,避免
-    /// 名称回退成 nwid(2026-11-24 口径)
+    /// 名称回退成 nwid(2026-11-24 口径;STOPPED/DISCONNECTED 为两区占位
+    /// 行状态词)
     #[serde(default)]
     pub cached_name: Option<String>,
     /// 用户自定义别名(显示优先于控制器名/缓存名;CLI set/alias 命令
-    /// 维护)。随本结构迁移(disable/enable 保留)、leave 清除
+    /// 维护)。随本结构迁移(断开保留)、leave 清除
     #[serde(default)]
     pub alias: Option<String>,
 }
 
-/// 禁用网络的记忆条目(disable 时自 net_local 迁入,enable/join 迁回):
-/// 恢复所需的本地配置 + 禁用时的名字快照(仅 DISABLED 占位行展示用,
+/// 断开网络的记忆条目(disconnect 时自 net_local 迁入,connect/join 迁回):
+/// 恢复所需的本地配置 + 断开时的名字快照(仅 DISCONNECTED 占位行展示用,
 /// 恢复后动态字段以控制器下发为准)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NetDisabled {
+pub struct NetDetached {
     pub local: NetLocal,
-    /// 禁用时核心快照里的网络名;核心不在(stopped 态禁用)则 None
+    /// 断开时核心快照里的网络名;核心不在(stopped 态断开)则 None
     #[serde(default)]
     pub name: Option<String>,
+    /// 断开原因(用户断开为 None)。网段冲突自动断开时填冲突级别
+    /// ("subnet"/"address"),DISCONNECTED 占位行据此带 conflict 字段,
+    /// UI 才能在断开态解释「为什么开不起来」
+    #[serde(default)]
+    pub block_reason: Option<String>,
 }
 
 /// 一条已 orbit/缓存的 moon 记录

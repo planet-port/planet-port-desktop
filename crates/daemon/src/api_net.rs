@@ -19,7 +19,7 @@ use planet_port_api::types::{NetworkEntry, RouteLine};
 use serde_json::{json, Value};
 use zt_core::{NetConfig, NetStatus};
 
-use crate::registry::{NetDisabled, NetLocal, RegistryEntry};
+use crate::registry::{NetDetached, NetLocal, RegistryEntry};
 use crate::runtime;
 use crate::state::{err, runtime_of, AppState, PlanetRuntime};
 use crate::world;
@@ -207,7 +207,7 @@ fn resolve_nwid(rt: &crate::state::PlanetRuntime, input: &str) -> Result<u64, Ap
 }
 
 /// leave 的扩展定位:优先级 = 合法 nwid 直用 → 已加入网络名(resolve_nwid
-/// 语义)→ 禁用区 name 快照(禁用网络不在核心快照里,名字只活在快照中)
+/// 语义)→ 断开区 name 快照(断开的网络不在核心快照里,名字只活在快照中)
 fn resolve_nwid_ext(
     rt: &crate::state::PlanetRuntime,
     entry: &RegistryEntry,
@@ -219,17 +219,17 @@ fn resolve_nwid_ext(
     if let Ok(v) = resolve_nwid(rt, input) {
         return Ok(v);
     }
-    resolve_disabled_nwid(entry, input)
+    resolve_detached_nwid(entry, input)
 }
 
-/// 按禁用区 name 快照解析(不区分大小写);合法 nwid 直用,同名多条 409
+/// 按断开区 name 快照解析(不区分大小写);合法 nwid 直用,同名多条 409
 /// 列候选,未命中 404
-fn resolve_disabled_nwid(entry: &RegistryEntry, input: &str) -> Result<u64, ApiErr> {
+fn resolve_detached_nwid(entry: &RegistryEntry, input: &str) -> Result<u64, ApiErr> {
     if let Ok(v) = parse_nwid(input) {
         return Ok(v);
     }
-    let hits: Vec<(&String, &NetDisabled)> = entry
-        .net_disabled
+    let hits: Vec<(&String, &NetDetached)> = entry
+        .net_detached
         .iter()
         .filter(|(_, nd)| {
             nd.name
@@ -239,7 +239,7 @@ fn resolve_disabled_nwid(entry: &RegistryEntry, input: &str) -> Result<u64, ApiE
         .collect();
     match hits.as_slice() {
         [(k, _)] => u64::from_str_radix(k, 16)
-            .map_err(|_| internal(format!("invalid disabled nwid key \"{k}\""))),
+            .map_err(|_| internal(format!("invalid detached nwid key \"{k}\""))),
         [] => Err(err(
             StatusCode::NOT_FOUND,
             "networkNotFound",
@@ -391,10 +391,10 @@ pub async fn networks_list(
         };
         let Some(rt) = runtime_of(&st, &pid) else {
             // 非运行(禁用/idle 停):按 registry net_local 出 STOPPED 占位
-            // 条目 + net_disabled 出 DISABLED 占位条目——"已添加/已禁用的
+            // 条目 + net_detached 出 DISCONNECTED 占位条目——"已添加/已断开的
             // 网络"仍是用户的资产,不可因行星停止而从列表消失
             items.extend(placeholder_entries(&pid, &entry));
-            items.extend(disabled_entries(&pid, &entry));
+            items.extend(detached_entries(&pid, &entry));
             continue;
         };
         let conflicts = rt
@@ -413,7 +413,7 @@ pub async fn networks_list(
                 rt.device_error(cfg.nwid),
             ));
         }
-        items.extend(disabled_entries(&pid, &entry));
+        items.extend(detached_entries(&pid, &entry));
     }
     Ok(Json(json!({ "networks": items })))
 }
@@ -432,31 +432,34 @@ fn placeholder_entries(pid: &str, entry: &RegistryEntry) -> Vec<NetworkEntry> {
         .collect()
 }
 
-/// 禁用区投影:DISABLED 占位行(name 用禁用时快照,动态字段无核心可取)。
+/// 断开区投影:DISCONNECTED 占位行(name 用断开时快照,动态字段无核心可取)。
+/// 断开 = 原 zt 的 leave(用户层词汇),差异是本地记录保留(net_local
+/// 迁入 net_detached),连接即可恢复;记录仅可查询/连接/删除。
 /// 防御:同 nwid 双区残留(理论不可达)以 net_local 为准,跳过重复行;
 /// HashMap 遍历无序,按 nwid 排序保证列表输出稳定
-fn disabled_entries(pid: &str, entry: &RegistryEntry) -> Vec<NetworkEntry> {
+fn detached_entries(pid: &str, entry: &RegistryEntry) -> Vec<NetworkEntry> {
     let mut keys: Vec<&String> = entry
-        .net_disabled
+        .net_detached
         .keys()
         .filter(|k| !entry.net_local.contains_key(*k))
         .collect();
     keys.sort();
     keys.into_iter()
         .map(|k| {
-            let nd = &entry.net_disabled[k];
+            let nd = &entry.net_detached[k];
             NetworkEntry {
                 planet: pid.to_string(),
                 nwid: k.to_string(),
-                // 显示优先级:别名 > 禁用快照名(stopped 态禁用无快照)> 缓存
+                // 显示优先级:别名 > 断开时快照名(stopped 态断开无快照)> 缓存
                 name: nd
                     .local
                     .alias
                     .clone()
                     .or(nd.name.clone())
                     .or(nd.local.cached_name.clone()),
-                status: "DISABLED".into(),
-                conflict: None,
+                status: "DISCONNECTED".into(),
+                // 断开原因(网段冲突自动断开时为冲突级别);用户主动断开为 None
+                conflict: nd.block_reason.clone(),
                 kind: "—".into(),
                 mac: "—".into(),
                 interface: None,
@@ -497,6 +500,26 @@ fn placeholder_entry(pid: &str, nwid: &str, nl: &NetLocal) -> NetworkEntry {
 
 // ---- POST /networks/{nwid}/join ----
 
+/// 网段预检:目标网络有全局快照(曾经连接,网段已知)且与其它激活网络
+/// 精确重叠时返回第一个命中(对方 pid/nwid/重叠网段串)。判定口径与
+/// runtime 冲突扫描一致(IpNet 精确相等),无快照则放行(netconf 兜底)
+fn subnet_overlap(st: &AppState, pid: &str, nwid_u: u64) -> Option<(String, u64, String)> {
+    let cache = st
+        .net_cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let snap = cache.get(&(pid.to_string(), nwid_u))?;
+    for ((p2, n2), s2) in cache.iter() {
+        if p2 == pid && *n2 == nwid_u {
+            continue;
+        }
+        if let Some(s) = snap.subnets.iter().find(|s| s2.subnets.contains(*s)) {
+            return Some((p2.clone(), *n2, format!("{}/{}", s.addr, s.prefix)));
+        }
+    }
+    None
+}
+
 pub async fn net_join(
     State(st): State<AppState>,
     Path(nwid): Path<String>,
@@ -519,14 +542,35 @@ pub async fn net_join(
     }
     let nwid_u = parse_nwid(&nwid)?;
     let key = format!("{nwid_u:016x}");
-    // 禁用区命中 → 自动恢复(等价 enable):回迁记录后走正常 join 路径;
+    // 网段预检:相同网段仅允许一个激活。目标网络有全局网段快照(曾经连接,
+    // 网段已知)且与其它激活网络精确重叠 → 409 拒绝,指引先断开对方;全新
+    // 网络无快照可查,由 netconf 到达时的冲突自动断开兜底
+    if let Some(pair) = subnet_overlap(&st, &pid, nwid_u) {
+        let (other_pid, other_nwid, subnet) = pair;
+        let other_planet = st
+            .net_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&(other_pid.clone(), other_nwid))
+            .map(|s| s.planet_name.clone())
+            .unwrap_or_default();
+        return Err(err(
+            StatusCode::CONFLICT,
+            "subnetConflict",
+            &format!(
+                "network {nwid} subnet {subnet} already in use by network {other_nwid:016x} (planet \"{other_planet}\"); disconnect it first"
+            ),
+            None,
+        ));
+    }
+    // 断开区命中 → 自动恢复(等价 connect):回迁记录后走正常 join 路径;
     // 未运行时随后的 start_planet 按 net_local 全量 re-join(含本网络),
     // 已运行时镜像在锁外插入、下方 node_join 生效
     let mut restored = None;
     {
         let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
-            if let Some(nd) = e.net_disabled.remove(&key) {
+            if let Some(nd) = e.net_detached.remove(&key) {
                 e.net_local.entry(key.clone()).or_insert(nd.local.clone());
                 if let Err(e) = reg.save(&st.config_dir) {
                     eprintln!("[net] registry 写盘失败: {e}");
@@ -545,7 +589,7 @@ pub async fn net_join(
                 .entry(nwid_u)
                 .or_insert(nl);
         }
-        st.events.push(&pid, "networkEnabled", &format!("re-enabled {nwid} (via join)"));
+        st.events.push(&pid, "networkConnected", &format!("restored {nwid} (via join)"));
     }
     // 未运行(running=false:leave 清空后的资源性停止等)→ 自动拉起;
     // running=true 但运行时缺失的残留(上次启动失败等)同样由幂等的
@@ -574,7 +618,7 @@ pub async fn net_join(
                 None,
             )
         })?;
-    // net_local 无记录则建默认项(registry 持久层 + 运行时镜像;禁用区
+    // net_local 无记录则建默认项(registry 持久层 + 运行时镜像;断开区
     // 回迁的记录已在上方写入,此处 or_insert 不覆盖恢复配置)
     {
         let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -594,9 +638,9 @@ pub async fn net_join(
     Ok(Json(json!({"result": "ok"})))
 }
 
-/// 底层脱离与资源回收(leave/disable 共用收尾):核心已加入该网络时走
+/// 底层脱离与资源回收(leave/disconnect 共用收尾):核心已加入该网络时走
 /// node_leave + 设备面拆除 + 快照/冲突清理 + DNS 还原;随后按派生规则
-/// 判定 Idle 停机(net_local 镜像清空时;禁用区不算「有事可做」)。
+/// 判定 Idle 停机(net_local 镜像清空时;断开区不算「有事可做」)。
 /// 前置:调用方已完成记录迁移/删除并同步运行时镜像
 async fn detach_and_idle(st: &AppState, rt: &Arc<PlanetRuntime>, nwid_u: u64) -> Result<(), ApiErr> {
     let nwid = format!("{nwid_u:016x}");
@@ -665,20 +709,20 @@ pub async fn net_leave(
     // 也要能删(registry 锁在 resolve_planet_entry 内短持)
     let (pid, entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
     let rt = runtime_of(&st, &pid);
-    // nwid 解析:核心在 → nwid / 已加入名 / 禁用区快照名;核心不在 →
-    // nwid / 禁用区快照名(net_local 无名字信息)
+    // nwid 解析:核心在 → nwid / 已加入名 / 断开区快照名;核心不在 →
+    // nwid / 断开区快照名(net_local 无名字信息)
     let nwid_u = match &rt {
         Some(rt) => resolve_nwid_ext(rt, &entry, &nwid)?,
-        None => resolve_disabled_nwid(&entry, &nwid)?,
+        None => resolve_detached_nwid(&entry, &nwid)?,
     };
-    // net_local 与 net_disabled 记录一并删除(持久层):leave 的目标态是
-    // "彻底不在网络里"——含禁用记忆;重新 join 按控制器默认配置重来。
+    // net_local 与 net_detached 记录一并删除(持久层):leave 的目标态是
+    // "彻底不在网络里"——含断开记忆;重新 join 按控制器默认配置重来。
     // 放在幂等分支之前,顺带清理"运行时已退但记录残留"的半态
     {
         let key = format!("{nwid_u:016x}");
         let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(e) = reg.planets.iter_mut().find(|e| e.id == pid) {
-            let hit = e.net_local.remove(&key).is_some() | e.net_disabled.remove(&key).is_some();
+            let hit = e.net_local.remove(&key).is_some() | e.net_detached.remove(&key).is_some();
             if hit {
                 if let Err(err) = reg.save(&st.config_dir) {
                     eprintln!("[net] registry 写盘失败: {err}");
@@ -705,18 +749,39 @@ pub async fn net_leave(
     Ok(Json(json!({"result": "ok"})))
 }
 
-// ---- POST /networks/{nwid}/disable ----
+// ---- POST /networks/{nwid}/disconnect ----
 
-/// 禁用:记录 net_local → net_disabled 迁移(保留本地配置与名字快照),
-/// 底层脱离网络;net_local 清空则 idle 停机(派生规则同 leave 收尾)。
-/// planet stopped 时无核心,仅做记录迁移。幂等:已在禁用区 → 成功
-pub async fn net_disable(
-    State(st): State<AppState>,
-    Path(nwid): Path<String>,
-    Query(q): Query<HashMap<String, String>>,
-) -> Result<Json<Value>, ApiErr> {
-    // 定位不要求 running(stopped planet 上的网络也能禁用:纯记录迁移)
-    let (pid, entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
+/// 断开核心动作(net_disconnect handler 与冲突自动断开共用):net_local →
+/// net_detached 记录迁移(保留本地配置与名字快照,可携断开原因)+ 底层
+/// 脱离;net_local 清空则 idle 停机(派生规则同 leave 收尾)。planet 未
+/// 运行时无核心,仅做记录迁移。幂等:已在断开区 → 仅补做底层脱离
+/// (上次 node_leave 失败的幽灵加入防御)。前置:pid 已注册
+pub(crate) async fn disconnect_network_inner(
+    st: &AppState,
+    pid: &str,
+    nwid_u: u64,
+    block_reason: Option<String>,
+) -> Result<(), ApiErr> {
+    let rt = runtime_of(st, pid);
+    let nwid = format!("{nwid_u:016x}");
+    let key = format!("{nwid_u:016x}");
+    let entry = {
+        let reg = st
+            .registry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match reg.planets.iter().find(|e| e.id == pid) {
+            Some(e) => e.clone(),
+            None => {
+                return Err(err(
+                    StatusCode::NOT_FOUND,
+                    "planetNotFound",
+                    &format!("planet \"{pid}\" is not registered"),
+                    None,
+                ))
+            }
+        }
+    };
     if !entry.enabled {
         return Err(err(
             StatusCode::CONFLICT,
@@ -728,35 +793,20 @@ pub async fn net_disable(
             None,
         ));
     }
-    let rt = runtime_of(&st, &pid);
-    // nwid 解析:核心在 → nwid/已加入网络名(resolve_nwid);核心不在 → 仅
-    // nwid(stopped 无核心快照,按名定位退化为仅 nwid——规格明确)
-    let nwid_u = match &rt {
-        Some(rt) => resolve_nwid(rt, &nwid)?,
-        None => parse_nwid(&nwid).map_err(|_| {
-            err(
-                StatusCode::NOT_FOUND,
-                "networkNotFound",
-                &format!("network \"{nwid}\" not found (planet stopped; address by id)"),
-                None,
-            )
-        })?,
-    };
-    let key = format!("{nwid_u:016x}");
-    // 幂等:已在禁用区 → 成功。但记录在禁用区不代表核心已脱离:上次
+    // 幂等:已在断开区 → 成功。但记录在断开区不代表核心已脱离:上次
     // disable 的 node_leave 若失败,记录已迁移而核心仍 joined,重试命中
-    // 本分支时必须补做底层脱离,否则核心"幽灵加入"直至 stop/enable
-    if entry.net_disabled.contains_key(&key) {
+    // 本分支时必须补做底层脱离,否则核心"幽灵加入"直至 stop/connect
+    if entry.net_detached.contains_key(&key) {
         if let Some(rt) = rt.as_ref().filter(|rt| rt.networks().iter().any(|c| c.nwid == nwid_u)) {
             // 同步运行时镜像(detach_and_idle 前置:调用方完成记录/镜像处理)
             rt.net_local
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .remove(&nwid_u);
-            detach_and_idle(&st, rt, nwid_u).await?;
+            detach_and_idle(st, rt, nwid_u).await?;
         }
-        st.events.push(&pid, "networkDisabled", &format!("already disabled {nwid} (idempotent)"));
-        return Ok(Json(json!({"result": "ok", "idempotent": true})));
+        st.events.push(pid, "networkDisconnected", &format!("already disconnected {nwid} (idempotent)"));
+        return Ok(());
     }
     // 名字快照取核心(可得时)
     let name = rt
@@ -768,7 +818,7 @@ pub async fn net_disable(
                 .map(|c| if c.name.is_empty() { None } else { Some(c.name) })
         })
         .flatten();
-    // 记录迁移(net_local → net_disabled;半态防御:核心已加入但记录缺失
+    // 记录迁移(net_local → net_detached;半态防御:核心已加入但记录缺失
     // 时按现行配置快照入库)
     {
         let mut reg = st.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -790,33 +840,59 @@ pub async fn net_disable(
                 }
                 None => net_local_of(rt.as_ref(), e, nwid_u),
             };
-            e.net_disabled.insert(key, NetDisabled { local: nl, name });
+            e.net_detached.insert(key, NetDetached { local: nl, name, block_reason });
             if let Err(e) = reg.save(&st.config_dir) {
                 eprintln!("[net] registry 写盘失败: {e}");
             }
         }
     }
-    st.events.push(&pid, "networkDisabled", &format!("disabled {nwid}"));
+    st.events.push(pid, "networkDisconnected", &format!("disconnected {nwid}"));
     // 无核心:记录迁移即完成
     let Some(rt) = rt else {
-        return Ok(Json(json!({"result": "ok"})));
+        return Ok(());
     };
-    // 底层脱离(与 leave 同款收尾;记录已在禁用区,不删)
+    // 底层脱离(与 leave 同款收尾;记录已在断开区,不删)
     rt.net_local
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(&nwid_u);
-    detach_and_idle(&st, &rt, nwid_u).await?;
+    detach_and_idle(st, &rt, nwid_u).await?;
+    Ok(())
+}
+
+/// 断开:记录 net_local → net_detached 迁移,底层脱离网络(即原 zt 的
+/// leave;差异是保留本地配置与名字快照,连接/join 可恢复)
+pub async fn net_disconnect(
+    State(st): State<AppState>,
+    Path(nwid): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiErr> {
+    // 定位不要求 running(stopped planet 上的网络也能断开:纯记录迁移)
+    let (pid, _entry) = resolve_planet_entry(&st, q.get("planet").map(|s| s.as_str()))?;
+    // nwid 解析:核心在 → nwid/已加入网络名(resolve_nwid);核心不在 → 仅
+    // nwid(stopped 无核心快照,按名定位退化为仅 nwid——规格明确)
+    let nwid_u = match runtime_of(&st, &pid) {
+        Some(rt) => resolve_nwid(&rt, &nwid)?,
+        None => parse_nwid(&nwid).map_err(|_| {
+            err(
+                StatusCode::NOT_FOUND,
+                "networkNotFound",
+                &format!("network \"{nwid}\" not found (planet stopped; address by id)"),
+                None,
+            )
+        })?,
+    };
+    disconnect_network_inner(&st, &pid, nwid_u, None).await?;
     Ok(Json(json!({"result": "ok"})))
 }
 
-// ---- POST /networks/{nwid}/enable ----
+// ---- POST /networks/{nwid}/connect ----
 
-/// 启用:禁用区记录回迁 net_local 并 re-join,恢复禁用前的本地配置。
+/// 连接:断开区记录回迁 net_local 并 re-join,恢复断开前的本地配置。
 /// planet 未运行则拉起(start_planet 按 net_local 全量恢复);已运行则
 /// 直接 join。恢复失败不回滚:记录已在 net_local,boot/join 自动重试
 /// (对齐 boot 恢复容错)。幂等:已在加入态 → 成功
-pub async fn net_enable(
+pub async fn net_connect(
     State(st): State<AppState>,
     Path(nwid): Path<String>,
     Query(q): Query<HashMap<String, String>>,
@@ -833,13 +909,13 @@ pub async fn net_enable(
             None,
         ));
     }
-    // nwid 解析:合法 nwid 直用;否则按禁用区 name 快照(不区分大小写)——
-    // 禁用网络不在核心快照里,名字只活在快照中
+    // nwid 解析:合法 nwid 直用;否则按断开区 name 快照(不区分大小写)——
+    // 断开的网络不在核心快照里,名字只活在快照中
     let nwid_u = match parse_nwid(&nwid) {
         Ok(v) => v,
         Err(_) => {
-            let hits: Vec<(&String, &NetDisabled)> = entry
-                .net_disabled
+            let hits: Vec<(&String, &NetDetached)> = entry
+                .net_detached
                 .iter()
                 .filter(|(_, nd)| {
                     nd.name
@@ -849,7 +925,7 @@ pub async fn net_enable(
                 .collect();
             match hits.as_slice() {
                 [(k, _)] => u64::from_str_radix(k, 16)
-                    .map_err(|_| internal(format!("invalid disabled nwid key \"{k}\"")))?,
+                    .map_err(|_| internal(format!("invalid detached nwid key \"{k}\"")))?,
                 [] => {
                     return Err(err(
                         StatusCode::NOT_FOUND,
@@ -874,25 +950,25 @@ pub async fn net_enable(
         }
     };
     let key = format!("{nwid_u:016x}");
-    // 幂等:未在禁用区时,加入态(net_local 有记录)→ 目标态已达成;
+    // 幂等:未在断开区时,加入态(net_local 有记录)→ 目标态已达成;
     // 但 planet 停机时目标态只是「记录在」而网络实际不可用(典型入口:
-    // enable 拉起失败后重试,记录已回迁)——补拉起做实,与 join 行为一致,
-    // 也与 disable 幂等补脱离同构(幂等不豁免把目标态落地);
+    // connect 拉起失败后重试,记录已回迁)——补拉起做实,与 join 行为一致,
+    // 也与断开幂等补脱离同构(幂等不豁免把目标态落地);
     // 两区皆无 → 404
-    if !entry.net_disabled.contains_key(&key) {
+    if !entry.net_detached.contains_key(&key) {
         if entry.net_local.contains_key(&key) {
             if runtime_of(&st, &pid).is_none() {
                 runtime::start_planet(&st, &pid)
                     .await
                     .map_err(|m| err(StatusCode::INTERNAL_SERVER_ERROR, "startFailed", &m, None))?;
             }
-            st.events.push(&pid, "networkEnabled", &format!("already enabled {nwid} (idempotent)"));
+            st.events.push(&pid, "networkConnected", &format!("already connected {nwid} (idempotent)"));
             return Ok(Json(json!({"result": "ok", "idempotent": true})));
         }
         return Err(err(
             StatusCode::NOT_FOUND,
             "networkNotFound",
-            &format!("network \"{nwid}\" not disabled or joined on this planet"),
+            &format!("network \"{nwid}\" not disconnected or joined on this planet"),
             None,
         ));
     }
@@ -905,9 +981,9 @@ pub async fn net_enable(
             .find(|e| e.id == pid)
             .ok_or_else(|| internal(format!("planet \"{pid}\" disappeared")))?;
         let nd = e
-            .net_disabled
+            .net_detached
             .remove(&key)
-            .ok_or_else(|| internal(format!("disabled entry \"{key}\" disappeared")))?;
+            .ok_or_else(|| internal(format!("detached entry \"{key}\" disappeared")))?;
         // 同 nwid 双区残留(理论不可达)以 net_local 为准:or_insert 不覆盖
         e.net_local.entry(key).or_insert(nd.local.clone());
         if let Err(e) = reg.save(&st.config_dir) {
@@ -915,7 +991,7 @@ pub async fn net_enable(
         }
         nd.local
     };
-    st.events.push(&pid, "networkEnabled", &format!("enabled {nwid}"));
+    st.events.push(&pid, "networkConnected", &format!("connected {nwid}"));
     // 已运行 → 镜像 + re-join;未运行 → 拉起(start_planet 按 net_local
     // 灌镜像并 re-join,天然覆盖恢复)
     if let Some(rt) = runtime_of(&st, &pid) {
@@ -1114,8 +1190,8 @@ pub fn router() -> Router<AppState> {
         .route("/networks", get(networks_list))
         .route("/networks/{nwid}/join", post(net_join))
         .route("/networks/{nwid}/leave", post(net_leave))
-        .route("/networks/{nwid}/disable", post(net_disable))
-        .route("/networks/{nwid}/enable", post(net_enable))
+        .route("/networks/{nwid}/disconnect", post(net_disconnect))
+        .route("/networks/{nwid}/connect", post(net_connect))
         .route("/networks/{nwid}", post(net_set))
         .route("/events", get(events))
 }

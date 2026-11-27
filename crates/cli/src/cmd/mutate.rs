@@ -49,18 +49,18 @@ pub fn leave(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -
     Ok(())
 }
 
-/// 网络启用(与 join 的区别:恢复禁用前的本地配置);planet 级启停是
+/// 网络连接(与 join 的区别:恢复断开前的本地配置);planet 级启停是
 /// `planet enable/disable`,两者对象不同,勿混
-pub fn enable(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
-    let resp = client.post_empty(&endpoints::network_enable(nwid, planet.as_deref()))?;
-    ok(client, "enable", planet, json, &resp);
+pub fn connect(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
+    let resp = client.post_empty(&endpoints::network_connect(nwid, planet.as_deref()))?;
+    ok(client, "connect", planet, json, &resp);
     Ok(())
 }
 
-/// 网络禁用:脱离网络但保留记录(id/配置/名字快照),enable 或 join 可恢复
-pub fn disable(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
-    let resp = client.post_empty(&endpoints::network_disable(nwid, planet.as_deref()))?;
-    ok(client, "disable", planet, json, &resp);
+/// 网络断开:脱离网络但保留记录(id/配置/名字快照),connect 或 join 可恢复
+pub fn disconnect(client: &Client, nwid: &str, planet: &Option<String>, json: bool) -> Result<(), CliError> {
+    let resp = client.post_empty(&endpoints::network_disconnect(nwid, planet.as_deref()))?;
+    ok(client, "disconnect", planet, json, &resp);
     Ok(())
 }
 

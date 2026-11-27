@@ -55,7 +55,8 @@ export interface NetworkEntry {
   nwid: string;
   name: string | null;
   /// 核心/daemon 合成态:OK | REQUESTING_CONFIGURATION | ACCESS_DENIED | …
-  /// | STOPPED | DISABLED | DEVICE_ERROR(核心 OK 但本地设备层失败,数据面不通)
+  /// | STOPPED | DISCONNECTED(断开区占位) | DEVICE_ERROR(核心 OK 但本地
+  /// 设备层失败,数据面不通)
   status: string;
   conflict: string | null; // address | subnet | timeout
   type: string; // PUBLIC | PRIVATE

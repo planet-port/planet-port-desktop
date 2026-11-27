@@ -99,10 +99,10 @@ enum Command {
     Join { nwid: String },
     /// Leave a network
     Leave { nwid: String },
-    /// Enable a disabled network (restore its previous local config)
-    Enable { nwid: String },
-    /// Disable a joined network (keep records for quick restore)
-    Disable { nwid: String },
+    /// Connect a disconnected network (restore its previous local config)
+    Connect { nwid: String },
+    /// Disconnect a joined network (keep records for quick restore)
+    Disconnect { nwid: String },
     /// Share a network: QR code in terminal + copy network id to clipboard
     Share { nwid: String },
     /// Set client-side config: routeViaZeroTier / dnsMode / customDns / alias
@@ -257,8 +257,8 @@ fn planet_need(cmd: &Command) -> PlanetNeed {
         Command::Events { .. } => PlanetNeed::Events,
         Command::Join { .. }
         | Command::Leave { .. }
-        | Command::Enable { .. }
-        | Command::Disable { .. }
+        | Command::Connect { .. }
+        | Command::Disconnect { .. }
         | Command::Share { .. }
         | Command::Set { .. }
         | Command::Get { .. }
@@ -336,8 +336,8 @@ fn dispatch(
         Command::Listmoons => cmd::query::listmoons(client, query_filter, json),
         Command::Join { nwid } => cmd::mutate::join(client, nwid, planet_flag, json),
         Command::Leave { nwid } => cmd::mutate::leave(client, nwid, planet_flag, json),
-        Command::Enable { nwid } => cmd::mutate::enable(client, nwid, planet_flag, json),
-        Command::Disable { nwid } => cmd::mutate::disable(client, nwid, planet_flag, json),
+        Command::Connect { nwid } => cmd::mutate::connect(client, nwid, planet_flag, json),
+        Command::Disconnect { nwid } => cmd::mutate::disconnect(client, nwid, planet_flag, json),
         Command::Share { nwid } => cmd::share::share(client, nwid, planet_flag, json),
         Command::Set { nwid, values } => cmd::mutate::set(client, nwid, values, planet_flag, json),
         Command::Alias { nwid, name } => cmd::mutate::alias(client, nwid, name, planet_flag, json),

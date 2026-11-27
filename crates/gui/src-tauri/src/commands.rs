@@ -159,12 +159,12 @@ pub fn leave_network(nwid: String, planet: Option<String>) -> Result<Value, GuiE
     discover()?.post_empty(&endpoints::network_leave(&nwid, planet.as_deref()))
 }
 #[tauri::command]
-pub fn enable_network(nwid: String, planet: Option<String>) -> Result<Value, GuiError> {
-    discover()?.post_empty(&endpoints::network_enable(&nwid, planet.as_deref()))
+pub fn connect_network(nwid: String, planet: Option<String>) -> Result<Value, GuiError> {
+    discover()?.post_empty(&endpoints::network_connect(&nwid, planet.as_deref()))
 }
 #[tauri::command]
-pub fn disable_network(nwid: String, planet: Option<String>) -> Result<Value, GuiError> {
-    discover()?.post_empty(&endpoints::network_disable(&nwid, planet.as_deref()))
+pub fn disconnect_network(nwid: String, planet: Option<String>) -> Result<Value, GuiError> {
+    discover()?.post_empty(&endpoints::network_disconnect(&nwid, planet.as_deref()))
 }
 #[tauri::command]
 pub fn set_network(nwid: String, planet: Option<String>, body: Value) -> Result<Value, GuiError> {

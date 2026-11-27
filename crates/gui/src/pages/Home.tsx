@@ -15,7 +15,7 @@ import { useToast } from '../components/Toaster';
 
 /// 单页首页:行星分组头(状态/传输/计数) + 网络卡片网格(方案C卡片,泊位灯)。
 /// 加入入口 = 卡片网格尾的空卡(点击开「添加网络」抽屉并预选本行星,顶栏按钮已移除);
-/// 卡片开关 = 禁用/启用(脱离保留配置/恢复),彻底删除走详情抽屉。
+/// 卡片开关 = 连接/断开(断开脱离网络但保留本地配置,连接即恢复),彻底删除走详情抽屉。
 /// daemon 离线时页面常驻,行星/网络控制组件整组禁用(online=false),列表
 /// 数据来自 react-query 缓存仍可见。
 /// 旧 .page/.pgroup 系/.netcards/.netcard.add 规则对译:页面区 16/18px 留白自滚、
@@ -55,16 +55,16 @@ export default function Home({ online = true, onAddNetwork }: { online?: boolean
     },
     onError: onErr,
   });
-  const disable = useMutation({
-    mutationFn: (row: NetworkEntry) => api.disableNetwork(row.nwid, row.planet),
+  const disconnect = useMutation({
+    mutationFn: (row: NetworkEntry) => api.disconnectNetwork(row.nwid, row.planet),
     onSettled: (_d, _e, row) => {
       setToggling(cur => (cur === `${row.planet}/${row.nwid}` ? null : cur));
       invalidate();
     },
     onError: onErr,
   });
-  const enable = useMutation({
-    mutationFn: (row: NetworkEntry) => api.enableNetwork(row.nwid, row.planet),
+  const connect = useMutation({
+    mutationFn: (row: NetworkEntry) => api.connectNetwork(row.nwid, row.planet),
     onSettled: (_d, _e, row) => {
       setToggling(cur => (cur === `${row.planet}/${row.nwid}` ? null : cur));
       invalidate();
@@ -74,12 +74,13 @@ export default function Home({ online = true, onAddNetwork }: { online?: boolean
 
   const onToggle = (row: NetworkEntry) => {
     setToggling(`${row.planet}/${row.nwid}`);
-    // 开关语义 = 网络启停:disable 脱离但保留配置,enable 恢复;彻底删除
-    // (leave)走详情抽屉「删除网络」;STOPPED 等占位行的开 = 重新 join。
-    // DEVICE_ERROR 是在网态(核心 OK、本地设备层失败),开关语义同 OK = disable
-    if (row.status === 'OK' || row.status === 'DEVICE_ERROR') disable.mutate(row);
-    else if (row.status === 'DISABLED') enable.mutate(row);
-    else rejoin.mutate(row);
+    // 开关语义与卡片显示自洽:on 位 = 核心 in-network(DISCONNECTED/STOPPED
+    // 除外,含等待授权/被拒/设备异常态),点击 = disconnect 脱离保留配置;
+    // DISCONNECTED = connect 恢复;STOPPED 占位行 = rejoin 拉起 planet 并重加。
+    // 彻底删除(leave)走详情抽屉「删除网络」
+    if (row.status === 'DISCONNECTED') connect.mutate(row);
+    else if (row.status === 'STOPPED') rejoin.mutate(row);
+    else disconnect.mutate(row);
   };
 
   return (
