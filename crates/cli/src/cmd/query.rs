@@ -89,13 +89,7 @@ pub fn info(client: &Client, filter: &Option<Vec<String>>, json: bool) -> Result
     for p in rows {
         // 三态对齐 list:停止=未连接、运行且根可达=已连接、运行但离线=连接中
         // (旧版 ONLINE/OFFLINE/stopped 混在一列,口径与 list 对不上)
-        let status = if p.status != "running" {
-            rust_i18n::t!("status.disconnected").to_string()
-        } else if p.online {
-            rust_i18n::t!("status.connected").to_string()
-        } else {
-            rust_i18n::t!("status.connecting").to_string()
-        };
+        let status = planet_state(&p).to_string();
         let latency = p
             .latency_ms
             .map(|l| format!("{l}ms"))
@@ -127,15 +121,21 @@ fn match_filter(filter: &Option<Vec<String>>, p: &PlanetStatus) -> bool {
     })
 }
 
+/// 行星三态(表体数据区,与其余状态词一致保持英文,不走 locale):
+/// 停止=NOT CONNECTED、运行且根可达=CONNECTED、运行但离线=CONNECTING
+fn planet_state(p: &PlanetStatus) -> &'static str {
+    if p.status != "running" {
+        "NOT CONNECTED"
+    } else if p.online {
+        "CONNECTED"
+    } else {
+        "CONNECTING"
+    }
+}
+
 /// 分组头:三态对齐 info(运行且根可达=已连接;运行但离线=连接中;停止=未连接)
 fn group_state(p: &PlanetStatus) -> String {
-    if p.status != "running" {
-        rust_i18n::t!("status.disconnected").to_string()
-    } else if p.online {
-        rust_i18n::t!("status.connected").to_string()
-    } else {
-        rust_i18n::t!("status.connecting").to_string()
-    }
+    planet_state(p).to_string()
 }
 
 /// 分组 JSON(planets[] 各带条目数组;文本模式同口径)
@@ -210,7 +210,13 @@ pub fn listnetworks(client: &Client, filter: &Option<Vec<String>>, json: bool) -
                 n.status.clone(),
                 n.kind.clone(),
                 n.interface.clone().unwrap_or_else(|| "—".into()),
-                n.assigned_addrs.join("\n"),
+                // 冲突态:提示文字占用 IP 列(对齐 GUI 2026-11-27 口径,信息让位
+                // 状态)。表体与其余列一样保持英文(状态词均英文),不走 locale
+                if n.conflict.is_some() {
+                    "IP CONFLICT".to_string()
+                } else {
+                    n.assigned_addrs.join("\n")
+                },
             ]);
         }
         println!("{t}\n");
