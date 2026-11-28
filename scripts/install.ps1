@@ -1,4 +1,4 @@
-# planet-port Windows 线上安装脚本
+﻿# planet-port Windows 线上安装脚本
 #
 # 用法:
 #   powershell -ExecutionPolicy Bypass -File install.ps1 [-Version 0.1.3]
@@ -42,14 +42,29 @@ if (-not (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Securit
     Write-Error "需要管理员权限:请在管理员 PowerShell 中运行(右键开始菜单 -> 终端(管理员))"
 }
 
-# 3. 解析版本(GitHub API;latest 取最新非 prerelease,beta 不在此列)
+# 3. 解析版本(组件化发版后 cli 套装挂在 planet-port/v* tag 下,与 install.sh 对齐)
+$VTAG = "v" + $Version.TrimStart('v', 'V')
 if ($Version -eq "latest") {
-    $rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest"
-    $Version = $rel.tag_name.TrimStart('v', 'V')
+    # releases/latest 可能落在 daemon/gui 组件 tag 上,改为按 planet-port/v
+    # 前缀过滤非 prerelease 的最新一条(API 按 created 倒序返回)
+    $rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases?per_page=100"
+    $found = $rel | Where-Object { $_.tag_name -like 'planet-port/v*' -and -not $_.prerelease } | Select-Object -First 1
+    if (-not $found) { Write-Error "获取最新 cli 版本失败(仓库可能还没有 planet-port/v* 稳定 Release)" }
+    $TAG = $found.tag_name
+} else {
+    # 拆分前旧版(≤0.5.0)挂在无前缀 v* tag:按 Release 实际存在与否判定归属,
+    # 不做版本号分段(新旧分界点会随时间漂移)。接口不可达的异常同样落入
+    # 回退分支,由后续下载 404 兜底报错
+    $TAG = "planet-port/$VTAG"
+    try { $null = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/tags/$TAG" }
+    catch { $TAG = $VTAG }
 }
+# 归一化版本号:斜杠 tag 剥 planet-port/v,旧 v* tag 剥 v(展示与旧命名资产共用)
+$Version = $TAG -replace '^planet-port/v', ''
+$Version = $Version.TrimStart('v')
 $asset = "planet-port-x86_64-pc-windows-msvc.zip"
-$url = "https://github.com/$repo/releases/download/v${Version}/${asset}"
-# 旧命名回退:v0.3.0 手工 release.sh 产物为 planet-port_<ver>_windows_x86_64.zip
+$url = "https://github.com/$repo/releases/download/${TAG}/${asset}"
+# 旧命名回退:仅存在于拆分前的 v* tag 下(v0.3.0 手工 release.sh 产物)
 $oldAsset = "planet-port_${Version}_windows_x86_64.zip"
 
 # 4. 下载解压
