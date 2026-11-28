@@ -68,6 +68,10 @@ if [[ "$(id -u)" -ne 0 ]]; then
     # 沙箱豁免:PLANET_PORT_PREFIX 指定落盘根目录时,落盘无需 root,跳过提权直接继续
     if [[ -n "${PLANET_PORT_PREFIX:-}" ]]; then
         :
+    elif [[ ! -f "$0" ]]; then
+        # 管道执行时 $0 是 "bash" 而非文件路径,exec sudo bash "$0" 必失败;
+        # 与其撞一个莫名报错,不如直接指向文档形态 `| sudo bash`
+        die "非 root 管道执行请用: curl -fsSL <url> | sudo bash(或先把脚本保存为文件再 sudo 执行)"
     else
         exec sudo bash "$0" "$@"
     fi
@@ -246,7 +250,9 @@ if [[ "$NO_SERVICE" -eq 1 ]]; then
     fi
     echo "已跳过服务安装(--no-service),需要时执行: sudo planet-port install"
 else
-    "${BIN_DIR}/planet-port" install
+    # --yes:curl 管道场景 stdin 已耗尽,版本差异的交互确认必吃到 EOF 而按
+    # 拒绝中止(exit 130),在线升级链路就此断掉
+    "${BIN_DIR}/planet-port" install --yes
 fi
 rm -rf "$STAGE"
 
